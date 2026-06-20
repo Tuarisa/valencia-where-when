@@ -120,7 +120,7 @@ export default function Home({ payload }: { payload: SitePayload }) {
 
 function FeedCard({ item }: { item: SiteEvent }) {
   return (
-    <article className={`feed-card${item.is_hemisferic ? " is-hemis" : ""}`}>
+    <article className={`feed-card${item.is_hemisferic ? " is-hemis" : ""}${item.feature && item.feature !== "hemisferic" ? " feature-" + item.feature : ""}`}>
       {item.image_url ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={item.image_url} alt="" />
@@ -192,7 +192,7 @@ function Calendar({
         <div key={day} className={`day-cell${isToday ? " is-today" : ""}`}>
           <div className="day-num">{day}</div>
           {regular.map((it) => (
-            <Link key={it.id} className="day-event" href={it.page_url}>
+            <Link key={it.id} className={`day-event${it.feature && it.feature !== "hemisferic" ? " feature-" + it.feature : ""}`} href={it.page_url}>
               {it.start_time && <span className="ev-time">{it.start_time}</span>}
               {it.title}
             </Link>
@@ -230,6 +230,7 @@ function Calendar({
       <p className="legend">
         <span className="legend-dot legend-event" /> события
         <span className="legend-dot legend-hemis" /> Hemisfèric
+        <span className="legend-dot legend-feria" /> фестивали / спец
       </p>
       <div className="calendar-grid">
         {cells || <div className="day-cell">Пока нет датированных событий.</div>}

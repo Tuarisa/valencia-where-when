@@ -20,6 +20,7 @@ export interface SiteEvent {
   description: string | null;
   excerpt: string;
   is_hemisferic: boolean;
+  feature: string | null; // special-event kind for color coding: feria | festival | hemisferic | null
   start_date: string | null;
   end_date: string | null;
   start_time: string | null;
@@ -88,6 +89,21 @@ function displayTitle(row: EventRow): string {
   return row.title_ru || deriveTitle(row.title);
 }
 
+// Categorize "special" events so the calendar/feed can color them distinctly (T133).
+// Extensible: each kind maps to its own accent in globals.css. Returns null for an
+// ordinary event.
+export function featureKind(row: EventRow): string | null {
+  const src = row.source || "";
+  if (src === "api:hemisferic") return "hemisferic";
+  if (src === "web:feriadejuliovlc") return "feria";
+  const tags = loadTags(row.tags_json);
+  if (tags.includes("feria-de-julio")) return "feria";
+  const cat = (row.category || "").toLowerCase();
+  if (cat === "festival" || cat === "fireworks") return "festival";
+  if (tags.includes("festival") || tags.includes("featured")) return "festival";
+  return null;
+}
+
 export function toSiteEvent(row: EventRow): SiteEvent {
   const title = displayTitle(row);
   const slug = pageSlug(title, `event-${row.id}`);
@@ -98,6 +114,7 @@ export function toSiteEvent(row: EventRow): SiteEvent {
     description: row.description ?? null,
     excerpt: excerpt(row.description || row.raw_excerpt),
     is_hemisferic: row.source === "api:hemisferic",
+    feature: featureKind(row),
     start_date: row.start_date ?? null,
     end_date: row.end_date ?? null,
     start_time: row.start_time ?? null,
