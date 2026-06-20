@@ -384,7 +384,9 @@ exist, raw layer still append-only.
 > turn (no need to interrupt mid-iteration). Prefix a message with `бэклог:` / `backlog:`
 > to mean "record only, don't drop everything."
 
-- [ ] T130 [F] **logunespa historical place crawl → seed** (user priority). Walk the
+- [~] T130 [F] **logunespa historical place crawl → seed** (user priority; DELEGATED to a
+  background subagent so the main loop keeps moving through the plan — places-only,
+  20 posts/batch, resumable backward; agent commits/pushes each batch). Walk the
   channel post-by-post via the PUBLIC single-post embed `t.me/logunespa/<n>?embed=1`
   (no login — same public-preview principle as `t.me/s/`), from the newest (~1800)
   **backward to the start, SLOWLY** (politeness delay, resumable). Per post:
@@ -427,3 +429,12 @@ exist, raw layer still append-only.
   `hasNonSpainSignal` with ES+RU city/region/España signals (Valencia/Madrid/Barcelona/…),
   keeps only explicit-Spain items (drops non-Spain + location-less to avoid overload);
   +3 tests (36/36). WIRE into the concerten normalizer when it lands (T112).)*
+- [ ] T136 [A] **worldafisha ≈ concerten overlap → dedup** (user, `backlog:`). Both
+  sources ALREADY exist: `web:worldafisha` (id 9, `https://worldafisha.com/events/ispaniya`)
+  and `tg:concerten` (id 2) — both are the same "Зарубежная афиша" RU-artist-tours feed,
+  so they list the SAME concerts. No new source to add. The actionable part: cross-source
+  **dedup must treat them as overlapping** — a concert appearing in both gets merged into
+  ONE event that keeps links to BOTH sources (constitution: dedup keeps every source link).
+  Verify `lib/pipeline/dedup.ts` `titleSignature` + ≥2-source `isMergeableGroup` already
+  collapses these (artist name + date + Spanish city), and that the merged record carries
+  both `entity_sources` rows. Add a focused test once both normalizers (T112) land.
