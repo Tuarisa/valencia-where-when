@@ -321,6 +321,7 @@ function MapPanel({
         <div>
           <p className="eyebrow">карта</p>
           <h2>Места и локации</h2>
+          <Link className="card-link" href="/places">Открыть каталог всех мест →</Link>
         </div>
         <p className="panel-note">
           {mapped.length} мест с координатами, {places.length - mapped.length} пока без pin

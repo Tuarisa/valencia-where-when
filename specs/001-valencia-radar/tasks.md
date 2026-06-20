@@ -244,7 +244,7 @@ exist, raw layer still append-only.
   `links_json` clickable links (FR-011).
 - [ ] T062 [P] [F] Leaflet map plots events/places/series with `lat`/`lng`; hide
   marker-less cleanly.
-- [ ] T063 [F] **Places catalog** `app/places/page.tsx` with facet filters
+- [x] T063 [F] **Places catalog** `app/places/page.tsx` with facet filters
   (cuisine/category, district/area, occasion, `price_level`, `recommended_by`); reuse
   `places/[id]`; renders independently of events (FR-015, Constitution III).
 - [ ] T064 [F] Place-mining normalizers for place-rich sources (`rutatuta_vlc`,

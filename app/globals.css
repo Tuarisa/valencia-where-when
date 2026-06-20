@@ -78,6 +78,8 @@ a { color: inherit; }
 }
 
 .toolbar { display: grid; gap: 14px; margin: 18px 0; }
+.facet { margin-top: 14px; }
+.facet .eyebrow { margin-bottom: 6px; }
 .search {
   width: 100%;
   border: 1px solid var(--line);
