@@ -140,7 +140,10 @@ versions / upgrade Next. T023 ✅ (offline run.ts/.mjs path is the live path, ve
 **OPS:** the logunespa crawler hit the **Claude subscription monthly spend limit** — so
 `claude -p` (crawler AND the default enrich engine) is unavailable until the limit is raised
 (claude.ai/settings/usage); enrich on Vercel needs the SDK path regardless. *(spend limit
-later lifted — crawler resumed.)* **T138 DONE** (`/api/health` + `lib/pipeline/health.ts`
+later lifted — crawler resumed, then **PAUSED by user at 51 places** — catalog has ~59
+logunespa places, 14 mapped; resume the historical crawl LATER, after other tasks; do NOT
+auto-restart it. ~8 places still have a raw maps-URL as the name → T135 cleanup + geo resolve.)*
+**T137 DONE** (dropped deprecated `fetchConnectionCache`). **T138 DONE** (`/api/health` + `lib/pipeline/health.ts`
 `sourceStale`/`pipelineWarnings` + `scripts/smoke.mjs`/`npm run smoke` + test; 117/117).
 **LOCAL-ONLY build cruft**: `npm rm workflow` (B revert) left `node_modules` inconsistent,
 so a local `next build` now emits an EMPTY `.next/server/vendor-chunks/` → `npm start`
