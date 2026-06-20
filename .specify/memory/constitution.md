@@ -74,11 +74,12 @@ cadences and data shapes; coupling them creates fragility.
 ### IV. Batched, Resilient Enrichment
 LLM enrichment (poster OCR, Russian translation, title/body split, link/fact
 extraction) MUST run in background or cron batches, never as a single long
-blocking call — prior single calls hit 180s/60s CLI timeouts. The engine is the
-**Anthropic TypeScript SDK** (`@anthropic-ai/sdk`) with constrained-decoding
-structured output as the primary path, behind an injectable client so it is
-mockable in tests; **`claude -p` (OAuth, no key) is the offline/no-key fallback**
-behind the same interface. Enrichment MUST be incremental and idempotent (per-item
+blocking call — prior single calls hit 180s/60s CLI timeouts. The default engine is
+**`claude -p` (the Claude subscription / OAuth session, NO API key)**, behind an
+injectable client so it is mockable in tests; the **Anthropic TypeScript SDK**
+(`@anthropic-ai/sdk`, `ANTHROPIC_API_KEY`) is an OPTIONAL alternative behind the same
+interface, used only when grammar-level constrained decoding or the Vercel serverless
+runtime (no CLI) is required. Enrichment MUST be incremental and idempotent (per-item
 `enriched_at` bookkeeping), and a failed or partial enrichment MUST NEVER corrupt
 the base record (the un-enriched event/place remains valid and renderable);
 enrichment MUST ground or flag every added fact, never invent dates/prices/venues.
@@ -149,4 +150,8 @@ All plans and specs MUST pass a Constitution Check against these principles befo
 implementation. Complexity that violates a principle MUST be justified in writing
 or rejected. Runtime development guidance for agents lives in `CLAUDE.md`.
 
-**Version**: 1.1.0 | **Ratified**: 2026-06-20 | **Last Amended**: 2026-06-20
+**Version**: 1.1.1 | **Ratified**: 2026-06-20 | **Last Amended**: 2026-06-20
+<!-- v1.1.1 (PATCH, 2026-06-20): Principle IV engine default reworded to `claude -p`
+(Claude subscription/OAuth, no API key); Anthropic SDK demoted to an optional
+alternative (constrained decoding / serverless runtime). Per user: the subscription
+already covers `claude -p`, so no API key is required. enrich.ts is engine-agnostic. -->

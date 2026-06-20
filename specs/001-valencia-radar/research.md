@@ -33,14 +33,23 @@ seed + render, least migration), **and** keep `metadata_json.sources[]` on the
 survivor for attribution (not mutually exclusive). Migrate the 90 seed rows first.
 The new `entity_sources` table is the source-of-truth; `sources[]` is a convenience.
 
-### R3. Enrichment engine — `claude -p` vs `@anthropic-ai/sdk`? → **SDK primary, `claude -p` fallback**
-001 + constitution IV said `claude -p`; `card-enrich` + `llm-testing` chose the SDK
-for constrained-decoding schema guarantees and mockability; `local-run` noted no
-`ANTHROPIC_API_KEY` in the shell and that OAuth `claude -p` is fine offline.
-**Decision**: `@anthropic-ai/sdk` is the PRIMARY path (only way to guarantee the
-schema + make it testable); `claude -p` (OAuth) is the FALLBACK behind the same
-`enrichOne({client})` interface. Constitution IV reworded (v1.1.0). Add
-`ANTHROPIC_API_KEY` to `.env.example`.
+### R3. Enrichment engine — `claude -p` vs `@anthropic-ai/sdk`? → **`claude -p` (subscription) DEFAULT; SDK optional** *(revised 2026-06-20 per user)*
+001 + constitution IV said `claude -p`; `card-enrich` + `llm-testing` argued for the
+SDK (constrained-decoding schema guarantee + mockability). The first pass picked the
+SDK as primary — but the **user owns a Claude subscription, and `claude -p` runs on
+that OAuth session with NO API key and no extra billing**, so it is the pragmatic
+default for this personal project.
+**Decision (revised)**: `claude -p` (subscription/OAuth, no key) is the DEFAULT engine.
+The `@anthropic-ai/sdk` (`ANTHROPIC_API_KEY`) is an OPTIONAL alternative, used only when
+either of its two real advantages is needed: (a) grammar-level **constrained decoding**
+(guaranteed JSON — with `claude -p` we parse its text output + Ajv-validate + retry on
+malformed), or (b) running enrichment **inside the Vercel serverless runtime**, where
+the Claude Code CLI is absent. Both engines sit behind the same injectable
+`EnrichClient` interface (`enrich.ts` is engine-agnostic), and tests use a mock — so the
+choice never blocks the build. Practical placement: enrichment is batch/best-effort, so
+running it **locally / on the dev machine via `claude -p`** (where the CLI + subscription
+live) is the default; the SDK path is only needed if enrichment must run on Vercel cron.
+`ANTHROPIC_API_KEY` stays documented in `.env.example` but is **not required**.
 
 ### R4. Hemisfèric granularity — one card per DAY vs per FILM? → **per FILM (series + occurrences)**
 001 FR-010 said one calendar card per day; `repeateable-events` supersedes that with
