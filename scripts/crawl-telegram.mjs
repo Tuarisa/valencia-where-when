@@ -37,6 +37,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const sha1short = (s) => crypto.createHash("sha1").update(s, "utf-8").digest("hex").slice(0, 16);
 const nowIso = () => new Date().toISOString().replace(/\.\d+Z$/, "Z");
 const loadArr = (p) => (existsSync(p) ? JSON.parse(readFileSync(p, "utf-8")) : []);
+const normName = (s) => String(s || "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
 
 // Fetch with on-disk cache: never re-request a post we've already pulled.
 async function fetchPostCached(n) {
@@ -124,6 +125,7 @@ const places = loadArr(placesPath);
 const events = loadArr(eventsPath);
 const seenPosts = new Set([...places, ...events].map((r) => Number(JSON.parse(r.metadata_json || "{}").post_id)).filter(Boolean));
 const placeKeys = new Set(places.map((p) => p.dedup_hash));
+const seenPlaceNames = new Set(places.map((p) => normName(p.name))); // dedup a venue by name regardless of area phrasing
 const eventKeys = new Set(events.map((e) => e.dedup_hash));
 const lowest = seenPosts.size ? Math.min(...seenPosts) : startId + 1;
 const begin = startId || lowest - 1;
@@ -142,7 +144,8 @@ for (let n = begin; n > begin - count && n > 0; n--) {
       if (ex && ex.name) {
         if (ex.kind === "place") {
           const rec = placeRecord(post, ex);
-          if (!placeKeys.has(rec.dedup_hash)) { places.push(rec); placeKeys.add(rec.dedup_hash); addedPlaces++; console.log(`  place +${n}: ${rec.name}${rec.area ? " — " + rec.area : ""}${rec.maps_url ? " 📍" : ""}`); }
+          const nm = normName(rec.name);
+          if (!placeKeys.has(rec.dedup_hash) && nm && !seenPlaceNames.has(nm)) { places.push(rec); placeKeys.add(rec.dedup_hash); seenPlaceNames.add(nm); addedPlaces++; console.log(`  place +${n}: ${rec.name}${rec.area ? " — " + rec.area : ""}${rec.maps_url ? " 📍" : ""}`); }
         } else if (ex.kind === "event") {
           const rec = eventRecord(post, ex);
           if (!eventKeys.has(rec.dedup_hash)) { events.push(rec); eventKeys.add(rec.dedup_hash); addedEvents++; console.log(`  event +${n}: ${rec.title}${ex.start_date ? " @ " + ex.start_date : ""}`); }
