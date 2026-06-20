@@ -73,8 +73,10 @@ dry); SDK-free/mockable, live-verified COALESCE; 23/23 tests. **Notify done** (T
 is the DEFAULT** — the Anthropic SDK (`ANTHROPIC_API_KEY`) is OPTIONAL (constrained
 decoding / Vercel serverless runtime, where the CLI is absent). enrich.ts is
 engine-agnostic (injectable client), so T051 = build a `claude -p` client (no key).
-Next: T071 route (fail-closed Bearer) + T053 `claude -p` enrich client, T010 parser
-registry, or T042+T043 recurring cutover (React feed).
+**Digest route done** (T071): `app/api/cron/digest/route.ts` (POST, fail-closed Bearer
+= T100 for digest, `?mode`/`?dry`; marks notified only when the transport delivers).
+Next: T053 `claude -p` enrich client (no key), T010 parser registry, T022 Vercel
+Workflow wrappers, or T042+T043 recurring cutover (React feed).
 
 **Non-negotiables** (see constitution v1.1.0): append-only raw `source_items`; dedup
 keeps a link to every source (via `entity_sources`) and never merges on fallback geo

@@ -266,8 +266,11 @@ exist, raw layer still append-only.
   events, series, and places (FR-013). *(DONE in notify.ts — `buildDigest`
   (load→select→render) + `renderDigestText` + `markEventsNotified`/`markPlacesNotified`
   + `loadNewPlaces`. Live-verified: mark → notified=1 + notified_at + notifications row,
-  and the event drops out of candidates (no-repeat, SC-002). STILL TODO: the Next route
-  (fail-closed Bearer) + Workflow wrapper + folding `event_series` into candidates.)*
+  and the event drops out of candidates (no-repeat, SC-002). Route DONE:
+  `app/api/cron/digest/route.ts` (POST, fail-closed Bearer, `?mode`/`?dry`) — marks
+  notified ONLY when the transport delivered (dry-run sender ⇒ nothing consumed until a
+  real transport lands). STILL TODO: Workflow wrapper (T022) + folding `event_series`
+  into candidates.)*
 - [x] T072 [P] [G] Pluggable `sendDigest(payload)` (default dry-run text); real
   transport behind an env flag (research G2). *(done: `DigestSender` type + `dryRunSender`
   default + `sendDigest({sender})`; real transport selected by env in the route.)*
@@ -308,8 +311,11 @@ exist, raw layer still append-only.
 
 ## Phase 10: Polish & Cross-Cutting
 
-- [ ] T100 [P] Fail-closed `CRON_SECRET` (401 when unset/mismatched) on all new
-  `app/api/cron/*` routes (Constitution V; was a convergence gap).
+- [~] T100 [P] Fail-closed `CRON_SECRET` (401 when unset/mismatched) on all new
+  `app/api/cron/*` routes (Constitution V; was a convergence gap). *(done for
+  `/api/cron/digest` (POST, 401 when secret unset OR mismatched). Apply the same to
+  `/api/cron/dispatch` (T013) and `/api/cron/enrich` (T055) when they land; legacy
+  `/refresh` keeps its optional guard.)*
 - [ ] T101 [P] Add the spec-named but unconfigured sources to `sources.json` +
   ingest: `elcontacto.ru`, `russpain`, `eventbrite` (enabled), `SpainNewsOnline`
   (`enabled=0`/`weight=off`) — FR-001.
