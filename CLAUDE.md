@@ -145,6 +145,17 @@ logunespa places, 14 mapped; resume the historical crawl LATER, after other task
 auto-restart it. ~8 places still have a raw maps-URL as the name → T135 cleanup + geo resolve.)*
 **T137 DONE** (dropped deprecated `fetchConnectionCache`). **T138 DONE** (`/api/health` + `lib/pipeline/health.ts`
 `sourceStale`/`pipelineWarnings` + `scripts/smoke.mjs`/`npm run smoke` + test; 117/117).
+**T139 DONE — `claude -p` model tiering (cost opt, user).** Both `claude -p` callsites ran with
+NO `--model` (inherited session default, likely opus). A background eval (opus/sonnet/haiku ×
+translation/grounded) found: **haiku safe for RU translation** (PATH A), **sonnet is the floor for
+grounded WebFetch extraction** (PATH B — haiku gives up on dead links; opus not worth the cost).
+`enrich-client.ts` now picks per-path via `pickEnrichModel(web)` (haiku/sonnet; `opts.model` pins
+both; env `ENRICH_MODEL`/`ENRICH_MODEL_WEB`); audit `model` records the ACTUAL per-call model;
+crawler default `sonnet` (`CRAWL_MODEL`). **CRITICAL FIX the eval surfaced**: in `-p` mode WebFetch
+is BLOCKED without `--allowedTools WebFetch` → model asks permission, returns no JSON → T053
+web-grounding + crawler link-following were SILENTLY broken; both now pass the flag when grounding
+(pure `buildClaudeArgs`). 120/120, tsc=0. **T136 verify-half DONE** (focused worldafisha≈concerten
+PAIR dedup test — both source links kept; live wiring waits on T112 concerten normalizer).
 **LOCAL prod-build glitch — RESOLVED.** After the workflow churn a local `next start` 500'd
 ("Cannot find module './vendor-chunks/next.js'") from a corrupted `.next` (overlapping /
 truncated builds + dirty `node_modules`). Fixed with `npm ci` + `rm -rf .next && npm run

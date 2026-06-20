@@ -458,14 +458,22 @@ exist, raw layer still append-only.
   ABSENT on Vercel serverless — prod enrich must use the SDK path OR run enrich off-prod;
   the health-check should surface "enrich stalled" without failing the site. Decide
   alerting (the existing weekly digest/rare-alert vs a dedicated health ping).
-- [~] T139 [E/I] **`claude -p` model tiering → cost optimization** (user, `backlog:`).
+- [x] T139 [E/I] **`claude -p` model tiering → cost optimization** (user, `backlog:`).
   Both `claude -p` callsites (`enrich-client.ts`, `crawl-telegram.mjs`) ran WITHOUT
   `--model`, inheriting the session default (likely opus — priciest tier); worse,
   `enrich-client`'s `model` opt only recorded an audit string, it never reached the CLI.
-  **Code done**: both now PIN `--model` — enrich default `sonnet` (env `ENRICH_MODEL`,
-  or `opts.model`), crawl default `sonnet` (env `CRAWL_MODEL`); the audit `model` field
-  now reflects the real model. **Eval pending**: A/B/C opus vs sonnet vs haiku on
-  representative inputs (pure RU translation vs grounded WebFetch extraction) to confirm
-  the safe floor per path — likely `haiku` suffices for translation-only, `sonnet` for
-  grounded extraction. Then set per-path defaults from the finding. (Delegated to a
-  background eval subagent.)
+  **Eval done** (background subagent, 6 calls: opus/sonnet/haiku × translation/grounded):
+  PATH A (RU translation) — **haiku is SAFE** (all 3 correct + natural; haiku fastest 8s).
+  PATH B (grounded WebFetch extraction) — **sonnet is the floor, haiku is NOT** (on a dead
+  source link haiku returned all-null and gave up; sonnet/opus self-recovered to the real
+  page + cited grounded facts; opus only marginally better, not worth the cost). **Code
+  done**: `enrich-client.ts` now picks per-path — `pickEnrichModel(web)` → haiku
+  (translation) / sonnet (grounded); `opts.model` pins both; env `ENRICH_MODEL` /
+  `ENRICH_MODEL_WEB` override per path; the audit `model` now records the ACTUAL per-call
+  model. Crawler default `sonnet` (grounded; env `CRAWL_MODEL`). **CRITICAL FIX the eval
+  surfaced**: in `-p` (non-interactive) mode WebFetch is BLOCKED without
+  `--allowedTools WebFetch` — the model just asks for permission and returns no JSON, so
+  the T053 web-grounding (and the crawler's link-following) were SILENTLY broken. Both now
+  pass `--allowedTools WebFetch` when grounding (pure `buildClaudeArgs` helper, tested).
+  120/120, tsc=0. (Caveat noted: PATH B latency 46s sonnet / 68s opus → keep timeouts
+  ≥120s, already 240s. A future eval could test haiku for link-LESS crawler posts.)

@@ -75,8 +75,12 @@ async function extract(text, links = []) {
     text.slice(0, 4000),
   ].join("\n");
   try {
-    // longer timeout: WebFetch of source links adds latency
-    const { stdout } = await execFileP("claude", ["-p", prompt, "--model", crawlModel], { timeout: 240000, maxBuffer: 8 * 1024 * 1024 });
+    // longer timeout: WebFetch of source links adds latency. When following links we MUST
+    // whitelist WebFetch — in -p mode the tool is otherwise blocked (model asks for
+    // permission, returns no JSON → no enrichment). Proven by the T139 model-tiering eval.
+    const args = ["-p", prompt, "--model", crawlModel];
+    if (srcLinks.length) args.push("--allowedTools", "WebFetch");
+    const { stdout } = await execFileP("claude", args, { timeout: 240000, maxBuffer: 8 * 1024 * 1024 });
     const m = stdout.match(/\{[\s\S]*\}/);
     return m ? JSON.parse(m[0]) : null;
   } catch {

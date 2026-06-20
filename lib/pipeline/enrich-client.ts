@@ -24,8 +24,9 @@ export interface ClaudeEnrichOptions {
   timeoutMs?: number; // per-call cap; WebFetch of source links adds latency
   maxBuffer?: number;
   bin?: string; // override the `claude` binary (tests / non-standard installs)
-  model?: string; // CLI model: alias `opus`/`sonnet`/`haiku` or full id. PINS what runs
-  // (passed as `--model`) AND is recorded for audit. Default `sonnet` (ENRICH_MODEL overrides).
+  model?: string; // CLI model: alias `opus`/`sonnet`/`haiku` or full id. When set, PINS
+  // BOTH paths (passed as `--model`). When unset, per-path floors apply: haiku
+  // (translation) / sonnet (grounded) — ENRICH_MODEL / ENRICH_MODEL_WEB override per path.
   // Override the actual exec (tests): receives the prompt, returns claude's stdout.
   run?: (prompt: string) => Promise<string>;
 }
@@ -95,31 +96,48 @@ export function extractJsonObject(stdout: string): EnrichmentResult {
   return JSON.parse(m[0]) as EnrichmentResult;
 }
 
+// PURE: assemble the `claude -p` argv. Grounded (web) calls MUST whitelist WebFetch — in
+// -p (non-interactive) mode the tool is otherwise BLOCKED: the model just asks for
+// permission and returns no JSON, silently breaking grounding (proven by the T139
+// model-tiering eval). Translation-only calls need no tools.
+export function buildClaudeArgs(prompt: string, opts: { web: boolean; model: string }): string[] {
+  const args = ["-p", prompt, "--model", opts.model];
+  if (opts.web) args.push("--allowedTools", "WebFetch");
+  return args;
+}
+
+// PURE: per-path model floor (T139 eval). Translation (web=false) is safe + fastest on
+// `haiku`; grounded extraction (web=true) needs `sonnet` (on a dead/unreachable link
+// haiku gives up with an empty result, while sonnet self-recovers to the real page and
+// cites grounded facts). `override` (opts.model) pins BOTH paths; else env per path.
+export function pickEnrichModel(
+  web: boolean,
+  override?: string,
+  env: Record<string, string | undefined> = process.env,
+): string {
+  if (override) return override;
+  return web ? env.ENRICH_MODEL_WEB ?? "sonnet" : env.ENRICH_MODEL ?? "haiku";
+}
+
 export function createClaudeEnrichClient(opts: ClaudeEnrichOptions = {}): EnrichClient {
   const timeoutMs = opts.timeoutMs ?? 240_000;
   const maxBuffer = opts.maxBuffer ?? 8 * 1024 * 1024;
   const bin = opts.bin ?? "claude";
-  // Cost tiering: the CLI is key-free but tokens still burn subscription spend, so PIN
-  // the model instead of inheriting the session default (likely opus — the priciest
-  // tier). `sonnet` is the default: strong enough for grounded extraction + RU
-  // translation at a fraction of opus cost. Set ENRICH_MODEL=haiku for translation-only
-  // batches, or pass opts.model to override per call.
-  const model = opts.model ?? process.env.ENRICH_MODEL ?? "sonnet";
-  const run =
-    opts.run ??
-    (async (prompt: string) => {
-      const { stdout } = await execFileP(bin, ["-p", prompt, "--model", model], {
-        timeout: timeoutMs,
-        maxBuffer,
-      });
-      return stdout;
-    });
   return {
     supportsWeb: true,
-    model,
+    // Headline/audit fallback only; the ACTUAL per-call model is recorded on each result
+    // below (so the audit reflects haiku-vs-sonnet per path, not a single static value).
+    model: opts.model ?? process.env.ENRICH_MODEL_WEB ?? "sonnet",
     async enrich(row: EnrichInput, callOpts?: { web?: boolean }): Promise<EnrichmentResult> {
-      const stdout = await run(buildEnrichPrompt(row, callOpts?.web ?? false));
-      return extractJsonObject(stdout);
+      const web = callOpts?.web ?? false;
+      const model = pickEnrichModel(web, opts.model);
+      const prompt = buildEnrichPrompt(row, web);
+      const stdout = opts.run
+        ? await opts.run(prompt)
+        : (await execFileP(bin, buildClaudeArgs(prompt, { web, model }), { timeout: timeoutMs, maxBuffer })).stdout;
+      const result = extractJsonObject(stdout);
+      if (!result.model) result.model = model; // record the ACTUAL per-path model (audit / tiering)
+      return result;
     },
   };
 }

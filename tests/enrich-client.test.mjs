@@ -47,6 +47,17 @@ function extractJsonObject(stdout) {
   return JSON.parse(m[0]);
 }
 
+// Mirror of buildClaudeArgs / pickEnrichModel (T139 model tiering + WebFetch fix).
+function buildClaudeArgs(prompt, { web, model }) {
+  const args = ["-p", prompt, "--model", model];
+  if (web) args.push("--allowedTools", "WebFetch");
+  return args;
+}
+function pickEnrichModel(web, override, env = {}) {
+  if (override) return override;
+  return web ? env.ENRICH_MODEL_WEB ?? "sonnet" : env.ENRICH_MODEL ?? "haiku";
+}
+
 test("enrichSourceLinks: source_url + links_json, drops social, de-dups, caps at 4", () => {
   const row = {
     source_url: "https://valenciarusa.es/event/1",
@@ -98,4 +109,24 @@ test("extractJsonObject: pulls the object out of chatty stdout", () => {
 
 test("extractJsonObject: throws when there is no object", () => {
   assert.throws(() => extractJsonObject("no json here"), /no JSON object/);
+});
+
+test("buildClaudeArgs: grounded calls whitelist WebFetch; translation calls do not", () => {
+  // Without --allowedTools WebFetch the model is blocked in -p mode and returns no JSON
+  // (T139 eval finding) — grounded extraction must always include it.
+  assert.deepEqual(buildClaudeArgs("P", { web: true, model: "sonnet" }), [
+    "-p", "P", "--model", "sonnet", "--allowedTools", "WebFetch",
+  ]);
+  const tr = buildClaudeArgs("P", { web: false, model: "haiku" });
+  assert.deepEqual(tr, ["-p", "P", "--model", "haiku"]);
+  assert.ok(!tr.includes("--allowedTools"), "translation-only needs no tools");
+});
+
+test("pickEnrichModel: per-path floor (haiku translate / sonnet ground); override + env win", () => {
+  assert.equal(pickEnrichModel(false), "haiku", "translation floor = haiku");
+  assert.equal(pickEnrichModel(true), "sonnet", "grounded floor = sonnet");
+  assert.equal(pickEnrichModel(false, "opus"), "opus", "explicit override pins translate");
+  assert.equal(pickEnrichModel(true, "opus"), "opus", "explicit override pins ground");
+  assert.equal(pickEnrichModel(false, undefined, { ENRICH_MODEL: "sonnet" }), "sonnet", "env overrides translate");
+  assert.equal(pickEnrichModel(true, undefined, { ENRICH_MODEL_WEB: "opus" }), "opus", "env overrides ground");
 });
