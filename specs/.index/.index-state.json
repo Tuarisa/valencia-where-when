@@ -1,0 +1,7 @@
+{
+  "lastIndexed": "2026-06-20",
+  "componentCount": 20,
+  "externalCount": 0,
+  "categories": {"pipeline": 7, "lib": 3, "routes": 6, "schema": 1, "scripts": 3},
+  "note": "Concise index; project uses lib/pipeline + app, not controllers/services dirs."
+}
