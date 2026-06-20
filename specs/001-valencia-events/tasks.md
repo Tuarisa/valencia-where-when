@@ -122,9 +122,9 @@ links); ≥80% of located events on the map.
 one survivor with reliable date + `metadata_json.sources[]`; geo coverage ≥80% of
 located events.
 
-- [ ] T024 [US5] Implement `lib/pipeline/dedup.ts`: match-key (person/title-slug + city + date-window) grouping; survivor by `(source weight, score)`; accumulate `metadata_json.sources[]`; soft-collapse losers; never delete `source_items` (FR-003/FR-004).
+- [x] T024 [US5] Implement `lib/pipeline/dedup.ts`: match-key (person/title-slug + city + date-window) grouping; survivor by `(source weight, score)`; accumulate `metadata_json.sources[]`; soft-collapse losers; never delete `source_items` (FR-003/FR-004).
 - [ ] T025 [US5] Insert `dedup` into `lib/pipeline/run.ts` between `tag` and `geo` (and expose via `/api/cron/refresh`).
-- [ ] T026 [P] [US5] `tests/dedup.test.mjs`: 3-record concert with date conflict → 1 survivor, reliable date, all sources retained.
+- [x] T026 [P] [US5] `tests/dedup.test.mjs`: 3-record concert with date conflict → 1 survivor, reliable date, all sources retained.
 - [ ] T027 [US5] Expand geo coverage in `lib/pipeline/geo.ts`: resolve `maps.app.goo.gl`, geocode `address`/`venue_name`; keep ≥1.1s Nominatim pacing + real User-Agent; raise the per-run cap sensibly (SC-004).
 - [ ] T028 [P] [US5] `tests/geo-extract.test.mjs`: map-link/address parsing → query string (pure logic, no network).
 
