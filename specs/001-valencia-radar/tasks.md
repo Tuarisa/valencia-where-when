@@ -149,8 +149,11 @@ exist, raw layer still append-only.
   (Madrid Sol 40.4168,-3.7035); haversine R 75–120 m; never merge on geo alone
   (research C3). *(done: `haversineMeters` + `isCentroid` + `CENTROID_BLACKLIST`
   (Madrid Sol + València fallback) + `geoCorroborates`; nominatim coords never vote.)*
-- [ ] T038 [C] Insert `dedup` into `run.ts` right after `normalize` and expose via
-  `refreshWorkflow`; ensure occurrences are NOT scanned. ⚠️ **DO NOT wire until
+- [~] T038 [C] Insert `dedup` into `run.ts` right after `normalize` and expose via
+  `refreshWorkflow`; ensure occurrences are NOT scanned. *(DONE for the offline
+  `run.ts` path: `ingest → normalize → dedup → score → tag → geo` (enrich slots in at
+  T050); dedup loads only the `events` table (status='upcoming'), so `event_occurrences`
+  are never scanned. The `refreshWorkflow` exposure is part of T022.)* ⚠️ **earlier: DO NOT wire until
   hardening (T035–T037) lands**: a live run on seed data showed the first-pass
   fuzzy-only matcher OVER-MERGES (75 events → 11; `titleSignature` too aggressive) and
   is NOT idempotent (a 2nd run merged 1 more — violates FR-020/SC-003). **UPDATE: the

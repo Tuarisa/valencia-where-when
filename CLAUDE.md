@@ -54,8 +54,10 @@ events (translit + cross-source + untitled guard) + places (T036 partial:
 `haversineMeters`/`jaroWinkler`, 15/15 tests). Events dedup over-merge is fixed +
 idempotent, so wiring it into `run.ts` (T038) is now SAFE. Still deferred: place dedup
 DB orchestrator → T064 (place mining; needs places.status + render filter);
-`entity_sources` writes (T033/T034) → need `source_items` (seed has none). Next: T038
-(wire events dedup into run.ts), or T040 series upsert, or T010 parser registry.
+`entity_sources` writes (T033/T034) → need `source_items` (seed has none). **Events dedup wired into `run.ts`** (T038, offline path): order now
+`ingest → normalize → dedup → score → tag → geo` (enrich slots in at T050;
+`refreshWorkflow` exposure is T022). Next: T040 series upsert, T050 enrich skeleton,
+or T010 parser registry.
 
 **Non-negotiables** (see constitution v1.1.0): append-only raw `source_items`; dedup
 keeps a link to every source (via `entity_sources`) and never merges on fallback geo
