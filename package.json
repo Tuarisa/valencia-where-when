@@ -12,7 +12,11 @@
     "db:schema": "node scripts/apply-schema.mjs",
     "db:seed": "node scripts/seed.mjs",
     "db:setup": "node scripts/apply-schema.mjs && node scripts/seed.mjs",
-    "pipeline:run": "node scripts/run-pipeline.mjs"
+    "pipeline:run": "node scripts/run-pipeline.mjs",
+    "db:local:up": "docker compose up -d",
+    "db:local:down": "docker compose down",
+    "db:local:setup": "DATABASE_URL=postgresql://postgres:postgres@db.localtest.me:5432/main npm run db:setup",
+    "dev:local": "DATABASE_URL=postgresql://postgres:postgres@db.localtest.me:5432/main next dev"
   },
   "dependencies": {
     "@neondatabase/serverless": "^0.10.4",
@@ -24,6 +28,7 @@
     "@types/node": "^20.14.0",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
+    "tsx": "^4.19.2",
     "typescript": "^5.5.4"
   },
   "engines": {

@@ -1,0 +1,82 @@
+# Valencia Radar — external scheduler (sub-area A/B, research R5/A6/B2).
+#
+# Vercel Hobby allows only ONE cron/day and the Vercel Workflow SDK has no
+# scheduler, so the fine-grained ingest dispatcher tick and the weekly Friday
+# digest are driven from here. Each job just POSTs to a CRON_SECRET-protected
+# route that fire-and-forget start()s the relevant durable workflow.
+#
+# Skeleton: manual (workflow_dispatch) is enabled now; the scheduled triggers are
+# wired but the target routes (T013 /dispatch, T071 /digest) land with their tasks.
+#
+# Required repo secrets: APP_BASE_URL (e.g. https://valencia-radar.vercel.app),
+# CRON_SECRET (must match the deployment).
+
+name: scheduler
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Which endpoint to hit"
+        required: true
+        default: dispatch
+        type: choice
+        options: [dispatch, refresh, enrich, digest-weekly, digest-alert]
+  schedule:
+    - cron: "*/15 * * * *"   # adaptive ingest dispatcher tick (per-source cadence does the fine throttling)
+    - cron: "0 7 * * 5"      # weekly digest — Fri ~09:00 Europe/Madrid (UTC 07:00; DST handled in-handler)
+
+permissions:
+  contents: read
+
+jobs:
+  tick:
+    # */15 tick → dispatcher
+    if: github.event_name == 'schedule' && github.event.schedule == '*/15 * * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - name: POST /api/cron/dispatch
+        run: |
+          curl -fsS -X POST "${APP_BASE_URL}/api/cron/dispatch" \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            -w "\n[dispatch] HTTP %{http_code}\n" || echo "dispatch route not live yet"
+        env:
+          APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+
+  digest:
+    # Friday 07:00 UTC → weekly digest
+    if: github.event_name == 'schedule' && github.event.schedule == '0 7 * * 5'
+    runs-on: ubuntu-latest
+    steps:
+      - name: POST /api/cron/digest?mode=weekly
+        run: |
+          curl -fsS -X POST "${APP_BASE_URL}/api/cron/digest?mode=weekly" \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            -w "\n[digest] HTTP %{http_code}\n" || echo "digest route not live yet"
+        env:
+          APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+
+  manual:
+    # workflow_dispatch → hit the chosen endpoint
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: POST chosen endpoint
+        run: |
+          case "${TARGET}" in
+            dispatch)      PATH_Q="/api/cron/dispatch" ;;
+            refresh)       PATH_Q="/api/cron/refresh" ;;
+            enrich)        PATH_Q="/api/cron/enrich" ;;
+            digest-weekly) PATH_Q="/api/cron/digest?mode=weekly" ;;
+            digest-alert)  PATH_Q="/api/cron/digest?mode=alert" ;;
+            *)             echo "unknown target ${TARGET}"; exit 1 ;;
+          esac
+          curl -fsS -X POST "${APP_BASE_URL}${PATH_Q}" \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            -w "\n[${TARGET}] HTTP %{http_code}\n"
+        env:
+          TARGET: ${{ inputs.target }}
+          APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}

@@ -1,0 +1,41 @@
+# Local offline dev stack (sub-area H, research H1).
+# Postgres 15 + the local Neon HTTP proxy so @neondatabase/serverless talks to a
+# local DB with ZERO production code-path changes (the neon() shim activates only
+# on the `db.localtest.me` host substring — see lib/db.ts / scripts/_neon-local.mjs).
+#
+#   npm run db:local:up      # start (this file)
+#   npm run db:local:setup   # apply schema + seed into the local DB
+#   npm run dev:local        # next dev against the local DB
+#   npm run db:local:down    # stop
+#
+# db.localtest.me resolves to 127.0.0.1 (public DNS), so the app reaches the proxy.
+
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: main
+    ports:
+      - "5432:5432"
+    volumes:
+      - valencia_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d main"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  neon-proxy:
+    image: ghcr.io/timowilhelm/local-neon-http-proxy:main
+    environment:
+      PG_CONNECTION_STRING: postgres://postgres:postgres@db:5432/main
+    ports:
+      - "4444:4444"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  valencia_pgdata:
