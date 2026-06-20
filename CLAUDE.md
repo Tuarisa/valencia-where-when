@@ -62,8 +62,12 @@ re-run = 0 new rows, preserves enriched_at/score/notified). **Hemisfèric normal
 emits series** (T041): `buildHemisfericSeries` + `upsertSeries`, live-verified
 (3 raw → 2 series + 5 occurrences, idempotent). Remaining for recurring: T042 migrate
 the 104 existing seed events → series + T043 feed/calendar cutover — must land TOGETHER
-(else Hemisfèric vanishes from the feed). Next: T050 enrich skeleton, T010 parser
-registry, or the T042+T043 recurring cutover (bigger, touches the React feed).
+(else Hemisfèric vanishes from the feed). **Enrich skeleton done** (T050/T056):
+`lib/pipeline/enrich.ts` — injectable `EnrichClient`, `EnrichmentResult` schema,
+`enrichOne` (COALESCE promote, maps→links_json), `enrichCards` (selection + fail-soft +
+dry); SDK-free/mockable, live-verified COALESCE; 23/23 tests. Next: T051–T053 (concrete
+Anthropic-SDK client — needs `ANTHROPIC_API_KEY` for live), T070 notify selectors,
+T010 parser registry, or the T042+T043 recurring cutover (touches the React feed).
 
 **Non-negotiables** (see constitution v1.1.0): append-only raw `source_items`; dedup
 keeps a link to every source (via `entity_sources`) and never merges on fallback geo

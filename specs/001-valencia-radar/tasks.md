@@ -196,12 +196,17 @@ exist, raw layer still append-only.
 
 ## Sub-area E: Card Enrichment (FR-008/021, SC-006/010) — Anthropic SDK
 
-- [ ] T050 [E] `npm i @anthropic-ai/sdk`; `lib/pipeline/enrich.ts` with
+- [~] T050 [E] `npm i @anthropic-ai/sdk`; `lib/pipeline/enrich.ts` with
   `enrichOne(row,{client,web,exec})` + `enrichCards(limit,{dry,client,exec})`,
   injectable client; constrained decoding (`output_config.format`,
   `additionalProperties:false`, no min/max, `effort:low`); selection `WHERE
   enriched_at IS NULL ORDER BY score DESC NULLS LAST LIMIT $limit`; per-item try/catch
-  (research E1/E2).
+  (research E1/E2). *(DONE — orchestration: `EnrichClient` interface + `EnrichmentResult`
+  schema + `enrichOne` (COALESCE-guarded promote + maps→links_json + enrichment_json +
+  enriched_at) + `enrichCards` (selection + fail-soft + dry) + confidence thresholds.
+  enrich.ts is SDK-FREE by design (mockable, key-free). Live-verified COALESCE: a
+  model-null `venue_name` did NOT clobber the existing value. STILL TODO: the concrete
+  Anthropic-SDK client (npm i + output_config.format + web tools) = T051–T053.)*
 - [ ] T051 [E] Implement the canonical `enrichment_json` schema (data-model E):
   OCR + RU translate + extract in one call (poster image block); persist whole blob +
   promote columns with `COALESCE` guards; `events` maps link → `links_json` entry.
@@ -217,9 +222,11 @@ exist, raw layer still append-only.
 - [ ] T055 [E] `app/workflows/enrich.ts` `enrichWorkflow(limit)` (per-card step
   fan-out) + `app/api/cron/enrich/route.ts` (Bearer, fail-closed) →
   `start(enrichWorkflow)`; NOT on the synchronous hot path.
-- [ ] T056 [P] [E] `tests/enrich-parse.test.mjs` (mocked client): field mapping,
+- [x] T056 [P] [E] `tests/enrich-parse.test.mjs` (mocked client): field mapping,
   fail-soft (forced-fail item leaves base record valid), `COALESCE` guard,
-  confidence/notes bounds (SC-006).
+  confidence/notes bounds (SC-006). *(done as `tests/enrich.test.mjs`: mock-client
+  all-succeed / fail-soft (one bad card counted, batch continues) / dry / intBool;
+  + live COALESCE verify on local DB — model-null venue_name preserved. 23/23.)*
 
 ---
 
