@@ -84,8 +84,11 @@ re-fetch on re-runs), `claude -p` extraction routes `place`→`data/seed/places-
 records so far (3 places + 1 dated event). Resumable (continues from lowest crawled id);
 run slowly to backfill ~1800 posts. **Link-following enrichment DONE**: `claude -p` WebFetches the post's source
 links and reads them (validated — Titanic exhibition got exact address/price/venue from
-bombasgens.com; Las Fallas from visitvalencia). 6 records (3 places + 3 events). Backlog: T132 Fever
-drone-show extractor, T133 special-event color categorization. Then T053/T022/T042+T043.
+bombasgens.com; Las Fallas from visitvalencia). **Crawl mode (user): PLACES-ONLY, 20/batch** —
+`node --import tsx scripts/crawl-telegram.mjs logunespa 0 20 1500 places` (the 6th arg `places`
+skips dated events; resumable from lowest crawled id). ~13 places + 19 events so far. Run as
+a BACKGROUND command if 20 posts may exceed the 10-min foreground cap. Backlog: T132 Fever
+drone-show extractor, T133 done, T053/T022/T042+T043, T134 design MCP, T135 part-1 names.
 
 **Non-negotiables** (see constitution v1.1.0): append-only raw `source_items`; dedup
 keeps a link to every source (via `entity_sources`) and never merges on fallback geo

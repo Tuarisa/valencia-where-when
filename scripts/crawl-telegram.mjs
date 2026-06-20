@@ -27,6 +27,7 @@ const channel = process.argv[2] || "logunespa";
 const startId = Number(process.argv[3] || 0);
 const count = Number(process.argv[4] || 20);
 const delayMs = Number(process.argv[5] || 2500);
+const placesOnly = process.argv[6] === "places"; // skip dated events, collect only place recs (user)
 
 const placesPath = join(root, "data", "seed", `places-${channel}.json`);
 const eventsPath = join(root, "data", "seed", `events-${channel}.json`);
@@ -146,7 +147,7 @@ for (let n = begin; n > begin - count && n > 0; n--) {
           const rec = placeRecord(post, ex);
           const nm = normName(rec.name);
           if (!placeKeys.has(rec.dedup_hash) && nm && !seenPlaceNames.has(nm)) { places.push(rec); placeKeys.add(rec.dedup_hash); seenPlaceNames.add(nm); addedPlaces++; console.log(`  place +${n}: ${rec.name}${rec.area ? " — " + rec.area : ""}${rec.maps_url ? " 📍" : ""}`); }
-        } else if (ex.kind === "event") {
+        } else if (!placesOnly && ex.kind === "event") {
           const rec = eventRecord(post, ex);
           if (!eventKeys.has(rec.dedup_hash)) { events.push(rec); eventKeys.add(rec.dedup_hash); addedEvents++; console.log(`  event +${n}: ${rec.title}${ex.start_date ? " @ " + ex.start_date : ""}`); }
         }
