@@ -409,8 +409,17 @@ exist, raw layer still append-only.
   design using the available design MCP (Vercel `import-claude-design-from-url` /
   `deploy_to_vercel`, or Figma) — proper visual design beyond the first-prototype CSS.
   Out of scope for the minimal CSS pass; do a dedicated design iteration.
-- [ ] T131 [A] **concerten — Spain-only pre-filter** (user). The channel ALREADY exists
+- [ ] T135 [F] **Informative map popups** (user, `backlog:`). Map markers are currently
+  uninformative (often the raw maps-link as the name). Each popup needs a HUMAN-READABLE
+  title + a short "why-go" tagline (e.g. "бассейн в парке", "лучшие бургеры") so it's
+  clear why you'd go. Two parts: (1) ensure clean `name` + a short `tagline`/`description`
+  (the logunespa `claude -p` crawl already produces these — backfill resolves the
+  maps-link-named places; enrich fills the rest); (2) richer popup template in
+  `Home.tsx` MapPanel (`name` + tagline + category, not just name + location).
+- [~] T131 [A] **concerten — Spain-only pre-filter** (user). The channel ALREADY exists
   as `tg:concerten` ("Зарубежная афиша русскоязычных артистов") — it lists RU-artist
-  tours across ALL of Europe, so normalize/ingest must pre-filter to Spain (Valencia,
-  Madrid, Barcelona, España, Spanish venues/cities) and drop non-Spain dates to avoid
-  info overload. Implement as a normalizer-stage filter for `tg:concerten`.
+  tours across ALL of Europe, so normalize/ingest must pre-filter to Spain. *(DONE —
+  pure `lib/pipeline/normalizers/spain-filter.ts`: `isSpainEvent`/`hasSpainSignal`/
+  `hasNonSpainSignal` with ES+RU city/region/España signals (Valencia/Madrid/Barcelona/…),
+  keeps only explicit-Spain items (drops non-Spain + location-less to avoid overload);
+  +3 tests (36/36). WIRE into the concerten normalizer when it lands (T112).)*
