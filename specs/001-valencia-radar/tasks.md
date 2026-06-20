@@ -455,13 +455,22 @@ exist, raw layer still append-only.
   `data/seed`. Mirrors `seed.mjs` columns incl. enrich fields; series/occurrences re-derived by
   `db:migrate:series`. Remaining: bulk-ingest-all + local enrich pass + prod incremental-only mode.)*
 
-- [ ] T145 [A] **`parseEventDate` fails on real RU/UK date formats** (T141 finding, HIGH). On real
+- [x] T145 [A] **`parseEventDate` fails on real RU/UK date formats** (T141 finding, HIGH). On real
   ingested posts most events get `start_date=null` (worldafisha 53 / valenciarusa 20 / vidacultural 12 /
   valenciabonita-tg 5). The dates ARE present — "МАР 18 19:00", "16 декабря", "30 ноября", "18 марта 2027",
   "23 липня" (Ukrainian) — but the parser doesn't recognise RU/UK month names + abbreviations. Date is the
   core of an afisha → top quality fix. Extend `parseEventDate` (worldafisha.ts, shared) with deterministic
   RU + UK month parsing (full names + abbrevs МАР/ДЕК/…, "DD месяц [YYYY]", "месяц DD"); test against the
   real strings; then re-normalize. Deterministic JS only (T140).
+  *(DONE 2026-06-21 — `parseEventDate` rewritten: RU nominative+genitive months + 3-letter abbrevs (any
+  case) + UK months (липня=July, грудня=Dec…) + numeric DD.MM/DD-MM + BOTH day-first and month-first word
+  order; year-inference = next occurrence on/after `today` (month AND day); fixed a /u-flag `\b` bug that
+  skipped leading Cyrillic via a Unicode lookbehind. Signature preserved; flows to ALL normalizers reusing
+  it. 16/16 worldafisha tests, 155/155 total, build green. **Verified END-TO-END on the live DB**: deleted
+  the 44 stale-parser events, reset `source_items`→pending, re-`normalizeAll()` → **35/44 events now dated**
+  (was ~null). KEY FINDING for **T144**: the SEED's `events.json` was itself built with the OLD parser, so
+  it carries stale null-dates — the local-first re-bake must re-normalize with this fixed parser. The local
+  DB was restored to the canonical seed afterwards; the 898 raw `source_items` persist.)*
 
 - [ ] T146 [A] **Web normalizers ingest junk "events" (nav/contact/list cruft)** (T141 finding). The
   generic web parse + valenciarusa normalizer emit non-events: title `info@valenciarusa.es`, venue

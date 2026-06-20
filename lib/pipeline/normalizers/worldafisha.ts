@@ -31,70 +31,135 @@ function parseRaw(item: RawItem): RawWeb {
   }
 }
 
-// Month names (RU + ES + EN stems) → 1-based month. Substring-keyed so "июня",
-// "июнь", "junio", "june" all resolve.
+// Month names → 1-based month. Substring-keyed so a stem matches all inflections.
+// Covers RU (nominative + genitive), RU 3-letter abbreviations (any case),
+// UK/Ukrainian (nominative + genitive), plus ES + EN stems. ORDER MATTERS: more
+// specific stems must precede shorter ones that could prefix-match the wrong month.
+// `словарь`: e.g. genitive RU "декабря" → `декаб`; UK "грудня" (Dec) → `груд`;
+// UK "липня" (July!) → `лип`; UK "березня" (March) → `берез`. The RU 3-letter
+// abbreviations ("МАР", "ДЕК", "ЯНВ") are handled by anchored `^abbr$`-style stems
+// in `MONTH_ABBR` below (used for the MONTH-first "МАР 18" form) and also caught
+// here for the day-first form because the stems start at the abbreviation.
 const MONTHS: Array<[RegExp, number]> = [
-  [/янв|enero|january|jan/i, 1],
-  [/февр|febrero|february|feb/i, 2],
-  [/март|марта|marzo|march|mar/i, 3],
-  [/апрел|abril|april|apr/i, 4],
-  [/ма[йя]|mayo|may/i, 5],
-  [/июн|junio|june|jun/i, 6],
-  [/июл|julio|july|jul/i, 7],
-  [/авг|agosto|august|aug/i, 8],
-  [/сент|septiembre|september|sep/i, 9],
-  [/октяб|octubre|october|oct/i, 10],
-  [/нояб|noviembre|november|nov/i, 11],
-  [/декаб|diciembre|december|dec/i, 12],
+  // январь/января, янв, січня/січень, enero, january/jan
+  [/янв|січ|enero|january|jan/i, 1],
+  // февраль/февраля, фев, лютий/лютого, febrero, february/feb
+  [/фев|лют|febrero|february|feb/i, 2],
+  // март/марта, мар, березень/березня, marzo, march/mar
+  [/март|мар(?![тз])|берез|marzo|march|mar/i, 3],
+  // апрель/апреля, апр, квітень/квітня, abril, april/apr
+  [/апр|квіт|abril|april|apr/i, 4],
+  // май/мая, травень/травня, mayo, may
+  [/ма[йя]|трав|mayo|may/i, 5],
+  // июнь/июня, июн, червень/червня, junio, june/jun
+  [/июн|черв|junio|june|jun/i, 6],
+  // июль/июля, июл, липень/липня (UK July!), julio, july/jul
+  [/июл|лип|julio|july|jul/i, 7],
+  // август/августа, авг, серпень/серпня, agosto, august/aug
+  [/авг|серп|agosto|august|aug/i, 8],
+  // сентябрь/сентября, сен, вересень/вересня, septiembre, september/sep
+  [/сен|верес|septiembre|september|sep/i, 9],
+  // октябрь/октября, окт, жовтень/жовтня, octubre, october/oct
+  [/окт|жовт|octubre|october|oct/i, 10],
+  // ноябрь/ноября, ноя, листопад/листопада, noviembre, november/nov
+  [/ноя|листопад|noviembre|november|nov/i, 11],
+  // декабрь/декабря, дек, грудень/грудня, diciembre, december/dec
+  [/дек|груд|diciembre|december|dec/i, 12],
 ];
+
+// Anchored RU/UK/ES/EN month stems for the MONTH-first numeric form ("МАР 18",
+// "ДЕК 11"). Whole-word matched (case-insensitive) so a bare "МАР"/"мар"/"march"
+// resolves but a longer word that merely starts the same isn't a false positive.
+function monthFromWord(word: string): number {
+  const w = word.trim();
+  for (const [re, m] of MONTHS) {
+    if (re.test(w)) return m;
+  }
+  return 0;
+}
 
 function pad(n: number): string {
   return String(n).padStart(2, "0");
 }
 
-// PURE: best-effort ISO date (YYYY-MM-DD) from free RU/ES/EN text. Handles
-// "21 июня 2026", "21 июня", "21 de junio", "2026-06-21", "21.06.2026", "21/06".
-// Returns null when no usable date is present (the event can still render undated).
+// Resolve a (month, day) with no explicit year to the NEXT occurrence on/after the
+// reference date `today` (local-date semantics): Dec seen in June → this year;
+// Jan seen in Dec → next year; same month but the day already passed → next year.
+function inferYear(month: number, day: number, today: Date): number {
+  const y = today.getFullYear();
+  const todayMonth = today.getMonth() + 1;
+  const todayDay = today.getDate();
+  if (month < todayMonth || (month === todayMonth && day < todayDay)) {
+    return y + 1;
+  }
+  return y;
+}
+
+// PURE: best-effort ISO date (YYYY-MM-DD) from free RU/UK/ES/EN text. Returns the
+// FIRST plausible date found. Handles, in priority order:
+//   • ISO "2026-06-21"
+//   • numeric "21.06.2026" / "21/06/26" / "21-06" (DD.MM[.YYYY])
+//   • MONTH-first abbreviations "МАР 18", "ДЕК 11" (RU uppercase posts)
+//   • day-first named "16 декабря", "18 марта 2027", "23 липня", "10 de junio"
+// YEAR INFERENCE: a 4-digit year in the text wins; otherwise the next occurrence
+// on/after `today` (injectable for deterministic tests; defaults to the real now).
+// Relative/fuzzy phrases ("на початку липня" = "early July") have no day → they
+// fall through to null (DECISION: we do NOT guess first-of-month; an undated event
+// still renders, and a wrong pin is worse than none). Returns null when nothing
+// usable is present.
 export function parseEventDate(text?: string | null, today: Date = new Date()): string | null {
   const t = compact(text);
   if (!t) return null;
 
-  // ISO already present
+  // ISO already present (highest confidence)
   const iso = /(\d{4})-(\d{2})-(\d{2})/.exec(t);
   if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
 
-  // numeric DD.MM.YYYY / DD/MM/YYYY / DD-MM-YYYY (also DD.MM with no year)
+  // numeric DD.MM.YYYY / DD/MM/YYYY / DD-MM-YYYY (also DD.MM / DD-MM with no year)
   const num = /\b(\d{1,2})[.\/-](\d{1,2})(?:[.\/-](\d{2,4}))?\b/.exec(t);
   if (num) {
     const day = Number(num[1]);
     const month = Number(num[2]);
-    let year = num[3] ? Number(num[3]) : today.getFullYear();
-    if (year < 100) year += 2000;
+    let year = num[3] ? Number(num[3]) : 0;
+    if (year && year < 100) year += 2000;
     if (day >= 1 && day <= 31 && month >= 1 && month <= 12) {
-      // if no year and the date already passed this year, roll to next year
-      if (!num[3] && month < today.getMonth() + 1) year += 1;
+      if (!year) year = inferYear(month, day, today);
       return `${year}-${pad(month)}-${pad(day)}`;
     }
   }
 
-  // "<day> <monthName> [<year>]" (RU/ES, optional "de")
-  const named = /\b(\d{1,2})\s+(?:de\s+)?([A-Za-zА-Яа-яёЁ]{3,})\.?(?:\s+(?:de\s+)?(\d{4}))?/u.exec(t);
-  if (named) {
-    const day = Number(named[1]);
-    const monthWord = named[2];
-    let month = 0;
-    for (const [re, m] of MONTHS) {
-      if (re.test(monthWord)) {
-        month = m;
-        break;
-      }
-    }
-    if (month && day >= 1 && day <= 31) {
-      let year = named[3] ? Number(named[3]) : today.getFullYear();
-      if (!named[3] && month < today.getMonth() + 1) year += 1;
-      return `${year}-${pad(month)}-${pad(day)}`;
-    }
+  // Collect day-first and month-first named candidates, then return whichever
+  // appears FIRST in the text (so "первый plausible date" holds across forms).
+  let best: { index: number; iso: string } | null = null;
+  const consider = (index: number, month: number, day: number, year4?: string) => {
+    if (!month || day < 1 || day > 31) return;
+    const year = year4 ? Number(year4) : inferYear(month, day, today);
+    const candidate = { index, iso: `${year}-${pad(month)}-${pad(day)}` };
+    if (!best || candidate.index < best.index) best = candidate;
+  };
+
+  // day-first: "<day> <monthName> [<year>]" (RU/UK/ES, optional "de")
+  const dayFirst =
+    /\b(\d{1,2})\s+(?:de\s+)?([A-Za-zА-Яа-яёЁЇїІіЄєҐґ]{3,})\.?(?:\s+(?:de\s+)?(\d{4}))?/u;
+  const dm = dayFirst.exec(t);
+  if (dm) consider(dm.index, monthFromWord(dm[2]), Number(dm[1]), dm[3]);
+
+  // month-first: "<monthName> <day> [<year>]" — real RU posts use uppercase
+  // abbreviations ("МАР 18", "ДЕК 11"). The month word leads, the day follows.
+  // NOTE: no leading `\b` — in a `u`-flagged regex `\b` is ASCII-only and never
+  // matches before a Cyrillic letter, so a leading "ДЕК"/"ЯНВ" would be skipped.
+  // `(?<![\p{L}\d])` is a Unicode-aware left boundary instead.
+  const monthFirst =
+    /(?<![\p{L}\d])([A-Za-zА-Яа-яёЁЇїІіЄєҐґ]{3,})\.?\s+(\d{1,2})(?:[^\d]{0,12}?(\d{4}))?/u;
+  const mf = monthFirst.exec(t);
+  if (mf) {
+    const month = monthFromWord(mf[1]);
+    // guard: don't let the month-first branch swallow a "<day> <month>" hit — only
+    // accept when the leading word actually resolves to a month.
+    if (month) consider(mf.index, month, Number(mf[2]), mf[3]);
   }
+
+  if (best) return (best as { index: number; iso: string }).iso;
   return null;
 }
 

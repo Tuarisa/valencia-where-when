@@ -258,6 +258,17 @@ title cruft), **T147/T148** (above). **T144 part 1 DONE [~]**: `scripts/export-s
 export-seed`) — read-only SELECT dump of the live DB → seed JSON (round-trips via `db:setup`; defaults to
 scratch `data/seed-export/`, `--commit` → `data/seed`; mirrors `seed.mjs` cols incl. enrich). Gate: build
 green, **144/144** tests.
+**Tick F (T145 DONE [x] — parseEventDate RU/UK, ultracode Workflow `w2gb5i4au`).** `parseEventDate`
+(worldafisha.ts, shared by ALL normalizers) rewritten: RU nominative+genitive months + 3-letter abbrevs
+(any case, МАР/ДЕК) + UK months (липня=July…) + numeric + day-first AND month-first; year-inference = next
+occurrence on/after `today` (month+day); fixed a `/u`-flag `\b` bug skipping leading Cyrillic. Signature
+preserved. Both verify lenses `ok`; 16/16 worldafisha, **155/155** total, clean build green. **Verified
+END-TO-END on the live DB**: re-`normalizeAll()` → **35/44 events now dated** (was ~null). **KEY FINDING →
+T144**: the SEED `events.json` was built with the OLD parser (stale null-dates) → the local-first re-bake
+must re-normalize with this fixed parser. **DB-persistence lesson**: seed events ALSO carry `source_item_id`,
+so it does NOT distinguish freshly-ingested rows — used a clean delete+reseed; the **898 raw `source_items`
+persist** (canonical seed restored, 406 events). Filed earlier this session: T146/T147/T148 (web junk /
+rutatuta hex-escape / cac fetch-fail). Gate: build green, 155/155.
 
 **Non-negotiables** (see constitution v1.1.0): append-only raw `source_items`; dedup
 keeps a link to every source (via `entity_sources`) and never merges on fallback geo
