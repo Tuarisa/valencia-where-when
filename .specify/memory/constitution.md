@@ -1,5 +1,20 @@
 <!--
 Sync Impact Report
+- Version change: 1.0.0 → 1.1.0
+- Amended: 2026-06-20 (spec consolidation into 001-valencia-radar)
+- Modified principles:
+  - IV. Batched, Resilient Enrichment — engine reworded from "`claude -p`
+    enrichment" to "LLM enrichment (Anthropic SDK primary, `claude -p` fallback)";
+    rationale = constrained-decoding schema guarantees + mockable, testable client.
+  - V. Static-First, Cron-Driven — canonical pipeline order changed from
+    `ingest → normalize → dedup → score → tag → geo → enrich` to
+    `ingest → normalize → dedup → score → tag → enrich → geo`; rationale = enrich
+    fills clean venue/address so geo geocodes more rows (raises SC-004 ≥80%).
+- Modified sections: Technology & Data Constraints — added Anthropic TypeScript
+  SDK (`@anthropic-ai/sdk`) and Vercel Workflow SDK (`workflow`) to the fixed stack.
+- Templates requiring updates: none (principles map unchanged; spec set already
+  written against v1.1.0).
+- Prior report (v1.0.0) ----------------------------------------------------------
 - Version change: (template) → 1.0.0
 - Ratification: initial adoption 2026-06-20
 - Modified principles: none (initial authoring)
@@ -57,17 +72,26 @@ other from building or shipping. Rationale: events and places have different
 cadences and data shapes; coupling them creates fragility.
 
 ### IV. Batched, Resilient Enrichment
-`claude -p` enrichment (poster OCR, Russian translation, title/body split) MUST
-run in background or cron batches, never as a single long blocking call —
-prior single calls hit 180s/60s CLI timeouts. Enrichment MUST be incremental and
-idempotent, and a failed or partial enrichment MUST NEVER corrupt the base record
-(the un-enriched event/place remains valid and renderable). Rationale: enrichment
-is best-effort decoration on top of already-valid data; it must fail soft.
+LLM enrichment (poster OCR, Russian translation, title/body split, link/fact
+extraction) MUST run in background or cron batches, never as a single long
+blocking call — prior single calls hit 180s/60s CLI timeouts. The engine is the
+**Anthropic TypeScript SDK** (`@anthropic-ai/sdk`) with constrained-decoding
+structured output as the primary path, behind an injectable client so it is
+mockable in tests; **`claude -p` (OAuth, no key) is the offline/no-key fallback**
+behind the same interface. Enrichment MUST be incremental and idempotent (per-item
+`enriched_at` bookkeeping), and a failed or partial enrichment MUST NEVER corrupt
+the base record (the un-enriched event/place remains valid and renderable);
+enrichment MUST ground or flag every added fact, never invent dates/prices/venues.
+Rationale: enrichment is best-effort decoration on top of already-valid data; it
+must fail soft, and constrained decoding is the only way to guarantee the output
+schema and keep the path testable.
 
 ### V. Static-First, Cron-Driven
 The site MUST read from the database and render deterministically; it MUST NOT
 perform live scraping or heavy enrichment at request time. The pipeline
-(ingest → normalize → dedup → score → tag → geo → enrich) runs on a schedule.
+(ingest → normalize → dedup → score → tag → enrich → geo) runs on a schedule
+(dedup immediately after normalize; enrich before geo so enrich-filled
+venue/address raise geo coverage).
 Notifications MUST be opt-in and explicit (digest dispatch is a deliberate action
 with `mark notified` bookkeeping) and MUST NEVER auto-spam. Rationale: predictable
 reads, cheap hosting, and no surprise outbound messages.
@@ -84,8 +108,11 @@ git history.
 
 - **Stack is fixed**: Next.js 14 App Router + React 18, Neon serverless Postgres
   via `@neondatabase/serverless`, TypeScript pipeline in `lib/pipeline/`, deployed
-  on Vercel with cron. Changing a core technology requires a constitution
-  amendment.
+  on Vercel with cron. Durable pipeline/enrich/digest jobs run on the **Vercel
+  Workflow SDK** (`workflow`, `use workflow`/`use step`) to escape the 300s cap
+  with per-step retries; LLM enrichment uses the **Anthropic TypeScript SDK**
+  (`@anthropic-ai/sdk`, constrained decoding) with a `claude -p` fallback (see
+  Principle IV). Changing a core technology requires a constitution amendment.
 - **Telegram sources** are read via public `t.me/s/<channel>` web preview only —
   no login, no bot subscription, no MTProto user session unless a specifically
   required channel is private (which requires explicit approval).
@@ -105,7 +132,7 @@ git history.
   `npm run pipeline:run` against a database before merge where feasible.
 - **One task per iteration**: autonomous work picks a single task from `tasks.md`
   / `WORKBOARD.md`, implements, builds, and commits with a descriptive message.
-- **Source of truth**: `specs/001-valencia-events/spec.md` is authoritative for
+- **Source of truth**: `specs/001-valencia-radar/spec.md` is authoritative for
   product intent; `WORKBOARD.md` tracks operational backlog; this constitution
   governs how work is done.
 
@@ -122,4 +149,4 @@ All plans and specs MUST pass a Constitution Check against these principles befo
 implementation. Complexity that violates a principle MUST be justified in writing
 or rejected. Runtime development guidance for agents lives in `CLAUDE.md`.
 
-**Version**: 1.0.0 | **Ratified**: 2026-06-20 | **Last Amended**: 2026-06-20
+**Version**: 1.1.0 | **Ratified**: 2026-06-20 | **Last Amended**: 2026-06-20

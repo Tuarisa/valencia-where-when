@@ -1,14 +1,20 @@
 {
   "version": "1.0",
-  "updated": "2026-06-20T13:28:26Z",
+  "updated": "2026-06-20T13:37:05Z",
   "directories": [
     {
       "path": "./specs",
-      "specsCount": 7,
+      "specsCount": 8,
       "isDefault": true
     }
   ],
   "specs": [
+    {
+      "name": "pipeline",
+      "path": "./specs/pipeline",
+      "phase": "research",
+      "awaitingApproval": true
+    },
     {
       "name": "llm-testing",
       "path": "./specs/llm-testing",

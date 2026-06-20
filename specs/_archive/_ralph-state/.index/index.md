@@ -3,18 +3,19 @@
 Auto-generated summary of all specs across configured directories.
 See [index-state.json](./index-state.json) for machine-readable data.
 
-**Last updated:** 2026-06-20T13:28:26Z
+**Last updated:** 2026-06-20T13:37:05Z
 
 ## Directories (1)
 
 | Directory | Specs | Default |
 |-----------|-------|---------|
-| ./specs | 7 | Yes |
+| ./specs | 8 | Yes |
 
-## All Specs (7)
+## All Specs (8)
 
 | Spec | Directory | Phase | Status |
 |------|-----------|-------|--------|
+| pipeline | ./specs | research | awaiting approval |
 | llm-testing | ./specs | research | awaiting approval |
 | 001-valencia-events | ./specs | tasks | 5/55 tasks |
 | vercel-workflow | ./specs | research | awaiting approval |

@@ -1,25 +1,50 @@
 <!-- SPECKIT START -->
 # Valencia Radar — agent context
 
-**Active feature**: `001-valencia-events`
-**Spec**: `specs/001-valencia-events/spec.md`
-**Plan**: `specs/001-valencia-events/plan.md`
-**Tasks**: `specs/001-valencia-events/tasks.md`
-**Constitution**: `.specify/memory/constitution.md` (v1.0.0)
+**Active feature**: `001-valencia-radar`
+**Spec**: `specs/001-valencia-radar/spec.md`
+**Plan**: `specs/001-valencia-radar/plan.md`
+**Tasks**: `specs/001-valencia-radar/tasks.md`
+**Research (all decisions)**: `specs/001-valencia-radar/research.md`
+**Data model**: `specs/001-valencia-radar/data-model.md`
+**Constitution**: `.specify/memory/constitution.md` (v1.1.0)
+
+> Consolidated 2026-06-20: the original `001-valencia-events` feature and seven
+> research-only ralph specs (pipeline, dedup, card-enrich, repeateable-events,
+> llm-testing, local-run, vercel-workflow) were merged into this single feature
+> (sub-areas A–I). The originals are preserved under `specs/_archive/`. The project
+> now uses **speckit only**; the active feature is resolved via `.specify/feature.json`.
 
 **Stack**: Next.js 14 (App Router) + React 18, Neon serverless Postgres
-(`@neondatabase/serverless`), Vercel cron, TypeScript pipeline in `lib/pipeline/`.
+(`@neondatabase/serverless`), Vercel cron + **Vercel Workflow SDK** (`workflow`),
+**Anthropic SDK** (`@anthropic-ai/sdk`, enrichment; `claude -p` fallback), TypeScript
+pipeline in `lib/pipeline/`.
 
-**Pipeline**: ingest → normalize → score → tag → geo (existing in `run.ts`);
-MISSING and to be built: cross-source **dedup**, batched **enrich** (`claude -p`
-OCR + RU translate), **notify** (weekly digest + rare alert), full multi-source
-**normalizers**, wider **geo**, **places/restaurants catalog** surface.
+**Pipeline (canonical order, v1.1.0)**: ingest → normalize → **dedup** → score → tag
+→ **enrich** → geo. Existing in `run.ts`: ingest/normalize(registry)/score/tag/geo +
+a first dedup pass. TO BUILD: two-layer **dedup** for events+places (`entity_sources`,
+geo guard, convention fix + 90-row seed migration), **recurring** model
+(`event_series`+`event_occurrences`, Hemisfèric 104→11), SDK **enrich** (grounded,
+confidence), **notify** (weekly digest + rare alert, events+places), adaptive
+multi-source **ingestion** + dispatcher, **Vercel Workflow** substrate,
+**places catalog** surface, **local-dev** (Docker+Neon proxy) + **LLM eval** tooling.
 
 **Key commands**: `npm run build` (compile gate — must be green before commit),
-`npm run dev`, `npm run db:setup`, `npm run pipeline:run`, `node --test tests/`.
+`npm run dev`, `npm run db:setup`, `npm run pipeline:run`, `npm test` (`node --test`);
+local dev (sub-area H, wired): `npm run db:local:up` → `npm run db:local:setup` →
+`npm run dev:local` → `npm run db:local:down` (Docker Postgres + Neon HTTP proxy;
+shim gated on `db.localtest.me`, see `LOCAL_RUN.md`); eval (key-gated): `npm run eval`.
 
-**Non-negotiables** (see constitution): append-only raw `source_items`; dedup keeps
-links to every source; enrichment is batched/fail-soft (never one long `claude -p`
-call); notifications opt-in + de-duplicated; site renders deterministically from the
-DB; every autonomous change builds green and commits.
+**Progress**: Phase 0 done (T001 harness 8/8, T002 GH-Actions scheduler skeleton,
+T003 `.env.example`). Sub-area H local stack wired (T080–T083). One-off **Feria de
+Julio 2026** source seeded (`web:feriadejuliovlc`, +43 events → seed totals: 385
+events / 23 sources / 14 places / 216 media). Commit + push per task (default branch
+`main`). Next code-only: T010 parser registry, T032 dedup convention fix, T050 enrich.
+
+**Non-negotiables** (see constitution v1.1.0): append-only raw `source_items`; dedup
+keeps a link to every source (via `entity_sources`) and never merges on fallback geo
+alone; all schema changes additive (`IF NOT EXISTS`); enrichment is batched/fail-soft
+on the Anthropic SDK, grounds-or-flags facts (never invents); notifications opt-in +
+de-duplicated for events AND places; recurring schedules idempotent; site renders
+deterministically from the DB; every autonomous change builds green and commits.
 <!-- SPECKIT END -->
