@@ -1,10 +1,10 @@
 {
   "version": "1.0",
-  "updated": "2026-06-20T13:14:22Z",
+  "updated": "2026-06-20T13:20:33Z",
   "directories": [
     {
       "path": "./specs",
-      "specsCount": 5,
+      "specsCount": 6,
       "isDefault": true
     }
   ],
@@ -31,6 +31,12 @@
     {
       "name": "card-enrich",
       "path": "./specs/card-enrich",
+      "phase": "research",
+      "awaitingApproval": true
+    },
+    {
+      "name": "repeateable-events",
+      "path": "./specs/repeateable-events",
       "phase": "research",
       "awaitingApproval": true
     },

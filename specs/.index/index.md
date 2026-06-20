@@ -3,15 +3,15 @@
 Auto-generated summary of all specs across configured directories.
 See [index-state.json](./index-state.json) for machine-readable data.
 
-**Last updated:** 2026-06-20T13:14:22Z
+**Last updated:** 2026-06-20T13:20:33Z
 
 ## Directories (1)
 
 | Directory | Specs | Default |
 |-----------|-------|---------|
-| ./specs | 5 | Yes |
+| ./specs | 6 | Yes |
 
-## All Specs (5)
+## All Specs (6)
 
 | Spec | Directory | Phase | Status |
 |------|-----------|-------|--------|
@@ -19,6 +19,7 @@ See [index-state.json](./index-state.json) for machine-readable data.
 | 001-valencia-events | ./specs | tasks | 5/55 tasks |
 | vercel-workflow | ./specs | research | awaiting approval |
 | card-enrich | ./specs | research | awaiting approval |
+| repeateable-events | ./specs | research | awaiting approval |
 | local-run | ./specs | research | awaiting approval |
 
 ---
