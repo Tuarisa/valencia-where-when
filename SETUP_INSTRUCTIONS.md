@@ -10,16 +10,14 @@ cd ~/Documents/Claude/Projects/Valencia-where-when
 
 ## 1. Залить проект в GitHub (репозиторий уже создан: `Tuarisa/valencia-where-when`)
 
-Я уже сделал первый коммит локально. Осталось привязать remote и запушить:
+Git уже инициализирован и связан с remote `origin`. История запушена в `main`.
+Дальше работаем как обычно:
 
 ```bash
-git remote add origin https://github.com/Tuarisa/valencia-where-when.git
-git branch -M main
-git push -u origin main
+git add -A
+git commit -m "..."
+git push
 ```
-
-> Если попросит логин — вбей GitHub-username и **Personal Access Token** вместо пароля
-> (Settings → Developer settings → Tokens). Или, если стоит GitHub CLI: `gh auth login`.
 
 ---
 
