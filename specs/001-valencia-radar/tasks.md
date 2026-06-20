@@ -99,7 +99,7 @@ exist, raw layer still append-only.
 
 ## Sub-area B: Pipeline Architecture & Vercel Workflow (FR-016/020)
 
-- [ ] T020 [B] Reorder `lib/pipeline/run.ts` to the canonical order
+- [x] T020 [B] Reorder `lib/pipeline/run.ts` to the canonical order
   **ingest → normalize → dedup → score → tag → enrich → geo** (dedup after normalize;
   enrich before geo) — corrects old T025 (research R1/R7).
 - [ ] T021 [B] `npm i workflow`; wrap `next.config.mjs` with `withWorkflow`; remove
@@ -218,7 +218,7 @@ exist, raw layer still append-only.
 - [x] T052 [E] Ground-or-flag anti-hallucination + confidence/notes/citations; model
   tiering (Haiku default, Opus on poster/low-confidence/conflict); enrich does NOT
   geocode (research E6/E7).
-- [~] T053 [P] [E] Optional web augmentation behind `{web}` flag (`web_search` +
+- [x] T053 [P] [E] Optional web augmentation behind `{web}` flag (`web_search` +
   `web_fetch`, two-turn shape, `max_uses:3`); offline app-fetch fallback +
   `claude -p` fallback path (research E5/R3).
 - [x] T054 [E] Target series too: enrich runs once per `event_series` (not per

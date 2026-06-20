@@ -112,6 +112,17 @@ valenciarusa, vidacultural normalizers, registered + fail-soft (run end-to-end o
 Home.tsx + need `npm i workflow`): round-2 bundles **B** (pipeline order: enrich before geo
 in run.ts; `withWorkflow`; T022/T055 workflows) then **D+F** (Hemisfèric→series cutover
 T042–T044; places catalog + map T060–T065).
+**Round-2 started (inline, safe parts)**: **T020 done** — enrich slot wired into
+`run.ts` BEFORE geo, gated on an injected `enrichClient` (off the default fast/key-free
+path; the workflow or a local keyed run passes one). **`claude -p` EnrichClient built**
+(`lib/pipeline/enrich-client.ts`, `createClaudeEnrichClient`) — the DEFAULT key-free
+engine (subscription/OAuth, shells out like the crawler), `{web}` flag → WebFetches the
+card's source links to GROUND facts + cite them; pure helpers `enrichSourceLinks`/
+`buildEnrichPrompt`/`extractJsonObject` + 6 tests (82/82, tsc=0). This completes **T053**
+([x]) and the engine half of **T051** (still `[~]`: poster-image OCR remains). STILL
+DEFERRED (touch `next dev`/package.json — do carefully): T021 `npm i workflow` +
+`withWorkflow` in `next.config.mjs` + drop `vercel.json` maxDuration; then T022/T055
+workflows.
 
 **Non-negotiables** (see constitution v1.1.0): append-only raw `source_items`; dedup
 keeps a link to every source (via `entity_sources`) and never merges on fallback geo
