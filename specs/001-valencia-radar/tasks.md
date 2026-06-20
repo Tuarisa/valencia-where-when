@@ -429,7 +429,7 @@ exist, raw layer still append-only.
   `hasNonSpainSignal` with ES+RU city/region/España signals (Valencia/Madrid/Barcelona/…),
   keeps only explicit-Spain items (drops non-Spain + location-less to avoid overload);
   +3 tests (36/36). WIRE into the concerten normalizer when it lands (T112).)*
-- [ ] T136 [A] **worldafisha ≈ concerten overlap → dedup** (user, `backlog:`). Both
+- [~] T136 [A] **worldafisha ≈ concerten overlap → dedup** (user, `backlog:`). Both
   sources ALREADY exist: `web:worldafisha` (id 9, `https://worldafisha.com/events/ispaniya`)
   and `tg:concerten` (id 2) — both are the same "Зарубежная афиша" RU-artist-tours feed,
   so they list the SAME concerts. No new source to add. The actionable part: cross-source
@@ -438,6 +438,11 @@ exist, raw layer still append-only.
   Verify `lib/pipeline/dedup.ts` `titleSignature` + ≥2-source `isMergeableGroup` already
   collapses these (artist name + date + Spanish city), and that the merged record carries
   both `entity_sources` rows. Add a focused test once both normalizers (T112) land.
+  *(VERIFY-HALF DONE: `tests/dedup.test.mjs` "T136: worldafisha ≈ concerten PAIR" — the
+  exact 2-feed pair (`web:worldafisha`+`tg:concerten`, same RU-artist tour, differing
+  title framing) collapses to ONE survivor that KEEPS both source links; proves the
+  ≥2-distinct-source threshold triggers on the pair alone. 118/118. LIVE wiring still
+  pending T112 (concerten normalizer) + real `source_items` to exercise `entity_sources`.)*
 - [x] T137 [B] **Drop deprecated `fetchConnectionCache`** (user, `backlog:`). `lib/db.ts:3`
   sets `neonConfig.fetchConnectionCache = true;` — in current `@neondatabase/serverless`
   this option is DEPRECATED (connection caching is always on now), so the line is a

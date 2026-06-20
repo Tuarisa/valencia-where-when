@@ -310,6 +310,57 @@ test('isMergeableGroup: cross-source merges, same-source/untitled do not', () =>
   assert.equal(isMergeableGroup(untitled), false, 'untitled signature must not merge');
 });
 
+test('T136: worldafisha ≈ concerten PAIR — same RU-artist tour merges, both source links kept', () => {
+  // Both sources are the SAME "Зарубежная афиша" RU-artist-tours feed, so they list
+  // the SAME concert. Real source keys (web:worldafisha id 9, tg:concerten id 2). This
+  // proves the EXACT T136 scenario: the PAIR alone (no third source helping) is enough
+  // to merge — distinctSourceCount ≥ 2 — and the survivor keeps BOTH source links
+  // (constitution: dedup keeps a link to every source, never drops one).
+  const pair = [
+    {
+      id: 901,
+      title: 'Баста — концерт в Валенсии', // worldafisha framing
+      city: 'Valencia',
+      start_date: '2026-10-04',
+      score: 70,
+      source: 'web:worldafisha',
+      source_url: 'https://worldafisha.com/events/ispaniya/basta',
+      source_weight: 'good',
+    },
+    {
+      id: 902,
+      title: 'Баста. Концерт', // concerten framing (same tour, terser title)
+      city: 'Valencia',
+      start_date: '2026-10-05', // ±1 day — within the date window
+      score: 50,
+      source: 'tg:concerten',
+      source_url: 'https://t.me/concerten/456',
+      source_weight: 'mine',
+    },
+  ];
+
+  // (1) both framings collapse to one signature/group
+  assert.equal(new Set(pair.map((r) => dedupKey(r))).size, 1, 'same dedupKey despite title framing differences');
+  const groups = groupByKey(pair);
+  assert.equal(groups.size, 1, 'exactly one group');
+
+  // (2) the 2-source PAIR is mergeable on its own (≥2 distinct sources)
+  assert.equal(distinctSourceCount(pair), 2);
+  assert.equal(isMergeableGroup(pair), true, 'two distinct overlapping feeds → merge');
+
+  // (3) survivor keeps BOTH source links (every source preserved)
+  const { survivor, losers } = mergeGroup(pair);
+  const urls = JSON.parse(survivor.metadata_json).sources.map((s) => s.source_url).sort();
+  assert.deepEqual(urls, [
+    'https://t.me/concerten/456',
+    'https://worldafisha.com/events/ispaniya/basta',
+  ]);
+  // (4) exactly one loser; the higher-weight worldafisha row survives with its date
+  assert.equal(losers.length, 1);
+  assert.equal(survivor.id, 901, 'higher-weight (good > mine) survives');
+  assert.equal(survivor.start_date, '2026-10-04');
+});
+
 // ---------- Places dedup primitives (mirror of lib/pipeline/dedup.ts T036/T037) ----------
 function jaroWinkler(a, b) {
   const s1 = a ?? '';
