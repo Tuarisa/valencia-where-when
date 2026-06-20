@@ -443,7 +443,7 @@ exist, raw layer still append-only.
   this option is DEPRECATED (connection caching is always on now), so the line is a
   no-op that only emits a deprecation warning. Fix = delete the line (and any stray docs
   mention). Trivial + zero-risk; verify `npm run build` + a local DB connect still work.
-- [ ] T138 [B/I] **Production verification / health-check** (user, `backlog:`). Design how we
+- [x] T138 [B/I] **Production verification / health-check** (user, `backlog:`). Design how we
   confirm the prod pipeline is OK end-to-end: (1) a `/api/health` (or `/api/cron/*?dry=1`)
   route returning pipeline freshness — last `source_runs.finished_at` per source, last
   successful dispatch/refresh/digest, row counts (events/series/places), and stale-source

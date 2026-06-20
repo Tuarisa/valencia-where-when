@@ -139,8 +139,15 @@ Options: build it only on a real Vercel deploy/preview (skip local gate), or pin
 versions / upgrade Next. T023 ✅ (offline run.ts/.mjs path is the live path, verified).
 **OPS:** the logunespa crawler hit the **Claude subscription monthly spend limit** — so
 `claude -p` (crawler AND the default enrich engine) is unavailable until the limit is raised
-(claude.ai/settings/usage); enrich on Vercel needs the SDK path regardless. New backlog:
-**T138** prod verification/health-check.
+(claude.ai/settings/usage); enrich on Vercel needs the SDK path regardless. *(spend limit
+later lifted — crawler resumed.)* **T138 DONE** (`/api/health` + `lib/pipeline/health.ts`
+`sourceStale`/`pipelineWarnings` + `scripts/smoke.mjs`/`npm run smoke` + test; 117/117).
+**LOCAL-ONLY build cruft**: `npm rm workflow` (B revert) left `node_modules` inconsistent,
+so a local `next build` now emits an EMPTY `.next/server/vendor-chunks/` → `npm start`
+500s ("Cannot find module './vendor-chunks/next.js'"). NOT a code bug and NOT in git:
+`package-lock.json` is clean (0 workflow refs), `next dev` works, and Vercel's clean
+install is unaffected. FIX = `npm ci` once the crawler (which is using `node_modules`)
+finishes; then `rm -rf .next && npm run build` emits vendor-chunks and `npm start` serves /.
 
 **Non-negotiables** (see constitution v1.1.0): append-only raw `source_items`; dedup
 keeps a link to every source (via `entity_sources`) and never merges on fallback geo
