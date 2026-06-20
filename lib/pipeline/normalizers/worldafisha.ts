@@ -163,6 +163,40 @@ export function parseEventDate(text?: string | null, today: Date = new Date()): 
   return null;
 }
 
+// PURE (T150): pull a trailing calendar date out of a worldafisha event URL slug.
+// The site encodes the exact date at the END of the slug, e.g.
+//   https://worldafisha.com/event/slava-komissarenko-valensiya-2026-06-21
+//                                                            └─ 2026-06-21
+// Live rows carry ONLY the title in raw_text (no date), so this slug is the single
+// reliable date source for 23/23 of them. Accepts "YYYY-MM-DD" or "YYYY/MM/DD",
+// anchored to the END of the path so an unrelated number mid-slug can't false-match.
+// Validates month 1–12 / day 1–31; returns null when absent or implausible.
+export function dateFromUrl(url?: string | null): string | null {
+  if (!url) return null;
+  // strip any query/hash, then match a trailing date at the end of the path.
+  const path = url.split(/[?#]/)[0];
+  const m = /(\d{4})[-/](\d{2})[-/](\d{2})\/?$/.exec(path);
+  if (!m) return null;
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  return `${m[1]}-${m[2]}-${m[3]}`;
+}
+
+// PURE (T150): a worldafisha row is a real event only when its URL is an `/event/`
+// listing. `/persons/<artist>` rows are artist profile pages (no single date/show);
+// the `/events/ispaniya` index page is the catalogue itself. Both are dropped.
+function isEventUrl(url?: string | null): boolean {
+  return !!url && /\/event\//.test(url);
+}
+
+// PURE (T150): worldafisha marks a cancelled show by suffixing the title with
+// "(отменен)" (RU "cancelled"). We surface it as a flag so downstream can demote
+// rather than silently mislead — the event still carries its real date.
+function isCancelledTitle(title?: string | null): boolean {
+  return /\(отмен/iu.test(title || "");
+}
+
 // PURE: turn pending worldafisha raw rows into event drafts, Spain-filtered. The
 // snapshot row (the whole listing page) is dropped — it has no single event identity;
 // only the per-listing `link_card` rows (and any titled item carrying a Spain signal)
@@ -170,12 +204,15 @@ export function parseEventDate(text?: string | null, today: Date = new Date()): 
 export function buildWorldafishaEvents(
   rows: RawItem[],
   today: Date = new Date(),
-): Array<{ draft: EventInsert; sourceItemId: number }> {
-  const out: Array<{ draft: EventInsert; sourceItemId: number }> = [];
+): Array<{ draft: EventInsert; sourceItemId: number; cancelled: boolean }> {
+  const out: Array<{ draft: EventInsert; sourceItemId: number; cancelled: boolean }> = [];
   for (const item of rows) {
     const raw = parseRaw(item);
     // The full-page snapshot is the index, not an event — skip it.
     if (raw.kind === "page_snapshot") continue;
+    // T150: keep ONLY real `/event/` listings. `/persons/<artist>` profile pages
+    // and the `/events/ispaniya` index are not single events → drop them.
+    if (!isEventUrl(item.url)) continue;
 
     const title = compact(item.title);
     if (!title) continue;
@@ -191,9 +228,13 @@ export function buildWorldafishaEvents(
       continue;
     }
 
-    const start = parseEventDate(haystack, today);
+    // T150: the slug carries the exact date (raw_text is title-only); prefer it,
+    // fall back to free-text parsing only when the URL has no date.
+    const start = dateFromUrl(item.url) ?? parseEventDate(haystack, today);
+    const cancelled = isCancelledTitle(title);
     out.push({
       sourceItemId: item.id,
+      cancelled,
       draft: {
         title: title.slice(0, 300),
         description: compact(item.raw_text)?.slice(0, 2000) ?? null,

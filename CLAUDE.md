@@ -269,6 +269,20 @@ must re-normalize with this fixed parser. **DB-persistence lesson**: seed events
 so it does NOT distinguish freshly-ingested rows — used a clean delete+reseed; the **898 raw `source_items`
 persist** (canonical seed restored, 406 events). Filed earlier this session: T146/T147/T148 (web junk /
 rutatuta hex-escape / cac fetch-fail). Gate: build green, 155/155.
+**Tick G (date recovery toward a clean seed, ultracode Workflow `wq30in27f`).** **T150 DONE [x]** —
+worldafisha `dateFromUrl(url)` extracts the date from the `/event/…-YYYY-MM-DD` slug (preferred over
+text), `isEventUrl` drops 57 non-events (`/persons/` artist pages + index), `cancelled` flag; live: 23/23
+`/event/` dates recovered (was 0/23). **T151 DONE [x]** — built `lib/pipeline/normalizers/fever.ts` (+
+registered); the agent CORRECTED the brief's wrong premise (fever raw_text has NO ISO date — it's a
+flattened card string with SPANISH dates "4 jul"/"5 dic - 6 feb") by inspecting real rows, parses
+deterministically → 45 events / 35 dated, drops nav/snapshot/gift-card. Both verify verdicts were FALSE
+-POSITIVE "scope violation"s (each verifier saw the OTHER bundle's files in the shared `git status` and
+mis-attributed — the impls are file-disjoint + correct). **New finding → T153 (HIGH)**: `spain-filter.ts`
+doesn't match Latin-translit city slugs (valensiya/barselona/alikante) → 21/23 worldafisha Valencia events
+still dropped at the Spain gate. Gate: clean build green, **177/177** tests (155 + 9 worldafisha + 13 fever).
+**Seed-rebuild (user "перестрой seed чтоб без null дат") IN PROGRESS** — recovering dates first (T150/T151
+done; T153/T146/T152 next), then re-normalize on the live DB + export the clean dated seed; the destructive
+`data/seed/` overwrite will be confirmed with the user first (curated feria/fever/logunespa content).
 
 **Non-negotiables** (see constitution v1.1.0): append-only raw `source_items`; dedup
 keeps a link to every source (via `entity_sources`) and never merges on fallback geo

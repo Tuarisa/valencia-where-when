@@ -494,22 +494,37 @@ exist, raw layer still append-only.
   11 series), the feed (ONE card per series), calendar bucketing (`.day-hemis`), and whether a re-ingest/
   re-normalize created duplicate series/occurrences. Likely an occurrence-explosion or a series-dedup gap.
 
-- [ ] T150 [A] **worldafisha: recover date from the event URL slug + drop /persons/ non-events** (T141
+- [x] T150 [A] **worldafisha: recover date from the event URL slug + drop /persons/ non-events** (T141
   finding). worldafisha `source_items` carry only the title in `raw_text` (no date) → 79/80 null-dated.
   But the event URL encodes the date: `/event/aleksandr-gudkov-valensiya-2026-11-09` → 2026-11-09. Also
   many entries are `/persons/<artist>` artist pages (NOT events) → drop them. Fix the worldafisha
   normalizer: parse the date from the `url` slug (deterministic regex, T140) + keep only `/event/` URLs.
+  *(DONE 2026-06-21 — `dateFromUrl(url)` extracts the trailing YYYY-MM-DD from `/event/` slugs (preferred
+  over `parseEventDate(text)`); `isEventUrl` gate drops 57 non-events (56 `/persons/` + 1 index); `cancelled`
+  flag on "(отменен)". Measured on live data: 23/23 `/event/` dates recovered (was 0/23 from text). 25/25
+  worldafisha tests. **Surfaced → T153**: spain-filter doesn't match Latin-translit city slugs so 21/23
+  Valencia/Alicante events are still dropped at the Spain gate.)*
 
-- [ ] T151 [A] **Fever normalizer (ISO-dated, ~81 items)** (T141 finding). `web:fever` has NO normalizer
-  so its date-RICH raw items are ignored (`raw_text` carries ISO `2026-06-30 18:00`). Build a fever events
-  normalizer (parse the ISO datetime + title/venue/price), register it — high yield, easy dates. NOTE: the
-  live fever `raw_text` shows a title/description MISMATCH (generic parse may pair a card title with the
-  wrong body) → verify the fever field pairing.
+- [x] T151 [A] **Fever normalizer (~81 items)** (T141 finding). `web:fever` had NO normalizer so its raw
+  items were ignored. *(DONE 2026-06-21 — `lib/pipeline/normalizers/fever.ts` (`buildFeverEvents` +
+  `normalizeFever`, registered). CORRECTED the brief's wrong premise: fever `raw_text` carries NO ISO
+  datetime — it's a flattened card string `<venue> <show> [<rating>] <day mon>[ - <day mon>] [Desde] <NN,NN> €`
+  with SPANISH dates ("4 jul", "5 dic - 6 feb"). Deterministic parse: strip rating/date/price tail + rank
+  prefix → head, split a known Valencia venue, parse "4 jul"→ISO (+range end, cross-year wrap), "Desde
+  17,50 €"→price. Drops nav anchors / snapshot / gift-card+waitlist. Live: 45 events emitted / 35 dated.
+  13/13 tests. Idempotent ON CONFLICT(dedup_hash).)*
 
 - [ ] T152 [A] **Relative-date parsing for ES telegram (`este fin de semana`, `este mes`)** (T141 finding).
   valenciabonitatelegram posts use relative Spanish dates ("este fin de semana", "este finde", "este mes",
   "hoy"/"mañana") → 15/17 null-dated. Optionally resolve them against the post date (source_item `last_seen`)
   to a concrete weekend/month start. Fuzzy; lower priority than T150/T151.
+
+- [ ] T153 [A] **spain-filter: recognise Latin-transliterated city slugs** (T150 finding, HIGH for
+  worldafisha yield). `spain-filter.ts` matches Latin `madrid`/`malaga` + Cyrillic, but NOT the Latin
+  TRANSLITERATIONS used in worldafisha URL slugs / RU posts: `valensiya`, `barselona`, `marbelya`,
+  `alikante`, `sevilya`, `malaga`(ok)… → 21 of 23 real worldafisha Valencia/Alicante events are dropped at
+  the Spain gate even after T150 recovers their dates. Add translit variants to `hasSpainSignal` city stems
+  (deterministic, T140). Lifts worldafisha (and any translit-slug source) from ~2 to ~23 kept events.
 
 - [~] T130 [F] **logunespa historical place crawl → seed** (user priority; DELEGATED to a
   background subagent so the main loop keeps moving through the plan — places-only,

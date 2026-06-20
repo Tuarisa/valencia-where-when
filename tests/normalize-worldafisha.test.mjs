@@ -107,6 +107,118 @@ function parseEventDate(text, today = new Date()) {
   return best ? best.iso : null;
 }
 
+// --- T150: mirror of dateFromUrl / isEventUrl / isCancelledTitle ---
+function dateFromUrl(url) {
+  if (!url) return null;
+  const path = url.split(/[?#]/)[0];
+  const m = /(\d{4})[-/](\d{2})[-/](\d{2})\/?$/.exec(path);
+  if (!m) return null;
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  return `${m[1]}-${m[2]}-${m[3]}`;
+}
+const isEventUrl = (url) => !!url && /\/event\//.test(url);
+const isCancelledTitle = (title) => /\(отмен/iu.test(title || '');
+
+// --- T150: mirror of buildWorldafishaEvents' keep + date + cancel logic ---
+function buildOne({ title, body = '', url = '' }, today) {
+  // mirror order: snapshot skip is N/A here; /event/ gate; spain gate; date.
+  if (!isEventUrl(url)) return null;
+  const haystack = `${title} ${body} ${url}`;
+  if (!isSpainEvent(haystack)) return null;
+  if (hasNonSpainSignal(haystack) && !isSpainEvent(title)) return null;
+  const start = dateFromUrl(url) ?? parseEventDate(haystack, today);
+  return { start_date: start, cancelled: isCancelledTitle(title) };
+}
+
+test('T150 dateFromUrl: trailing YYYY-MM-DD slug → ISO date', () => {
+  assert.equal(
+    dateFromUrl('https://worldafisha.com/event/aleksandr-gudkov-valensiya-2026-11-09'),
+    '2026-11-09',
+  );
+  // YYYY/MM/DD form and a trailing slash both accepted
+  assert.equal(dateFromUrl('https://worldafisha.com/event/x-2026/11/09'), '2026-11-09');
+  assert.equal(dateFromUrl('https://worldafisha.com/event/x-2026-11-09/'), '2026-11-09');
+  // query/hash stripped before matching
+  assert.equal(dateFromUrl('https://worldafisha.com/event/x-2026-11-09?utm=1'), '2026-11-09');
+});
+
+test('T150 dateFromUrl: no trailing date / implausible / empty → null', () => {
+  assert.equal(dateFromUrl('https://worldafisha.com/persons/aleksandr-gudkov'), null);
+  assert.equal(dateFromUrl('https://worldafisha.com/events/ispaniya'), null);
+  assert.equal(dateFromUrl('https://worldafisha.com/event/x-2026-13-40'), null); // bad month/day
+  assert.equal(dateFromUrl(''), null);
+  assert.equal(dateFromUrl(null), null);
+});
+
+test('T150 isEventUrl: only /event/ URLs are real events', () => {
+  assert.equal(isEventUrl('https://worldafisha.com/event/slava-valensiya-2026-06-21'), true);
+  assert.equal(isEventUrl('https://worldafisha.com/persons/slava-komissarenko'), false);
+  assert.equal(isEventUrl('https://worldafisha.com/events/ispaniya'), false);
+  assert.equal(isEventUrl(''), false);
+});
+
+test('T150 build: /event/ url yields the slug date', () => {
+  const today = new Date('2026-06-21T00:00:00Z');
+  // Spain signal in the title ("Мадрид") so the gate keeps it; slug carries the date.
+  const out = buildOne(
+    { title: 'Александр Гудков в Мадриде', url: 'https://worldafisha.com/event/aleksandr-gudkov-madrid-2026-11-09' },
+    today,
+  );
+  assert.ok(out, '/event/ + Spain signal → kept');
+  assert.equal(out.start_date, '2026-11-09');
+});
+
+test('T150 build: /persons/ artist page is dropped', () => {
+  const today = new Date('2026-06-21T00:00:00Z');
+  assert.equal(
+    buildOne({ title: 'Антон Лирник, Stand Up', url: 'https://worldafisha.com/persons/anton-lirnik-valensiya' }, today),
+    null,
+    '/persons/ profile page is not an event',
+  );
+});
+
+test('T150 build: URL slug date is PREFERRED over a conflicting text date', () => {
+  const today = new Date('2026-06-21T00:00:00Z');
+  const out = buildOne(
+    {
+      title: 'Концерт в Валенсии 15 марта 2099', // text says March 2099
+      url: 'https://worldafisha.com/event/concert-valensiya-2026-11-09', // url says Nov 2026
+    },
+    today,
+  );
+  assert.ok(out);
+  assert.equal(out.start_date, '2026-11-09', 'url slug wins over the text-parsed date');
+});
+
+test('T150 build: no url date falls back to text parsing', () => {
+  const today = new Date('2026-06-21T00:00:00Z');
+  const out = buildOne(
+    { title: 'Концерт в Валенсии 23 липня', url: 'https://worldafisha.com/event/concert-valensiya' },
+    today,
+  );
+  assert.ok(out);
+  assert.equal(out.start_date, '2026-07-23', 'falls back to parseEventDate when slug has no date');
+});
+
+test('T150 isCancelledTitle: "(отменен)" suffix flagged', () => {
+  assert.equal(isCancelledTitle('Oxxxymiron (отменен)'), true);
+  assert.equal(isCancelledTitle('Антон Лирник, Stand Up (отменен)'), true);
+  assert.equal(isCancelledTitle('Иван Ургант - Живой Ургант'), false);
+});
+
+test('T150 build: cancelled flag surfaced on the draft tuple', () => {
+  const today = new Date('2026-06-21T00:00:00Z');
+  const out = buildOne(
+    { title: 'Скриптонит в Валенсии (отменен)', url: 'https://worldafisha.com/event/skriptonit-valensiya-2026-10-09' },
+    today,
+  );
+  assert.ok(out);
+  assert.equal(out.cancelled, true);
+  assert.equal(out.start_date, '2026-10-09', 'cancelled event still carries its real date');
+});
+
 test('parseEventDate: ISO, numeric and named RU/ES dates (existing — must stay green)', () => {
   const today = new Date('2026-06-20T00:00:00Z');
   assert.equal(parseEventDate('2026-07-10', today), '2026-07-10');

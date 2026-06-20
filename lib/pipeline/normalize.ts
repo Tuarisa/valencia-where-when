@@ -5,6 +5,7 @@ import { normalizeValenciarusa, VALENCIARUSA_SOURCE_KEY } from "./normalizers/va
 import { normalizeVidacultural, VIDACULTURAL_SOURCE_KEY } from "./normalizers/vidacultural";
 import { normalizeConcerten, CONCERTEN_SOURCE_KEY } from "./normalizers/concerten";
 import { normalizeValenciabonitaTg, VALENCIABONITA_TG_SOURCE_KEY } from "./normalizers/valenciabonita-telegram";
+import { normalizeFever, FEVER_SOURCE_KEY } from "./normalizers/fever";
 import { markRawItem } from "./normalizers/types";
 
 // Re-export the Hemisfèric path so existing imports keep working.
@@ -25,6 +26,7 @@ export const NORMALIZER_REGISTRY: Map<string, SourceNormalizer> = new Map([
   [VIDACULTURAL_SOURCE_KEY, normalizeVidacultural],
   [CONCERTEN_SOURCE_KEY, normalizeConcerten],
   [VALENCIABONITA_TG_SOURCE_KEY, normalizeValenciabonitaTg],
+  [FEVER_SOURCE_KEY, normalizeFever],
 ]);
 
 // Resolve a normalizer for a source key (pure — testable without a DB).
