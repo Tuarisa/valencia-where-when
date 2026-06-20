@@ -36,3 +36,6 @@ yarn-error.log*
 build.log
 specs/.current-spec
 **/.progress.md
+
+# crawler fetch cache (raw HTML, re-fetched on demand) — keep out of git
+data/.cache/

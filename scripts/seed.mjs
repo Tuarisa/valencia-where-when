@@ -1,7 +1,7 @@
 // Load the migrated data (data/seed/*.json) into the Postgres database.
 // Idempotent: rows are inserted by primary key, conflicts are skipped.
 // Usage: DATABASE_URL=... node scripts/seed.mjs
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { neon } from "@neondatabase/serverless";
@@ -18,7 +18,10 @@ const sql = neon(url);
 const seedDir = join(__dirname, "..", "data", "seed");
 
 function load(name) {
-  return JSON.parse(readFileSync(join(seedDir, name), "utf-8"));
+  // Optional crawl-output files (places-*/events-*) may be absent on a fresh checkout.
+  const p = join(seedDir, name);
+  if (!existsSync(p)) return [];
+  return JSON.parse(readFileSync(p, "utf-8"));
 }
 
 async function insertRows(table, rows) {
@@ -44,7 +47,9 @@ const order = [
   ["sources", "sources.json"],
   ["events", "events.json"],
   ["events", "events-feria-julio-2026.json"], // one-off: Feria de Julio 2026 curated highlights
+  ["events", "events-logunespa.json"], // T130: dated events mined from tg:logunespa posts
   ["places", "places.json"],
+  ["places", "places-logunespa.json"], // T130: historical place recs crawled from tg:logunespa
   ["media_assets", "media_assets.json"],
 ];
 

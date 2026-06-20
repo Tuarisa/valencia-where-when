@@ -76,10 +76,15 @@ engine-agnostic (injectable client), so T051 = build a `claude -p` client (no ke
 **Digest route done** (T071); **PARSER_REGISTRY done** (T010, `resolveParser` in
 ingest.ts). **Ad-hoc user requests go to the "Backlog — user inbox" section of
 tasks.md** (the loop reads tasks.md) — no special command; user may prefix `бэклог:`.
-**Next priority: T130 logunespa per-post place crawl** (public `t.me/<ch>/<n>?embed=1`,
-slow/resumable, `claude -p` extracts name/area/category/desc — heuristic validated as
-insufficient; structural parse gets photo/maps-link/hashtags; → `data/seed/places-logunespa.json`).
-Then T053 `claude -p` enrich client, T022 Workflow, or T042+T043 recurring cutover.
+**T130 logunespa crawl — IN PROGRESS** (user priority). `scripts/crawl-telegram.mjs`
+(via `node --import tsx`) + `lib/pipeline/telegram-post.ts` parser: public
+`t.me/<ch>/<n>?embed=1`, **HTML fetch-cache** in `data/.cache/` (gitignored — no
+re-fetch on re-runs), `claude -p` extraction routes `place`→`data/seed/places-<ch>.json`
+/ dated `event`→`data/seed/events-<ch>.json` (captures date/place/category/price). 4
+records so far (3 places + 1 dated event). Resumable (continues from lowest crawled id);
+run slowly to backfill ~1800 posts. **TODO (user): enrichment must FOLLOW the post's
+source links (claude -p WebFetch) and read them** for fuller data. Backlog: T132 Fever
+drone-show extractor, T133 special-event color categorization. Then T053/T022/T042+T043.
 
 **Non-negotiables** (see constitution v1.1.0): append-only raw `source_items`; dedup
 keeps a link to every source (via `entity_sources`) and never merges on fallback geo
