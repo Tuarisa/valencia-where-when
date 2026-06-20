@@ -404,7 +404,7 @@ exist, raw layer still append-only.
 > turn (no need to interrupt mid-iteration). Prefix a message with `бэклог:` / `backlog:`
 > to mean "record only, don't drop everything."
 
-- [ ] T141 [A/I] **Live-ingest real sources → `source_items` for normalizer debugging**
+- [x] T141 [A/I] **Live-ingest real sources → `source_items` for normalizer debugging**
   (user PERMISSION, 2026-06-21: "технически у нас нет ограничений стянуть из интернета источники
   и занести их в БД как raw source для дальнейшей отладки нормализаторов, разрешаю это делать").
   Fetch REAL source content from the internet and load it into the **local** DB as raw, append-only
@@ -415,6 +415,11 @@ exist, raw layer still append-only.
   SUBSET of enabled sources to populate `source_items` (conditional-GET + paced fetches already wired) →
   run normalize→dedup→… and inspect real output → fix normalizers against real rows. Keep it to the LOCAL
   DB for debugging (not prod).
+  *(DONE 2026-06-21 — live ingest VERIFIED: `ingestAll()` one polite pass → **890 `source_items`**
+  (20 sources ok; 5 err → T147/T148); `normalizeAll()` → **42 events** from REAL data (valenciarusa 20 /
+  vidacultural 10 / concerten 5 / valenciabonita-tg 5 / worldafisha 2; hemisferic idempotent). DB PERSISTS
+  (no teardown). `source_runs` populated (21 ok) → /api/health should now pass (T143 likely auto-closes).
+  Quality findings → **T145–T148**.)*
 
 - [ ] T142 [F] **rutatuta_vlc excursions → distinct colour** (user, `backlog:`). Posts from
   `tg:rutatuta_vlc` are guided EXCURSIONS — they differ from "бездушные общие мероприятия", so give them
@@ -432,7 +437,7 @@ exist, raw layer still append-only.
   a local seed-only health-fail is expected and gate `smoke` on row counts. Likely auto-resolves once
   **T141** live-ingest populates `source_runs`. Low severity; not a render/crash bug.
 
-- [ ] T144 [A/E/I] **Local-first data baking → seed; prod = incremental-only** (user, `backlog:`,
+- [~] T144 [A/E/I] **Local-first data baking → seed; prod = incremental-only** (user, `backlog:`,
   2026-06-21 strategy). Do ALL the heavy lifting LOCALLY and bake the result into `data/seed/`, so
   PROD ships PRE-POPULATED and afterwards collects only INCREMENTAL updates — minimizing AI/compute
   on the server. Concretely: run ingest → normalize → dedup → score → tag → **enrich** (the costly
@@ -445,6 +450,34 @@ exist, raw layer still append-only.
   enriched DB → `data/seed/*.json`), (2) bulk local ingest of all sources, (3) local enrich pass,
   (4) prod incremental-only mode. Relates to T141, T050–T056 (enrich), append-only `source_items` +
   cadence/conditional-GET (already built). Likely warrants its own sub-area / triage decomposition.
+  *(PART 1 DONE: `scripts/export-seed.mjs` (`npm run export-seed`) — read-only SELECT dump of the live DB
+  → seed JSON shape; round-trips via `db:setup`; defaults to scratch `data/seed-export/`, `--commit` →
+  `data/seed`. Mirrors `seed.mjs` columns incl. enrich fields; series/occurrences re-derived by
+  `db:migrate:series`. Remaining: bulk-ingest-all + local enrich pass + prod incremental-only mode.)*
+
+- [ ] T145 [A] **`parseEventDate` fails on real RU/UK date formats** (T141 finding, HIGH). On real
+  ingested posts most events get `start_date=null` (worldafisha 53 / valenciarusa 20 / vidacultural 12 /
+  valenciabonita-tg 5). The dates ARE present — "МАР 18 19:00", "16 декабря", "30 ноября", "18 марта 2027",
+  "23 липня" (Ukrainian) — but the parser doesn't recognise RU/UK month names + abbreviations. Date is the
+  core of an afisha → top quality fix. Extend `parseEventDate` (worldafisha.ts, shared) with deterministic
+  RU + UK month parsing (full names + abbrevs МАР/ДЕК/…, "DD месяц [YYYY]", "месяц DD"); test against the
+  real strings; then re-normalize. Deterministic JS only (T140).
+
+- [ ] T146 [A] **Web normalizers ingest junk "events" (nav/contact/list cruft)** (T141 finding). The
+  generic web parse + valenciarusa normalizer emit non-events: title `info@valenciarusa.es`, venue
+  `valenciarusa.es info@…`; real titles carry a date prefix + "VB" cruft. Add an event-vs-chrome guard
+  (drop contact/nav/footer cards) + title cleanup (strip leading date tokens + trailing source tags). Also
+  a concerten meta-post ("Добавили на сайт 16 событий…") slipped past `looksLikeEvent`.
+
+- [ ] T147 [A] **`tg:rutatuta_vlc` ingest fails — Neon "unexpected end of hex escape"** (T141 finding).
+  `ingestSource('tg:rutatuta_vlc')` errors on INSERT: `could not parse the HTTP request body: unexpected
+  end of hex escape` — a special char/encoding in the post content breaks the parameterised query over the
+  Neon HTTP proxy. Blocks ALL rutatuta data (and T142). Sanitise the raw content before insert; reproduce
+  on the offending post.
+
+- [ ] T148 [A] **`web:cac_*` (4 sources) fetch failed** (T141 finding). `web:cac_agenda/exposiciones/
+  actividades/museu` all returned `TypeError: fetch failed` (cac.es). Investigate TLS/HTTP2, bot-block, or
+  transient; may need a real User-Agent / retry / timeout tuning. 4 of 25 sources currently yield no data.
 
 - [~] T130 [F] **logunespa historical place crawl → seed** (user priority; DELEGATED to a
   background subagent so the main loop keeps moving through the plan — places-only,

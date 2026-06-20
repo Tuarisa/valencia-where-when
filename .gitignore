@@ -39,3 +39,6 @@ specs/.current-spec
 
 # crawler fetch cache (raw HTML, re-fetched on demand) — keep out of git
 data/.cache/
+
+# export-seed.mjs scratch output (T144) — not a deliverable, regenerate from the live DB
+data/seed-export/

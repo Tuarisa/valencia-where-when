@@ -11,6 +11,7 @@
     "test": "node --import tsx --test tests/**/*.test.mjs",
     "db:schema": "node scripts/apply-schema.mjs",
     "db:seed": "node scripts/seed.mjs",
+    "export-seed": "node --import tsx scripts/export-seed.mjs",
     "db:migrate:series": "node --import tsx scripts/migrate-hemisferic-series.mjs",
     "db:setup": "node scripts/apply-schema.mjs && node scripts/seed.mjs && npm run db:migrate:series",
     "pipeline:run": "node --import tsx scripts/run-pipeline.mjs",

@@ -245,6 +245,19 @@ lenses `ok`. **USER DIRECTIVES (2026-06-21, committed `abfe122`):** live interne
 PERMITTED (backlog **T141**; unblocks T033/T034/T136, de-speculates normalizers — see [[valencia-radar-db-gap]]);
 rutatuta_vlc excursions → distinct colour (**T142**, extends T133); `backlog:`-prefixed messages go
 STRAIGHT into the tasks.md backlog (record-only, no deliberation). Build green, **144/144** tests.
+**Tick E (T141 live ingest — DONE [x]; first REAL data in the persistent local DB).** Ran
+`ingestAll()` one polite live pass → **890 `source_items`** (20 sources ok; 5 err: `tg:rutatuta_vlc`
+Neon "unexpected end of hex escape" on insert → T147, `web:cac_*`×4 `fetch failed` → T148), then
+`normalizeAll()` → **42 events from REAL data** (valenciarusa 20 / vidacultural 10 / concerten 5 /
+valenciabonita-tg 5 / worldafisha 2; hemisferic idempotent). The local DB now PERSISTS across ticks
+(never teardown — user rule) and accumulates. `source_runs` populated (21 ok) → /api/health should now
+pass (T143 likely auto-closes). **Inspection found the top quality bug → T145**: `parseEventDate` doesn't
+recognise real RU/UK date formats ("МАР 18", "16 декабря", "23 липня"…) so most events are `start_date=null`
+— next high-value fix (deterministic JS, T140). Also **T146** (web normalizers ingest nav/contact junk +
+title cruft), **T147/T148** (above). **T144 part 1 DONE [~]**: `scripts/export-seed.mjs` (`npm run
+export-seed`) — read-only SELECT dump of the live DB → seed JSON (round-trips via `db:setup`; defaults to
+scratch `data/seed-export/`, `--commit` → `data/seed`; mirrors `seed.mjs` cols incl. enrich). Gate: build
+green, **144/144** tests.
 
 **Non-negotiables** (see constitution v1.1.0): append-only raw `source_items`; dedup
 keeps a link to every source (via `entity_sources`) and never merges on fallback geo
