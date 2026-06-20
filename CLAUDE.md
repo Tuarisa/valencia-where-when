@@ -156,6 +156,16 @@ is BLOCKED without `--allowedTools WebFetch` → model asks permission, returns 
 web-grounding + crawler link-following were SILENTLY broken; both now pass the flag when grounding
 (pure `buildClaudeArgs`). 120/120, tsc=0. **T136 verify-half DONE** (focused worldafisha≈concerten
 PAIR dedup test — both source links kept; live wiring waits on T112 concerten normalizer).
+**T135 PART 1 GEO DONE — DETERMINISTIC (no LLM), per the user's "JS before LLM" rule (T140).**
+`scripts/bake-place-geo.mjs` + `lib/pipeline/geo.ts` `resolvePlaceGeo`/`mapsAddressQuery`: follow
+`maps.app.goo.gl` redirect → geocode the STREET ADDRESS (the maps `q=` leads with the venue NAME,
+which fooled Nominatim into the València city-centre fallback centroid; bare address → exact venue),
+`isCentroid` guard rejects fallback hits (null > fake pin). **46/51 logunespa places mapped (was 14)**,
+coords BAKED into `data/seed/places-logunespa.json` → prod map renders without a slow geocode at
+db:setup; same fix repairs the LIVE geo stage (it was also producing centroids). 124/124. **T140
+(standing rule): prefer deterministic JS over `claude`/LLM wherever rule/keyword extraction works;
+haiku for specific tasks (translation), sonnet only for grounding.** *(loop PAUSED by user after this
+tick — will restart manually; do NOT auto-resume.)*
 **LOCAL prod-build glitch — RESOLVED.** After the workflow churn a local `next start` 500'd
 ("Cannot find module './vendor-chunks/next.js'") from a corrupted `.next` (overlapping /
 truncated builds + dirty `node_modules`). Fixed with `npm ci` + `rm -rf .next && npm run

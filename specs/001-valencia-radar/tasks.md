@@ -411,7 +411,7 @@ exist, raw layer still append-only.
   design using the available design MCP (Vercel `import-claude-design-from-url` /
   `deploy_to_vercel`, or Figma) — proper visual design beyond the first-prototype CSS.
   Out of scope for the minimal CSS pass; do a dedicated design iteration.
-- [ ] T135 [F] **Informative map popups** (user, `backlog:`). Map markers are currently
+- [~] T135 [F] **Informative map popups** (user, `backlog:`). Map markers are currently
   uninformative (often the raw maps-link as the name). Each popup needs a HUMAN-READABLE
   title + a short "why-go" tagline (e.g. "бассейн в парке", "лучшие бургеры") so it's
   clear why you'd go. Two parts: (1) ensure clean `name` + a short `tagline`/`description`
@@ -422,6 +422,16 @@ exist, raw layer still append-only.
   category when the name is still a raw maps link) + category chip + "why-go" excerpt +
   location, HTML-escaped, + popup CSS. PART 1 (clean names/taglines) flows from the
   logunespa crawl + enrich — ongoing.)*
+  *(PART 1 GEO DONE — DETERMINISTIC, no LLM: place names are already non-URL (0 raw-URL
+  names in the seed). Coordinates resolved + BAKED into `data/seed/places-logunespa.json`
+  via `scripts/bake-place-geo.mjs` + `lib/pipeline/geo.ts` `resolvePlaceGeo`/`mapsAddressQuery`
+  — follow `maps.app.goo.gl` redirect → geocode the STREET ADDRESS (the maps `q=` leads with
+  the venue NAME, which fooled Nominatim into the city-centre fallback centroid; the bare
+  address resolves to the exact venue). `isCentroid` guard rejects fallback hits (better null
+  than a fake pin). Result: **46/51 places mapped** (was 14), persisted to seed → prod map
+  renders deterministically without a slow geocode at db:setup. Same fix improves the LIVE geo
+  stage (it was also producing centroids). 5 unresolved stay null. Remaining: short "why-go"
+  taglines (enrich/haiku) + a couple of mis-geocoded outliers (e.g. MuVIM) to nudge.)*
 - [~] T131 [A] **concerten — Spain-only pre-filter** (user). The channel ALREADY exists
   as `tg:concerten` ("Зарубежная афиша русскоязычных артистов") — it lists RU-artist
   tours across ALL of Europe, so normalize/ingest must pre-filter to Spain. *(DONE —
@@ -477,3 +487,13 @@ exist, raw layer still append-only.
   pass `--allowedTools WebFetch` when grounding (pure `buildClaudeArgs` helper, tested).
   120/120, tsc=0. (Caveat noted: PATH B latency 46s sonnet / 68s opus → keep timeouts
   ≥120s, already 240s. A future eval could test haiku for link-LESS crawler posts.)
+- [ ] T140 [cross-cutting] **"JS before LLM" cost rule** (user, `backlog:`, standing
+  principle). Everywhere data can be extracted DETERMINISTICALLY (keywords, regex,
+  URL/HTML parsing, HTTP redirects, geocoding) — use plain JS, NOT a `claude`/LLM call.
+  Reserve the LLM for what only it can do, cheapest tier first: **haiku** for specific/
+  simple things (RU translation), sonnet only for genuine grounding/reasoning (see T139).
+  Already applied: T135 geocoding moved from an LLM guess to deterministic maps-redirect +
+  Nominatim parsing. **Audit candidates** for de-LLM-ing or downgrading to haiku: the
+  crawler's `claude -p` extraction (much of name/area/category/price is rule-parseable from
+  the post + maps `q=` — reserve the LLM only for the RU description / ambiguous classify);
+  enrich fields that are pure copies/parses. Saved as a feedback memory (`prefer-js-over-llm`).
