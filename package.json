@@ -12,7 +12,7 @@
     "db:schema": "node scripts/apply-schema.mjs",
     "db:seed": "node scripts/seed.mjs",
     "db:setup": "node scripts/apply-schema.mjs && node scripts/seed.mjs",
-    "pipeline:run": "node scripts/run-pipeline.mjs",
+    "pipeline:run": "node --import tsx scripts/run-pipeline.mjs",
     "db:local:up": "docker compose up -d",
     "db:local:down": "docker compose down",
     "db:local:setup": "DATABASE_URL=postgresql://postgres:postgres@db.localtest.me:5432/main npm run db:setup",

@@ -129,9 +129,15 @@ exist, raw layer still append-only.
   `merged_into`+`source_item_id`. Note: the 90 rows ALREADY use
   `status='duplicate'`+`merged_into` (no status migration needed). Backfill is BLOCKED
   by the same missing-`source_items` issue as T033.
-- [ ] T035 [C] Deterministic strong-match pre-pass (exact url / `(source,external_id)`
+- [~] T035 [C] Deterministic strong-match pre-pass (exact url / `(source,external_id)`
   / resolved `maps_url` / person-URL) before fuzzy; same-person far-date → related
   link, not hard-merge (research C1/C5).
+  *(PARTIAL — over-merge fixed: (1) Cyrillic→Latin transliteration in `titleSignature`
+  (bare slugify mapped every RU title to "untitled" → 50 RU events fused); (2) `isMergeableGroup`
+  requires ≥2 DISTINCT sources (same-source repeats = recurring occurrences → series, not dups)
+  + refuses degenerate "untitled" signatures. Live result: 11 groups/64 false losers → **0**,
+  idempotent (RUN1=RUN2=0). STILL TODO: exact url/external_id/maps_url strong-match pre-pass +
+  same-person-far-date related link.)*
 - [ ] T036 [C] **Places dedup path**: `placeKey = nameSignature|area|category`,
   strong-match on `maps_url`/`external_id`, fuzzy name+category+geo, `recommended_by`
   union (research C2).
@@ -142,8 +148,10 @@ exist, raw layer still append-only.
   `refreshWorkflow`; ensure occurrences are NOT scanned. ⚠️ **DO NOT wire until
   hardening (T035–T037) lands**: a live run on seed data showed the first-pass
   fuzzy-only matcher OVER-MERGES (75 events → 11; `titleSignature` too aggressive) and
-  is NOT idempotent (a 2nd run merged 1 more — violates FR-020/SC-003). Needs the
-  deterministic strong-match pre-pass + ≥2-signal requirement + geo guard first.
+  is NOT idempotent (a 2nd run merged 1 more — violates FR-020/SC-003). **UPDATE: the
+  over-merge + non-idempotency are now FIXED** (T035 partial: translit + cross-source +
+  untitled guard → 0 false merges, idempotent). Remaining before wiring: T035 strong-match
+  pre-pass, T036 places dedup, T037 geo guard — then this is safe to enable.
 - [ ] T039 [P] [C] Extend tests: places trio (ids 4/7/8) and Madrid-centroid trio
   (10/11/12) MUST NOT merge; pure-TS Jaro-Winkler + haversine unit tests.
 

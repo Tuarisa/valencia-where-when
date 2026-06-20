@@ -32,14 +32,39 @@ const TITLE_STOPWORDS = new Set([
   'stand', 'up', 'standup', 'show', 'concierto', 'concert', 'concerto',
   'en', 'in', 'v', 'de', 'la', 'el', 'los', 'las', 'y', 'and',
   'valencia', 'valensii', 'valensiya', 'espectaculo', 'live',
+  'stendap', 'standap', 'kontsert', 'kontserty', 'shou', 'spektakl', 'vecher', 'na',
 ]);
 
+const RU_TRANSLIT = {
+  а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z',
+  и: 'i', й: 'y', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r',
+  с: 's', т: 't', у: 'u', ф: 'f', х: 'h', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'sch',
+  ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya',
+};
+function transliterate(value) {
+  if (!value) return '';
+  let out = '';
+  for (const ch of String(value).toLowerCase()) out += RU_TRANSLIT[ch] ?? ch;
+  return out;
+}
+
 function titleSignature(title) {
-  const slug = slugify(title);
+  const slug = slugify(transliterate(title));
   if (!slug) return 'untitled';
   const tokens = slug.split('-').filter((t) => t.length > 1 && !TITLE_STOPWORDS.has(t));
   if (tokens.length === 0) return slug;
   return tokens.sort().join('-');
+}
+
+function distinctSourceCount(group) {
+  const seen = new Set();
+  for (const ev of group) if (typeof ev.source === 'string' && ev.source) seen.add(ev.source);
+  return seen.size;
+}
+function isMergeableGroup(group) {
+  if (group.length < 2) return false;
+  if (titleSignature(group[0]?.title) === 'untitled') return false;
+  return distinctSourceCount(group) >= 2;
 }
 
 function epochDay(startDate) {
@@ -248,4 +273,39 @@ test('sources accumulation de-duplicates and preserves existing entries', () => 
   const { mergedSources } = mergeGroup(withExisting);
   // existing worldafisha link not duplicated; valenciarusa added
   assert.equal(mergedSources.length, 2);
+});
+
+test('Cyrillic titles get real, distinct signatures (no "untitled" collapse)', () => {
+  // The bug: slugify strips Cyrillic → "untitled" → all RU events grouped as one.
+  assert.notEqual(titleSignature('Моргенштерн'), 'untitled');
+  assert.notEqual(titleSignature('Антон Лирник'), 'untitled');
+  assert.notEqual(
+    titleSignature('Моргенштерн'),
+    titleSignature('Антон Лирник'),
+    'two different RU artists must NOT share a signature',
+  );
+  // Cyrillic matches its Latin transliteration (cross-script dedup).
+  assert.equal(
+    titleSignature('Слава Комиссаренко'),
+    titleSignature('Slava Komissarenko'),
+  );
+});
+
+test('isMergeableGroup: cross-source merges, same-source/untitled do not', () => {
+  // Komissarenko = 3 DISTINCT sources → a genuine cross-source duplicate.
+  assert.equal(isMergeableGroup(records), true);
+
+  // Same recurring show on consecutive days from ONE source → occurrences, not dups.
+  const recurringSameSource = [
+    { id: 1, title: '3, 2, 1... ¡Despegamos!', city: 'Valencia', start_date: '2026-06-22', source: 'cac' },
+    { id: 2, title: '3, 2, 1... ¡Despegamos!', city: 'Valencia', start_date: '2026-06-23', source: 'cac' },
+  ];
+  assert.equal(isMergeableGroup(recurringSameSource), false, 'same-source repeats must not merge');
+
+  // Degenerate signature → never merge even across sources.
+  const untitled = [
+    { id: 1, title: '«»', city: 'Valencia', start_date: '2026-07-01', source: 'a' },
+    { id: 2, title: '!!!', city: 'Valencia', start_date: '2026-07-01', source: 'b' },
+  ];
+  assert.equal(isMergeableGroup(untitled), false, 'untitled signature must not merge');
 });

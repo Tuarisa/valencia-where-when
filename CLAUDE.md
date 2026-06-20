@@ -45,11 +45,13 @@ source seeded (`web:feriadejuliovlc`, +43 events). **T032 dedup convention fixed
 (losers → `status='duplicate'`+`merged_into`, verified on local DB). Commit + push
 per task (branch `main`; `origin` = HTTPS — SSH agent isn't available to the
 non-interactive shell; workflow-file commits need `gh auth refresh -s workflow` or a
-manual SSH push). ⚠️ **dedup is NOT wired into the pipeline**: the first-pass matcher
-over-merges (75→11) and isn't idempotent — needs hardening (T035 strong-match,
-T036 places, T037 geo guard) before T038. `entity_sources` writes (T033/T034) are
-blocked until `source_items` exist (seed has none). Next: dedup hardening
-(T035–T037), or T010 parser registry, or T040 series upsert.
+manual SSH push). **dedup over-merge FIXED** (T035 partial: Cyrillic→Latin translit in
+`titleSignature` + `isMergeableGroup` requiring ≥2 distinct sources + untitled-guard;
+live 11→0 false merges, idempotent). Also fixed `register("tsx/esm")` → `node --import
+tsx` in `run-pipeline.mjs` (was broken on Node 24). `dedup` still NOT wired into the
+pipeline (T038) until T035 strong-match + T036 places + T037 geo guard. `entity_sources`
+(T033/T034) blocked until `source_items` exist (seed has none). Next: T036 places dedup
++ T037 geo guard, or T010 parser registry, or T040 series upsert.
 
 **Non-negotiables** (see constitution v1.1.0): append-only raw `source_items`; dedup
 keeps a link to every source (via `entity_sources`) and never merges on fallback geo

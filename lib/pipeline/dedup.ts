@@ -58,14 +58,40 @@ const TITLE_STOPWORDS = new Set<string>([
   "stand", "up", "standup", "show", "concierto", "concert", "concerto",
   "en", "in", "v", "de", "la", "el", "los", "las", "y", "and",
   "valencia", "valensii", "valensiya", "espectaculo", "live",
+  // Transliterated RU framing/noise words (mirror of the EN/ES set above), so a
+  // Cyrillic title's framing doesn't add a spurious token that breaks the match
+  // (e.g. "стендап"→"stendap", "концерт"→"kontsert").
+  "stendap", "standap", "kontsert", "kontserty", "shou", "spektakl", "vecher", "na",
 ]);
 
-// PURE: order-independent significant-token signature of a title. Slugify (which
-// transliterates/strips to ASCII), split on "-", drop stopwords + 1-char noise,
-// then SORT the remaining tokens so word order and trailing suffixes don't break
-// the match. Falls back to the full slug when nothing significant remains.
+// Russian Cyrillic → Latin map. CRITICAL for this RU-focused app: bare `slugify`
+// strips non-ASCII, so every Cyrillic title (e.g. "Моргенштерн", "Антон Лирник")
+// collapsed to the empty slug → the "untitled" signature → ALL RU events grouped
+// as one. Transliterating first gives each RU title a real signature AND lets a
+// Cyrillic title match its Latin transliteration ("Слава Комиссаренко" ↔
+// "Slava Komissarenko").
+const RU_TRANSLIT: Record<string, string> = {
+  а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "e", ж: "zh", з: "z",
+  и: "i", й: "y", к: "k", л: "l", м: "m", н: "n", о: "o", п: "p", р: "r",
+  с: "s", т: "t", у: "u", ф: "f", х: "h", ц: "ts", ч: "ch", ш: "sh", щ: "sch",
+  ъ: "", ы: "y", ь: "", э: "e", ю: "yu", я: "ya",
+};
+
+// PURE: lower-case + transliterate Cyrillic to Latin (other scripts pass through).
+export function transliterate(value?: string | null): string {
+  if (!value) return "";
+  let out = "";
+  for (const ch of value.toLowerCase()) out += RU_TRANSLIT[ch] ?? ch;
+  return out;
+}
+
+// PURE: order-independent significant-token signature of a title. Transliterate
+// Cyrillic first, then slugify (ascii-fold), split on "-", drop stopwords + 1-char
+// noise, then SORT the remaining tokens so word order and trailing suffixes don't
+// break the match. Returns "untitled" when nothing slug-able remains (degenerate —
+// see isMergeableGroup, which refuses to merge on it).
 export function titleSignature(title?: string | null): string {
-  const slug = slugify(title);
+  const slug = slugify(transliterate(title));
   if (!slug) return "untitled";
   const tokens = slug
     .split("-")
@@ -173,6 +199,29 @@ export function chooseSurvivor(
   return best;
 }
 
+// PURE: count distinct non-empty source keys in a candidate group.
+export function distinctSourceCount(group: DedupEvent[]): number {
+  const seen = new Set<string>();
+  for (const ev of group) {
+    if (typeof ev.source === "string" && ev.source) seen.add(ev.source);
+  }
+  return seen.size;
+}
+
+// PURE: is this dedupKey cluster eligible to MERGE? Two guards kill the over-merges
+// seen on real data (a diagnostic run collapsed 75 events into 11):
+//   1. Degenerate signature ("untitled" — the title had no transliterable/slug-able
+//      content) → never merge; it would fuse unrelated events.
+//   2. Cross-source requirement: a genuine duplicate is reported by ≥2 DISTINCT
+//      sources. Same-source rows sharing a signature on nearby dates are recurring
+//      occurrences (e.g. a daily show) — owned by the series model (sub-area D),
+//      NOT duplicates.
+export function isMergeableGroup(group: DedupEvent[]): boolean {
+  if (group.length < 2) return false;
+  if (titleSignature(group[0]?.title) === "untitled") return false;
+  return distinctSourceCount(group) >= 2;
+}
+
 // Safely parse a survivor's metadata_json into an object. Malformed/empty → {}.
 function parseMetadata(metadata?: string | null): Record<string, unknown> {
   if (!metadata) return {};
@@ -261,7 +310,7 @@ export async function dedup({ exec = sql }: { exec?: typeof sql } = {}): Promise
   let collapsed = 0;
 
   for (const members of groups.values()) {
-    if (members.length < 2) continue;
+    if (!isMergeableGroup(members)) continue;
     const { survivor, losers } = mergeGroup(members);
     merged++;
 
