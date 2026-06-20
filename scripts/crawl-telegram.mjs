@@ -50,20 +50,27 @@ async function fetchPostCached(n) {
 }
 
 // claude -p structured extraction (subscription/OAuth, no key). Captures date + place
-// + category + price etc. Emits ONLY JSON; we defensively extract the object.
-async function extract(text) {
+// + category + price etc. FOLLOWS the post's source links (claude's WebFetch) and reads
+// them to enrich the record (address, hours, prices, fuller description). Emits ONLY
+// JSON; we defensively extract the object.
+async function extract(text, links = []) {
+  const srcLinks = links.filter((u) => !/instagram\.com|facebook\.com|t\.me/.test(u)).slice(0, 3);
   const prompt = [
     "Извлеки структурированные данные из поста русскоязычного телеграм-канала про Валенсию (Испания).",
+    srcLinks.length
+      ? `В посте есть ссылки-источники: ${srcLinks.join(" , ")}. ОТКРОЙ их (WebFetch) и прочитай содержимое, чтобы дополнить запись (точный адрес, район, часы работы, цены, тип заведения, описание). Если ссылка недоступна — опирайся на текст поста.`
+      : "",
     'Верни ТОЛЬКО JSON без markdown: {"kind":"place"|"event"|"none","name":str|null,"area":str|null,"address":str|null,"category":str|null,"description_ru":str|null,"start_date":"YYYY-MM-DD"|null,"price":str|null}.',
     'kind="place" — рекомендация заведения/локации (ресторан, кафе, бар, музей, парк, пляж, магазин);',
     'kind="event" — конкретное мероприятие с датой (концерт, фестиваль, выставка, шоу);',
     'kind="none" — новость/мнение/без конкретного места или события.',
-    "name — название; area — район/город; address — адрес если есть; category — тип; start_date — дата мероприятия если указана (иначе null); price — цена/диапазон если есть; description_ru — 1–2 предложения.",
+    "name — название; area — район/город; address — точный адрес (можно из открытой ссылки); category — тип; start_date — дата мероприятия если указана (иначе null); price — цена/диапазон если есть; description_ru — 1–2 предложения, дополни деталями из источника.",
     "ПОСТ:",
     text.slice(0, 4000),
   ].join("\n");
   try {
-    const { stdout } = await execFileP("claude", ["-p", prompt], { timeout: 120000, maxBuffer: 4 * 1024 * 1024 });
+    // longer timeout: WebFetch of source links adds latency
+    const { stdout } = await execFileP("claude", ["-p", prompt], { timeout: 240000, maxBuffer: 8 * 1024 * 1024 });
     const m = stdout.match(/\{[\s\S]*\}/);
     return m ? JSON.parse(m[0]) : null;
   } catch {
@@ -131,7 +138,7 @@ for (let n = begin; n > begin - count && n > 0; n--) {
     const post = parseTelegramPost(html);
     post.post_id = post.post_id || n;
     if (post.text && (post.photos.length || post.maps_url)) {
-      const ex = await extract(post.text);
+      const ex = await extract(post.text, post.links);
       if (ex && ex.name) {
         if (ex.kind === "place") {
           const rec = placeRecord(post, ex);

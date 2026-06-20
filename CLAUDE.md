@@ -82,8 +82,9 @@ tasks.md** (the loop reads tasks.md) — no special command; user may prefix `б
 re-fetch on re-runs), `claude -p` extraction routes `place`→`data/seed/places-<ch>.json`
 / dated `event`→`data/seed/events-<ch>.json` (captures date/place/category/price). 4
 records so far (3 places + 1 dated event). Resumable (continues from lowest crawled id);
-run slowly to backfill ~1800 posts. **TODO (user): enrichment must FOLLOW the post's
-source links (claude -p WebFetch) and read them** for fuller data. Backlog: T132 Fever
+run slowly to backfill ~1800 posts. **Link-following enrichment DONE**: `claude -p` WebFetches the post's source
+links and reads them (validated — Titanic exhibition got exact address/price/venue from
+bombasgens.com; Las Fallas from visitvalencia). 6 records (3 places + 3 events). Backlog: T132 Fever
 drone-show extractor, T133 special-event color categorization. Then T053/T022/T042+T043.
 
 **Non-negotiables** (see constitution v1.1.0): append-only raw `source_items`; dedup
