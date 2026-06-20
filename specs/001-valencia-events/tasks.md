@@ -197,3 +197,16 @@ located events.
 - Every task: end on green `npm run build`, commit with a descriptive message.
 - `[P]` = different files, no dependency. Keep raw `source_items` append-only.
 - Normalizers (Phase 8) are the highest-volume, most loop-friendly backlog.
+
+---
+
+## Phase 11: Convergence
+
+> Appended by `/speckit-converge` — gaps found in the existing code that the spec
+> requires but no T001–T050 task covers. Ordered HIGH → LOW.
+
+- [ ] T051 Generalize notification delivery tracking to **places** so the digest "new places on the radar" block never repeats: add place-level notified state (e.g. `places.notified`/`notified_at` or extend `notifications` with `entity_type`+`entity_id`) and use it in `selectDigest()` — per FR-013, US2/AC3 (partial)
+- [ ] T052 Make the new `/api/cron/enrich` and `/api/cron/digest` routes **require** `CRON_SECRET` (fail closed — 401 when unset/mismatched), unlike the existing optional guard in `app/api/cron/refresh/route.ts` — per Constitution V (partial)
+- [ ] T053 Add the spec-named but unconfigured sources to `data/seed/sources.json` + ingest: **elcontacto.ru, russpain, eventbrite** (enabled) and **SpainNewsOnline** (configured `enabled=0`/`weight=off`) — per FR-001 (missing)
+- [ ] T054 Align cron HTTP method across `app/api/cron/*` routes and `.github/workflows/scheduler.yml` (existing `refresh` is GET; contracts assume POST) so the scheduler triggers all endpoints consistently — per plan: contracts (partial)
+- [ ] T055 Document new environment variables in `.env.example` (enrichment/`claude` availability and notification transport token/webhook) so deploys are reproducible — per FR-008 (missing)
