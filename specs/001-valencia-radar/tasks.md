@@ -375,3 +375,30 @@ exist, raw layer still append-only.
 - `[P]` = different files, no dependency. Keep raw `source_items` append-only and all
   schema changes additive (`IF NOT EXISTS`).
 - Normalizers (T110+) are the highest-volume, most loop-friendly backlog.
+
+---
+
+## Backlog — user inbox
+
+> Ad-hoc requests land here as tasks; the `/speckit-implement` loop picks them up in
+> turn (no need to interrupt mid-iteration). Prefix a message with `бэклог:` / `backlog:`
+> to mean "record only, don't drop everything."
+
+- [ ] T130 [F] **logunespa historical place crawl → seed** (user priority). Walk the
+  channel post-by-post via the PUBLIC single-post embed `t.me/logunespa/<n>?embed=1`
+  (no login — same public-preview principle as `t.me/s/`), from the newest (~1800)
+  **backward to the start, SLOWLY** (politeness delay, resumable). Per post:
+  - structural parse (RELIABLE): message text, `cdn4.telesco.pe` photo(s), outbound
+    links incl. **`maps.app.goo.gl`**, hashtags;
+  - `claude -p` extract (free-form RU needs the LLM — heuristic name/area validated as
+    unreliable on posts 1799/1795): `{is_place, name, area/address, category,
+    description_ru, price?}`;
+  - dedup + write place candidates to `data/seed/places-logunespa.json` (recommended_by
+    = logunespa); geo then resolves the maps links to coords → map pins.
+  Build: `lib/pipeline/telegram-post.ts` (parse) + `scripts/crawl-telegram.mjs` (paced
+  crawler). Validated extraction shape on posts 1800/1799/1795.
+- [ ] T131 [A] **concerten — Spain-only pre-filter** (user). The channel ALREADY exists
+  as `tg:concerten` ("Зарубежная афиша русскоязычных артистов") — it lists RU-artist
+  tours across ALL of Europe, so normalize/ingest must pre-filter to Spain (Valencia,
+  Madrid, Barcelona, España, Spanish venues/cities) and drop non-Spain dates to avoid
+  info overload. Implement as a normalizer-stage filter for `tg:concerten`.

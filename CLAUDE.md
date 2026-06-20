@@ -73,10 +73,13 @@ dry); SDK-free/mockable, live-verified COALESCE; 23/23 tests. **Notify done** (T
 is the DEFAULT** — the Anthropic SDK (`ANTHROPIC_API_KEY`) is OPTIONAL (constrained
 decoding / Vercel serverless runtime, where the CLI is absent). enrich.ts is
 engine-agnostic (injectable client), so T051 = build a `claude -p` client (no key).
-**Digest route done** (T071): `app/api/cron/digest/route.ts` (POST, fail-closed Bearer
-= T100 for digest, `?mode`/`?dry`; marks notified only when the transport delivers).
-Next: T053 `claude -p` enrich client (no key), T010 parser registry, T022 Vercel
-Workflow wrappers, or T042+T043 recurring cutover (React feed).
+**Digest route done** (T071); **PARSER_REGISTRY done** (T010, `resolveParser` in
+ingest.ts). **Ad-hoc user requests go to the "Backlog — user inbox" section of
+tasks.md** (the loop reads tasks.md) — no special command; user may prefix `бэклог:`.
+**Next priority: T130 logunespa per-post place crawl** (public `t.me/<ch>/<n>?embed=1`,
+slow/resumable, `claude -p` extracts name/area/category/desc — heuristic validated as
+insufficient; structural parse gets photo/maps-link/hashtags; → `data/seed/places-logunespa.json`).
+Then T053 `claude -p` enrich client, T022 Workflow, or T042+T043 recurring cutover.
 
 **Non-negotiables** (see constitution v1.1.0): append-only raw `source_items`; dedup
 keeps a link to every source (via `entity_sources`) and never merges on fallback geo
