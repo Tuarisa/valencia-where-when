@@ -145,12 +145,13 @@ logunespa places, 14 mapped; resume the historical crawl LATER, after other task
 auto-restart it. ~8 places still have a raw maps-URL as the name → T135 cleanup + geo resolve.)*
 **T137 DONE** (dropped deprecated `fetchConnectionCache`). **T138 DONE** (`/api/health` + `lib/pipeline/health.ts`
 `sourceStale`/`pipelineWarnings` + `scripts/smoke.mjs`/`npm run smoke` + test; 117/117).
-**LOCAL-ONLY build cruft**: `npm rm workflow` (B revert) left `node_modules` inconsistent,
-so a local `next build` now emits an EMPTY `.next/server/vendor-chunks/` → `npm start`
-500s ("Cannot find module './vendor-chunks/next.js'"). NOT a code bug and NOT in git:
-`package-lock.json` is clean (0 workflow refs), `next dev` works, and Vercel's clean
-install is unaffected. FIX = `npm ci` once the crawler (which is using `node_modules`)
-finishes; then `rm -rf .next && npm run build` emits vendor-chunks and `npm start` serves /.
+**LOCAL prod-build glitch — RESOLVED.** After the workflow churn a local `next start` 500'd
+("Cannot find module './vendor-chunks/next.js'") from a corrupted `.next` (overlapping /
+truncated builds + dirty `node_modules`). Fixed with `npm ci` + `rm -rf .next && npm run
+build`: HOME and /places both 200. (Note: in Next 14.2.15 `.next/server/vendor-chunks/`
+may legitimately be absent — its absence is NOT the problem; a clean build is the fix.)
+`package-lock.json` is clean; if a local `npm start` ever 500s again, `npm ci` + clean
+rebuild resolves it. Vercel (clean install per deploy) is unaffected.
 
 **Non-negotiables** (see constitution v1.1.0): append-only raw `source_items`; dedup
 keeps a link to every source (via `entity_sources`) and never merges on fallback geo
