@@ -237,19 +237,19 @@ exist, raw layer still append-only.
 
 ## Sub-area F: Outputs & Surfaces (FR-009/010/011/015, SC-001/005/007)
 
-- [ ] T060 [F] Audit `app/page.tsx` + `lib/queries.ts`: feed excludes raw/ignored +
+- [x] T060 [F] Audit `app/page.tsx` + `lib/queries.ts`: feed excludes raw/ignored +
   `superseded`; "curated only" filter (score/normalized); UNION events ∪ series.
-- [ ] T061 [F] Confirm calendar defaults to current month (SC-005) and renders
+- [x] T061 [F] Confirm calendar defaults to current month (SC-005) and renders
   per-session occurrences; detail page prefers `title_ru`/`description_ru` +
   `links_json` clickable links (FR-011).
-- [ ] T062 [P] [F] Leaflet map plots events/places/series with `lat`/`lng`; hide
+- [x] T062 [P] [F] Leaflet map plots events/places/series with `lat`/`lng`; hide
   marker-less cleanly.
 - [x] T063 [F] **Places catalog** `app/places/page.tsx` with facet filters
   (cuisine/category, district/area, occasion, `price_level`, `recommended_by`); reuse
   `places/[id]`; renders independently of events (FR-015, Constitution III).
 - [ ] T064 [F] Place-mining normalizers for place-rich sources (`rutatuta_vlc`,
   `logunespa`, `gosvetlanada`, Fever gastro) → `places`.
-- [ ] T065 [P] [F] `tests/feed-query.test.mjs` + `tests/place-categorize.test.mjs`
+- [x] T065 [P] [F] `tests/feed-query.test.mjs` + `tests/place-categorize.test.mjs`
   (curated filter, current-month helper, occasion/price/cuisine inference).
 
 ---
