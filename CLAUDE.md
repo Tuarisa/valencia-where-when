@@ -58,9 +58,12 @@ DB orchestrator → T064 (place mining; needs places.status + render filter);
 `ingest → normalize → dedup → score → tag → geo` (enrich slots in at T050;
 `refreshWorkflow` exposure is T022). **Series helper done** (T040): `lib/pipeline/
 series.ts` `upsertSeries` + `seriesHash`/`occurrenceHash`, idempotent (live-verified:
-re-run = 0 new rows, preserves enriched_at/score/notified). Next: T041 (rewrite
-`normalizers/hemisferic.ts` to emit series via `upsertSeries`), T050 enrich skeleton,
-or T010 parser registry.
+re-run = 0 new rows, preserves enriched_at/score/notified). **Hemisfèric normalizer
+emits series** (T041): `buildHemisfericSeries` + `upsertSeries`, live-verified
+(3 raw → 2 series + 5 occurrences, idempotent). Remaining for recurring: T042 migrate
+the 104 existing seed events → series + T043 feed/calendar cutover — must land TOGETHER
+(else Hemisfèric vanishes from the feed). Next: T050 enrich skeleton, T010 parser
+registry, or the T042+T043 recurring cutover (bigger, touches the React feed).
 
 **Non-negotiables** (see constitution v1.1.0): append-only raw `source_items`; dedup
 keeps a link to every source (via `entity_sources`) and never merges on fallback geo

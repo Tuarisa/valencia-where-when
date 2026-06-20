@@ -176,8 +176,13 @@ exist, raw layer still append-only.
   `upsertSeries`. Live-verified on local DB: re-run inserts 0 new series/occurrences and
   PRESERVES `enriched_at`/`score`/`notified` (ON CONFLICT updates only normalizer fields
   + last_seen); +2 unit tests, 17/17.)*
-- [ ] T041 [D] Rewrite `normalizers/hemisferic.ts` to emit 1 series + N occurrences
+- [~] T041 [D] Rewrite `normalizers/hemisferic.ts` to emit 1 series + N occurrences
   (per-session granularity); mark old Hemisfèric `events` rows `status='superseded'`.
+  *(DONE — normalizer rewrite: pure `buildHemisfericSeries` (film → series, day×session →
+  occurrence) + `upsertSeries`. Live-verified on local DB: 3 raw rows → 2 series + 5
+  occurrences, idempotent re-run processes 0; +2 unit tests (19/19). The "supersede the
+  104 existing seed events" half is the T042 migration, which must land WITH the T043
+  feed/calendar cutover (else Hemisfèric vanishes from the feed) — deferred together.)*
 - [ ] T042 [D] Migrate seed: 104 Hemisfèric `events` → 11 `event_series` + 104
   `event_occurrences` (regenerate from raw `source_items`); ~228 single-shot events
   untouched.
