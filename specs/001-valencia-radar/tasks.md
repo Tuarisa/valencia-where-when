@@ -251,10 +251,15 @@ exist, raw layer still append-only.
 
 ## Sub-area G: Notifications (FR-012/013/014/021, SC-002/008)
 
-- [ ] T070 [G] `lib/pipeline/notify.ts`: `selectDigest({horizonDays, threshold})`
+- [~] T070 [G] `lib/pipeline/notify.ts`: `selectDigest({horizonDays, threshold})`
   (family-fit + `notified=0` + date window + `score≥threshold` +
   `confidence≥holdThreshold`) returning events/series + new places;
-  `selectAlerts({alertThreshold})`.
+  `selectAlerts({alertThreshold})`. *(DONE — pure `selectDigest`/`selectAlerts` +
+  `isFamilyFit` (excludes political news) + `cardConfidence` (null when un-enriched, so
+  only enriched-low-confidence is held) + `addDays`/`withinHorizon` + `loadEventCandidates`;
+  +5 tests (28/28). Live on seed: 295 un-notified → 59 digest / 53 alerts. STILL TODO:
+  fold `event_series` + the "new places" block into the candidate set (T071 builder);
+  tune the alert bar — 53 alerts means the seed's score-100 cluster trips 85, raise it.)*
 - [ ] T071 [G] `app/workflows/digest.ts` `digestWorkflow(mode)` (select→build→send→
   mark) + `app/api/cron/digest/route.ts` (Bearer, fail-closed; `?mode=weekly|alert`,
   `?dry=1`); on send set `notified`/`notified_at` + insert `notifications` row for

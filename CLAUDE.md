@@ -65,9 +65,12 @@ the 104 existing seed events → series + T043 feed/calendar cutover — must la
 (else Hemisfèric vanishes from the feed). **Enrich skeleton done** (T050/T056):
 `lib/pipeline/enrich.ts` — injectable `EnrichClient`, `EnrichmentResult` schema,
 `enrichOne` (COALESCE promote, maps→links_json), `enrichCards` (selection + fail-soft +
-dry); SDK-free/mockable, live-verified COALESCE; 23/23 tests. Next: T051–T053 (concrete
-Anthropic-SDK client — needs `ANTHROPIC_API_KEY` for live), T070 notify selectors,
-T010 parser registry, or the T042+T043 recurring cutover (touches the React feed).
+dry); SDK-free/mockable, live-verified COALESCE; 23/23 tests. **Notify selectors done** (T070): `lib/pipeline/notify.ts` — pure
+`selectDigest`/`selectAlerts` + `isFamilyFit` + `cardConfidence` + `withinHorizon` +
+`loadEventCandidates`; live on seed 295→59 digest/53 alerts; 28/28 tests (alert bar
+needs raising — score-100 cluster). Next: T071 (digest workflow/route + send + mark +
+series/new-places block), T051–T053 (Anthropic SDK client — needs key), T010 parser
+registry, or T042+T043 recurring cutover (React feed).
 
 **Non-negotiables** (see constitution v1.1.0): append-only raw `source_items`; dedup
 keeps a link to every source (via `entity_sources`) and never merges on fallback geo
