@@ -87,6 +87,11 @@ engine-agnostic (injectable client), so T051 = build a `claude -p` client (no ke
 **Digest route done** (T071); **PARSER_REGISTRY done** (T010, `resolveParser` in
 ingest.ts). **Ad-hoc user requests go to the "Backlog — user inbox" section of
 tasks.md** (the loop reads tasks.md) — no special command; user may prefix `бэклог:`.
+**RULE (user, REQUIRED): a message prefixed `backlog:` / `бэклог:` goes STRAIGHT into the
+spec backlog (the "Backlog — user inbox" section of `tasks.md`) as a new item — IMMEDIATELY,
+record-only: do NOT deliberate about how/whether to do it, do NOT drop the current task,
+just append it (even if nothing about it exists there yet) and keep working. Flesh it out
+later when the loop picks it up.**
 **T130 logunespa crawl — IN PROGRESS** (user priority). `scripts/crawl-telegram.mjs`
 (via `node --import tsx`) + `lib/pipeline/telegram-post.ts` parser: public
 `t.me/<ch>/<n>?embed=1`, **HTML fetch-cache** in `data/.cache/` (gitignored — no

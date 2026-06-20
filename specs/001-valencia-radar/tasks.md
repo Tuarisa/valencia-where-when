@@ -396,6 +396,25 @@ exist, raw layer still append-only.
 > turn (no need to interrupt mid-iteration). Prefix a message with `бэклог:` / `backlog:`
 > to mean "record only, don't drop everything."
 
+- [ ] T141 [A/I] **Live-ingest real sources → `source_items` for normalizer debugging**
+  (user PERMISSION, 2026-06-21: "технически у нас нет ограничений стянуть из интернета источники
+  и занести их в БД как raw source для дальнейшей отладки нормализаторов, разрешаю это делать").
+  Fetch REAL source content from the internet and load it into the **local** DB as raw, append-only
+  `source_items`, so normalizers can be debugged against REAL data instead of synthetic fixtures.
+  This DE-SPECULATES normalizer work and UNBLOCKS **T033/T034** (`entity_sources` writes need real
+  `source_items`) + **T136** (live worldafisha≈concerten dedup). Plan: `db:local:up` → run the existing
+  dispatcher/ingest stage (`/api/cron/dispatch` or the ingest stage of `scripts/run-pipeline.mjs`) over a
+  SUBSET of enabled sources to populate `source_items` (conditional-GET + paced fetches already wired) →
+  run normalize→dedup→… and inspect real output → fix normalizers against real rows. Keep it to the LOCAL
+  DB for debugging (not prod).
+
+- [ ] T142 [F] **rutatuta_vlc excursions → distinct colour** (user, `backlog:`). Posts from
+  `tg:rutatuta_vlc` are guided EXCURSIONS — they differ from "бездушные общие мероприятия", so give them
+  their own visual accent in the feed/calendar (the way feria/festival got a gold accent in **T133**).
+  Extend T133's `featureKind` (feria|festival|hemisferic|null) with an `excursion` kind derived from the
+  `tg:rutatuta_vlc` source / tags, plus a distinct accent colour + legend entry. Needs the rutatuta_vlc
+  normalizer (place/event mining — relates to T064); pairs well with **T141** (real data to verify it).
+
 - [~] T130 [F] **logunespa historical place crawl → seed** (user priority; DELEGATED to a
   background subagent so the main loop keeps moving through the plan — places-only,
   20 posts/batch, resumable backward; agent commits/pushes each batch). Walk the
