@@ -36,10 +36,14 @@ local dev (sub-area H, wired): `npm run db:local:up` → `npm run db:local:setup
 shim gated on `db.localtest.me`, see `LOCAL_RUN.md`); eval (key-gated): `npm run eval`.
 
 **Progress**: Phase 0 done (T001 harness 8/8, T002 GH-Actions scheduler skeleton,
-T003 `.env.example`). Sub-area H local stack wired (T080–T083). One-off **Feria de
-Julio 2026** source seeded (`web:feriadejuliovlc`, +43 events → seed totals: 385
-events / 23 sources / 14 places / 216 media). Commit + push per task (default branch
-`main`). Next code-only: T010 parser registry, T032 dedup convention fix, T050 enrich.
+T003 `.env.example`). **T004 additive schema applied** to the live local DB
+(`entity_sources`, `event_series`/`event_occurrences`, sources cadence cols,
+`source_runs` changed/not_modified, places enrich cols, `notifications.series_id/place_id`).
+Sub-area H local stack wired + running (T080–T083; `db:local:up` → seeded
+385 events / 23 sources / 14 places / 216 media). One-off **Feria de Julio 2026**
+source seeded (`web:feriadejuliovlc`, +43 events). Commit + push per task (branch
+`main`, `origin` = SSH). Next code-only: T010 parser registry, T032 dedup convention
+fix + seed migration, T050 enrich skeleton.
 
 **Non-negotiables** (see constitution v1.1.0): append-only raw `source_items`; dedup
 keeps a link to every source (via `entity_sources`) and never merges on fallback geo

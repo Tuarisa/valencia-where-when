@@ -44,8 +44,12 @@ changes are additive (`IF NOT EXISTS`).
 
 **⚠️ CRITICAL**: complete before the sub-area work that writes these shapes.
 
-- [ ] T004 Add ALL additive schema to `db/schema.sql` (`IF NOT EXISTS`) per
+- [x] T004 Add ALL additive schema to `db/schema.sql` (`IF NOT EXISTS`) per
   data-model.md, then run `npm run db:setup` against a dev DB:
+  *(done: applied to the live local DB — 30 statements; `entity_sources`,
+  `event_series`, `event_occurrences` + sources cadence cols + `source_runs`
+  changed/not_modified + places enrich cols + `notifications.series_id/place_id`
+  all verified; 385 events intact, additive & non-destructive.)*
   - `entity_sources` table + 2 indexes (sub-area C)
   - `event_series` + `event_occurrences` tables + 4 indexes (sub-area D)
   - `sources` adaptive-cadence columns + `idx_sources_due` (sub-area A)
