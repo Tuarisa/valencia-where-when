@@ -1,0 +1,26 @@
+{
+  "version": "1.0",
+  "updated": "2026-06-20T12:52:14Z",
+  "directories": [
+    {
+      "path": "./specs",
+      "specsCount": 2,
+      "isDefault": true
+    }
+  ],
+  "specs": [
+    {
+      "name": "001-valencia-events",
+      "path": "./specs/001-valencia-events",
+      "phase": "tasks",
+      "taskIndex": 5,
+      "totalTasks": 55
+    },
+    {
+      "name": "local-run",
+      "path": "./specs/local-run",
+      "phase": "research",
+      "awaitingApproval": true
+    }
+  ]
+}
