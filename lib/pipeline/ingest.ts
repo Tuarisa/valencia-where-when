@@ -185,6 +185,38 @@ async function parseHemisferic(source: any, days = 14): Promise<RawItem[]> {
   return items;
 }
 
+// Parser registry (sub-area A, research A1) — mirrors NORMALIZER_REGISTRY. Replaces
+// the hardcoded if/else parser dispatch in ingestSource so adding a source is a
+// registry entry, not a core edit ("add a source" contract, A2). A parser turns a
+// fetched body into RawItem[]; `selfFetch` entries (bespoke APIs like Hemisfèric)
+// fetch their own data and ignore the body.
+export type Parser = (source: any, body: string) => RawItem[] | Promise<RawItem[]>;
+export interface ParserEntry {
+  parse: Parser;
+  selfFetch?: boolean;
+}
+
+export const PARSER_REGISTRY: Map<string, ParserEntry> = new Map<string, ParserEntry>([
+  ["api:hemisferic", { parse: (source) => parseHemisferic(source), selfFetch: true }],
+  ["telegram", { parse: (source, body) => parseTelegram(source, body) }],
+  ["web", { parse: (source, body) => parseGeneric(source, body) }],
+  ["ticketing", { parse: (source, body) => parseGeneric(source, body) }],
+  ["api", { parse: (source, body) => parseGeneric(source, body) }],
+]);
+
+// PURE: which registry key handles this source? key (bespoke) → telegram (by type or
+// `t.me/s/` url) → type → `web` fallback. Returned key always exists in the registry.
+export function resolveParserKey(source: { key?: string; type?: string; url?: string }): string {
+  if (source.key && PARSER_REGISTRY.has(source.key)) return source.key;
+  if (source.type === "telegram" || (source.url || "").includes("t.me/s/")) return "telegram";
+  if (source.type && PARSER_REGISTRY.has(source.type)) return source.type;
+  return "web";
+}
+
+export function resolveParser(source: { key?: string; type?: string; url?: string }): ParserEntry {
+  return PARSER_REGISTRY.get(resolveParserKey(source))!;
+}
+
 async function upsertSourceItem(item: RawItem, runId: number): Promise<void> {
   const ts = nowIso();
   const dedup = sourceItemHash(item);
@@ -211,17 +243,14 @@ export async function ingestSource(source: any, minIntervalHours = 6): Promise<{
   let httpStatus = 0;
   let items: RawItem[] = [];
   try {
-    if (source.key === "api:hemisferic") {
+    const parser = resolveParser(source);
+    if (parser.selfFetch) {
       httpStatus = 200;
-      items = await parseHemisferic(source);
+      items = await parser.parse(source, "");
     } else {
       const { status, body } = await fetchText(source.url);
       httpStatus = status;
-      if (source.type === "telegram" || source.url.includes("t.me/s/")) {
-        items = parseTelegram(source, body);
-      } else {
-        items = parseGeneric(source, body);
-      }
+      items = await parser.parse(source, body);
     }
     const runRows = (await sql`INSERT INTO source_runs (source_key, status, started_at, fetched_url, http_status, parser_version)
       VALUES (${source.key}, 'ok', ${started}, ${source.url}, ${httpStatus}, 'node-v1') RETURNING id`) as any[];

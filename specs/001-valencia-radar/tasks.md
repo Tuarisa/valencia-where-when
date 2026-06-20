@@ -74,10 +74,15 @@ exist, raw layer still append-only.
 
 ## Sub-area A: Ingestion & Source Registry (FR-001/017/019/020)
 
-- [ ] T010 [A] Add `PARSER_REGISTRY` to `lib/pipeline/ingest.ts`
+- [~] T010 [A] Add `PARSER_REGISTRY` to `lib/pipeline/ingest.ts`
   (`Map<type|key, (source, body|json) => RawItem[]>`); resolve parser from registry,
   send `If-None-Match`/`If-Modified-Since` from `sources.etag`/`last_modified`, handle
   304, return inserted-count, per-source 429/`Retry-After` backoff (research A1/A4/A5).
+  *(DONE — `PARSER_REGISTRY` (api:hemisferic self-fetch, telegram, web, ticketing, api) +
+  pure `resolveParserKey`/`resolveParser`; `ingestSource` refactored off the if/else
+  (behavior preserved: Hemisfèric self-fetch, telegram by type/url, web fallback); +3
+  tests (32/32). STILL TODO: conditional-GET (ETag/Last-Modified/304) = T011, 429
+  backoff, inserted-count return.)*
 - [ ] T011 [A] Extend `lib/pipeline/util.ts` `fetchText`/`fetchJson` to accept/return
   conditional-GET headers (ETag, Last-Modified, 304).
 - [ ] T012 [A] New `lib/pipeline/dispatcher.ts`: `selectDueSources()` +
