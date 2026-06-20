@@ -34,6 +34,11 @@ multi-source **ingestion** + dispatcher, **Vercel Workflow** substrate,
 local dev (sub-area H, wired): `npm run db:local:up` → `npm run db:local:setup` →
 `npm run dev:local` → `npm run db:local:down` (Docker Postgres + Neon HTTP proxy;
 shim gated on `db.localtest.me`, see `LOCAL_RUN.md`); eval (key-gated): `npm run eval`.
+**RULE (user, REQUIRED): the local DB MUST PERSIST across ticks — do NOT run `db:local:down`
+/ teardown between iterations. It accumulates real ingested + normalized (+ later enriched) data
+that gets BAKED into the seed (T144 local-first baking); only overwrite deliberately when
+re-testing. We don't throw data away. ("база данных локальная должна жить, не убиваться между
+циклами".) Background Workflows/agents that bring the stack up must LEAVE it up.**
 
 **Loop execution — ULTRACODE BY DEFAULT (user, REQUIRED).** This project runs autonomously
 via `/loop /speckit-implement` ticks. On each tick the main loop must DELEGATE the substantive

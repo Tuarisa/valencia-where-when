@@ -432,6 +432,20 @@ exist, raw layer still append-only.
   a local seed-only health-fail is expected and gate `smoke` on row counts. Likely auto-resolves once
   **T141** live-ingest populates `source_runs`. Low severity; not a render/crash bug.
 
+- [ ] T144 [A/E/I] **Local-first data baking → seed; prod = incremental-only** (user, `backlog:`,
+  2026-06-21 strategy). Do ALL the heavy lifting LOCALLY and bake the result into `data/seed/`, so
+  PROD ships PRE-POPULATED and afterwards collects only INCREMENTAL updates — minimizing AI/compute
+  on the server. Concretely: run ingest → normalize → dedup → score → tag → **enrich** (the costly
+  `claude -p`/SDK steps) for ALL sources on the LOCAL stack; gradually + politely download all
+  available data from every source (builds on **T141**); then EXPORT the normalized + enriched events
+  / places / series / occurrences / media (and ideally a `source_items` snapshot + conditional-GET
+  cursors/ETags) into `data/seed/` so `db:setup` on prod loads real, enriched data. Prod then runs
+  ONLY incremental refresh (conditional-GET 304 skips unchanged; enrich only NEW cards). "Что можем
+  прогнать локально — гоним локально." Decompose (triage later): (1) seed-export tooling (dump
+  enriched DB → `data/seed/*.json`), (2) bulk local ingest of all sources, (3) local enrich pass,
+  (4) prod incremental-only mode. Relates to T141, T050–T056 (enrich), append-only `source_items` +
+  cadence/conditional-GET (already built). Likely warrants its own sub-area / triage decomposition.
+
 - [~] T130 [F] **logunespa historical place crawl → seed** (user priority; DELEGATED to a
   background subagent so the main loop keeps moving through the plan — places-only,
   20 posts/batch, resumable backward; agent commits/pushes each batch). Walk the
