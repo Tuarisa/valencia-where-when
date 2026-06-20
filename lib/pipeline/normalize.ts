@@ -1,5 +1,8 @@
 import { sql } from "../db";
 import { normalizeHemisferic, HEMISFERIC_SOURCE_KEY } from "./normalizers/hemisferic";
+import { normalizeWorldafisha, WORLDAFISHA_SOURCE_KEY } from "./normalizers/worldafisha";
+import { normalizeValenciarusa, VALENCIARUSA_SOURCE_KEY } from "./normalizers/valenciarusa";
+import { normalizeVidacultural, VIDACULTURAL_SOURCE_KEY } from "./normalizers/vidacultural";
 import { markRawItem } from "./normalizers/types";
 
 // Re-export the Hemisfèric path so existing imports keep working.
@@ -15,6 +18,9 @@ export type SourceNormalizer = () => Promise<{ created: number; updated: number;
 // lands (Phase 8). Hemisfèric is the first entry.
 export const NORMALIZER_REGISTRY: Map<string, SourceNormalizer> = new Map([
   [HEMISFERIC_SOURCE_KEY, normalizeHemisferic],
+  [WORLDAFISHA_SOURCE_KEY, normalizeWorldafisha],
+  [VALENCIARUSA_SOURCE_KEY, normalizeValenciarusa],
+  [VIDACULTURAL_SOURCE_KEY, normalizeVidacultural],
 ]);
 
 // Resolve a normalizer for a source key (pure — testable without a DB).
