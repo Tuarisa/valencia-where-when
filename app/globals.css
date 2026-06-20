@@ -97,7 +97,8 @@ a { color: inherit; }
 .tag-button.is-active { background: var(--accent); color: white; border-color: var(--accent); }
 
 .layout { display: grid; gap: 18px; }
-.top-row { display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 18px; align-items: start; }
+/* First prototype: calendar full-width on top, map stacked below it (was a 2-col row). */
+.top-row { display: grid; grid-template-columns: 1fr; gap: 18px; align-items: start; }
 .panel { padding: 22px; }
 .panel-head { display: flex; justify-content: space-between; gap: 16px; align-items: end; margin-bottom: 18px; }
 .panel h2 { margin: 0; font-size: clamp(1.6rem, 3vw, 2.1rem); }
