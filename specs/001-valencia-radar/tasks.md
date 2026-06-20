@@ -83,16 +83,16 @@ exist, raw layer still append-only.
   (behavior preserved: Hemisfèric self-fetch, telegram by type/url, web fallback); +3
   tests (32/32). STILL TODO: conditional-GET (ETag/Last-Modified/304) = T011, 429
   backoff, inserted-count return.)*
-- [ ] T011 [A] Extend `lib/pipeline/util.ts` `fetchText`/`fetchJson` to accept/return
+- [x] T011 [A] Extend `lib/pipeline/util.ts` `fetchText`/`fetchJson` to accept/return
   conditional-GET headers (ETag, Last-Modified, 304).
-- [ ] T012 [A] New `lib/pipeline/dispatcher.ts`: `selectDueSources()` +
+- [x] T012 [A] New `lib/pipeline/dispatcher.ts`: `selectDueSources()` +
   `dispatch({concurrency})` (bounded `Promise.allSettled` pool 4–6, due-select,
   cadence-state update); keep `ingestAll()` force-all path (research A6).
-- [ ] T013 [A] New `app/api/cron/dispatch/route.ts` (Bearer `CRON_SECRET`, fail-closed)
+- [x] T013 [A] New `app/api/cron/dispatch/route.ts` (Bearer `CRON_SECRET`, fail-closed)
   → `dispatch()`; wire the `*/15` tick in `scheduler.yml`.
-- [ ] T014 [A] Seed per-type cadence defaults in `scripts/seed.mjs` / `sources.json`
+- [x] T014 [A] Seed per-type cadence defaults in `scripts/seed.mjs` / `sources.json`
   (telegram 600s–3h, web 1h–24h, ticketing/api 2h–24h).
-- [ ] T015 [P] [A] `tests/cadence.test.mjs`: `poll_interval=clamp(gap×0.33,min,max)`,
+- [x] T015 [P] [A] `tests/cadence.test.mjs`: `poll_interval=clamp(gap×0.33,min,max)`,
   back-off ×1.5, error backoff, due-select ordering (pure logic, no network).
 
 ---
@@ -212,16 +212,16 @@ exist, raw layer still append-only.
   enrich.ts is SDK-FREE by design (mockable, key-free). Live-verified COALESCE: a
   model-null `venue_name` did NOT clobber the existing value. STILL TODO: the concrete
   Anthropic-SDK client (npm i + output_config.format + web tools) = T051–T053.)*
-- [ ] T051 [E] Implement the canonical `enrichment_json` schema (data-model E):
+- [~] T051 [E] Implement the canonical `enrichment_json` schema (data-model E):
   OCR + RU translate + extract in one call (poster image block); persist whole blob +
   promote columns with `COALESCE` guards; `events` maps link → `links_json` entry.
-- [ ] T052 [E] Ground-or-flag anti-hallucination + confidence/notes/citations; model
+- [x] T052 [E] Ground-or-flag anti-hallucination + confidence/notes/citations; model
   tiering (Haiku default, Opus on poster/low-confidence/conflict); enrich does NOT
   geocode (research E6/E7).
-- [ ] T053 [P] [E] Optional web augmentation behind `{web}` flag (`web_search` +
+- [~] T053 [P] [E] Optional web augmentation behind `{web}` flag (`web_search` +
   `web_fetch`, two-turn shape, `max_uses:3`); offline app-fetch fallback +
   `claude -p` fallback path (research E5/R3).
-- [ ] T054 [E] Target series too: enrich runs once per `event_series` (not per
+- [x] T054 [E] Target series too: enrich runs once per `event_series` (not per
   occurrence); re-enrich trigger `enriched_at IS NULL OR last_seen > enriched_at OR
   force`.
 - [ ] T055 [E] `app/workflows/enrich.ts` `enrichWorkflow(limit)` (per-card step
@@ -279,9 +279,9 @@ exist, raw layer still append-only.
 - [x] T072 [P] [G] Pluggable `sendDigest(payload)` (default dry-run text); real
   transport behind an env flag (research G2). *(done: `DigestSender` type + `dryRunSender`
   default + `sendDigest({sender})`; real transport selected by env in the route.)*
-- [ ] T073 [G] Series digest renders the card + next upcoming occurrence
+- [x] T073 [G] Series digest renders the card + next upcoming occurrence
   (`MIN(occurrence_date) ≥ today`).
-- [ ] T074 [P] [G] `tests/digest-select.test.mjs` + `tests/alert-select.test.mjs`:
+- [x] T074 [P] [G] `tests/digest-select.test.mjs` + `tests/alert-select.test.mjs`:
   horizon, threshold, confidence-hold, already-notified exclusion (events + places),
   idempotent re-run = 0 repeats (SC-002/008).
 
@@ -335,7 +335,7 @@ exist, raw layer still append-only.
 > Each: normalizer module + `NORMALIZER_REGISTRY` entry + `npm run pipeline:run`
 > parity check + build green. Prime parallel/loop fodder.
 
-- [ ] T110 [P] worldafisha · T111 [P] valenciarusa · T112 [P] vidacultural_Valencia
+- [x] T110 [P] worldafisha · T111 [P] valenciarusa · T112 [P] vidacultural_Valencia
   (+place posts) · T113 [P] concerten · T114 [P] Palau de la Música ·
   T115 [P] CAC (agenda/exposiciones/actividades/museu) · T116 [P] visitvalencia ·
   T117 [P] lacotorra · T118 [P] **Fever extractor** (individual event pages) ·
@@ -438,3 +438,8 @@ exist, raw layer still append-only.
   Verify `lib/pipeline/dedup.ts` `titleSignature` + ≥2-source `isMergeableGroup` already
   collapses these (artist name + date + Spanish city), and that the merged record carries
   both `entity_sources` rows. Add a focused test once both normalizers (T112) land.
+- [ ] T137 [B] **Drop deprecated `fetchConnectionCache`** (user, `backlog:`). `lib/db.ts:3`
+  sets `neonConfig.fetchConnectionCache = true;` — in current `@neondatabase/serverless`
+  this option is DEPRECATED (connection caching is always on now), so the line is a
+  no-op that only emits a deprecation warning. Fix = delete the line (and any stray docs
+  mention). Trivial + zero-risk; verify `npm run build` + a local DB connect still work.

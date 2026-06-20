@@ -88,7 +88,30 @@ bombasgens.com; Las Fallas from visitvalencia). **Crawl mode (user): PLACES-ONLY
 `node --import tsx scripts/crawl-telegram.mjs logunespa 0 20 1500 places` (the 6th arg `places`
 skips dated events; resumable from lowest crawled id). ~13 places + 19 events so far. Run as
 a BACKGROUND command if 20 posts may exceed the 10-min foreground cap. Backlog: T132 Fever
-drone-show extractor, T133 done, T053/T022/T042+T043, T134 design MCP, T135 part-1 names.
+drone-show extractor, T133 done, T053/T022/T042+T043, T134 design MCP, T135 part-1 names,
+T136 worldafisha≈concerten dedup, T137 drop deprecated `fetchConnectionCache` in `lib/db.ts`.
+**Ultracode fan-out round 1 DONE** (user enabled ultracode): a background Workflow ran 4
+file-disjoint bundles in parallel + a verify phase, integrated by the main loop (tsc=0,
+76/76 tests). **Bundle A (T011–T015)**: adaptive ingest — pure `lib/pipeline/cadence.ts`
+(clamp/computePollInterval gap×0.33/backoffUnchanged ×1.5/backoffError ×2/selectDue),
+`dispatcher.ts` (selectDueSources + bounded dispatch pool, persists cadence state per
+outcome), conditional GET in `util.ts`/`ingest.ts` (ETag/If-Modified-Since → 304 →
+`source_runs.not_modified`), `/api/cron/dispatch` fail-closed route (scheduler.yml `*/15`
+tick was already wired), per-type cadence seed defaults. **Bundle E (T051~/T052/T053~/T054)**:
+`enrich.ts` — `normalizeEnrichment` (drop unknown keys, clamp confidence, shape
+links/citations), `groundReport`/`applyGroundOrFlag` (flag uncited facts, hold <0.6),
+opt-in `{web}` EnrichClient capability (default off), `needsEnrich` + series-once
+enrich (COALESCE preserve). T051/T053 are `[~]`: schema + `{web}` interface done, but the
+OCR-extract CALL + web execution wait on the concrete **`claude -p` EnrichClient** (still
+the open engine task). T055 (enrich workflow/cron) deferred → needs sub-area B `workflow`
+pkg. **Bundle G (T073/T074)**: `notify.ts` series-aware digest (one card + next occurrence,
+`markSeriesNotified` no-repeat on series_id); wiring it into the digest route = T071
+follow-up. **Bundle N (T110/T111/T112)**: worldafisha (spain-filter pre-gate per T136),
+valenciarusa, vidacultural normalizers, registered + fail-soft (run end-to-end once live
+`source_items` exist). NEXT (serial, can't parallelize — fight over run.ts/queries.ts/
+Home.tsx + need `npm i workflow`): round-2 bundles **B** (pipeline order: enrich before geo
+in run.ts; `withWorkflow`; T022/T055 workflows) then **D+F** (Hemisfèric→series cutover
+T042–T044; places catalog + map T060–T065).
 
 **Non-negotiables** (see constitution v1.1.0): append-only raw `source_items`; dedup
 keeps a link to every source (via `entity_sources`) and never merges on fallback geo
