@@ -267,6 +267,30 @@ tests + manual UI + curl.
 - Is `claude -p` enrichment authenticated and usable headless in the user's shell (it is on PATH,
   v2.1.177), and is calling the Anthropic API during a "local run" acceptable cost-wise?
 
+## Open Questions — RESOLVED (user answers, 2026-06-20)
+
+1. **Docker** → **Install it.** Docker Desktop is being installed now (`brew install --cask
+   docker-desktop`). Tier A (docker-compose: Postgres + `local-neon-http-proxy`) is the
+   committed path; Tier B (Neon dev branch) stays only as a documented fallback.
+2. **Missing digest/alert/enrich endpoints** → **Out of scope for local-run.** They get their
+   **own specs later**. `local-run` covers only what exists: DB + the ingest→…→geo pipeline +
+   `/api/cron/refresh` + the site. The three "pending implementation" checklist rows stay marked
+   pending; do NOT build them here.
+3. **Offline requirement** → **Not required; internet is OK.** The intent is to **run the app in
+   Docker "as if it were Vercel"** to debug before deploy. So the primary path emphasizes
+   **Vercel-parity in a container** (build + serve like prod, e.g. `next build && next start` or
+   `vercel build`, internet allowed for ingest/geo) — NOT an offline-only run. The optional
+   "offline pipeline mode" (rec #5) is therefore **deprioritized**, not mandatory.
+4. **`claude -p` auth** → **Acceptable — "even on Vercel."** Using local `claude` CLI auth for
+   enrichment is fine, and the user is fine relying on CLI auth in production too. (Practical
+   caveat for the future enrich spec: running the `claude` CLI inside Vercel's serverless runtime
+   is non-trivial; revisit there. Not a local-run concern.)
+
+**Net effect on requirements**: primary deliverable = a docker-compose that runs Postgres +
+neon proxy + the Next.js app in **Vercel-like** mode, one/two-command bring-up, internet allowed,
+scoped to existing features; plus fix `npm run pipeline:run` (add `tsx`) and a `LOCAL_RUN.md`
+verify-before-deploy checklist. Digest/enrich endpoints explicitly deferred to their own specs.
+
 ## Feasibility / Risk / Effort
 
 **Feasibility: High** · **Risk: Medium** (Docker dependency + unbuilt digest/enrich features) · **Effort: M** (docker-compose + ~10-line gated shim across db.ts and 3 scripts + tsx devDep + a few npm scripts and a LOCAL_RUN doc; larger → L if the missing digest/enrich endpoints must also be built for local runnability).
