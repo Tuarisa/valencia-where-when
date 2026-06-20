@@ -28,6 +28,10 @@ const startId = Number(process.argv[3] || 0);
 const count = Number(process.argv[4] || 20);
 const delayMs = Number(process.argv[5] || 2500);
 const placesOnly = process.argv[6] === "places"; // skip dated events, collect only place recs (user)
+// Cost tiering: pin the model (CRAWL_MODEL, default `sonnet`) instead of the session
+// default (likely opus). Crawl extraction + WebFetch grounding is demanding, so sonnet
+// is the floor; raise to opus for hard backfills or drop to haiku to test cheap runs.
+const crawlModel = process.env.CRAWL_MODEL || "sonnet";
 
 const placesPath = join(root, "data", "seed", `places-${channel}.json`);
 const eventsPath = join(root, "data", "seed", `events-${channel}.json`);
@@ -72,7 +76,7 @@ async function extract(text, links = []) {
   ].join("\n");
   try {
     // longer timeout: WebFetch of source links adds latency
-    const { stdout } = await execFileP("claude", ["-p", prompt], { timeout: 240000, maxBuffer: 8 * 1024 * 1024 });
+    const { stdout } = await execFileP("claude", ["-p", prompt, "--model", crawlModel], { timeout: 240000, maxBuffer: 8 * 1024 * 1024 });
     const m = stdout.match(/\{[\s\S]*\}/);
     return m ? JSON.parse(m[0]) : null;
   } catch {
@@ -158,4 +162,4 @@ for (let n = begin; n > begin - count && n > 0; n--) {
   }
   if (!cached) await sleep(delayMs); // only pace real network fetches
 }
-console.log(JSON.stringify({ ok: true, channel, from: begin, scanned, fetched, addedPlaces, addedEvents, places: places.length, events: events.length }, null, 2));
+console.log(JSON.stringify({ ok: true, channel, model: crawlModel, from: begin, scanned, fetched, addedPlaces, addedEvents, places: places.length, events: events.length }, null, 2));

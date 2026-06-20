@@ -453,3 +453,14 @@ exist, raw layer still append-only.
   ABSENT on Vercel serverless — prod enrich must use the SDK path OR run enrich off-prod;
   the health-check should surface "enrich stalled" without failing the site. Decide
   alerting (the existing weekly digest/rare-alert vs a dedicated health ping).
+- [~] T139 [E/I] **`claude -p` model tiering → cost optimization** (user, `backlog:`).
+  Both `claude -p` callsites (`enrich-client.ts`, `crawl-telegram.mjs`) ran WITHOUT
+  `--model`, inheriting the session default (likely opus — priciest tier); worse,
+  `enrich-client`'s `model` opt only recorded an audit string, it never reached the CLI.
+  **Code done**: both now PIN `--model` — enrich default `sonnet` (env `ENRICH_MODEL`,
+  or `opts.model`), crawl default `sonnet` (env `CRAWL_MODEL`); the audit `model` field
+  now reflects the real model. **Eval pending**: A/B/C opus vs sonnet vs haiku on
+  representative inputs (pure RU translation vs grounded WebFetch extraction) to confirm
+  the safe floor per path — likely `haiku` suffices for translation-only, `sonnet` for
+  grounded extraction. Then set per-path defaults from the finding. (Delegated to a
+  background eval subagent.)

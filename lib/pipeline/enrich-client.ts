@@ -24,7 +24,8 @@ export interface ClaudeEnrichOptions {
   timeoutMs?: number; // per-call cap; WebFetch of source links adds latency
   maxBuffer?: number;
   bin?: string; // override the `claude` binary (tests / non-standard installs)
-  model?: string; // model id recorded on the result (audit / tiering)
+  model?: string; // CLI model: alias `opus`/`sonnet`/`haiku` or full id. PINS what runs
+  // (passed as `--model`) AND is recorded for audit. Default `sonnet` (ENRICH_MODEL overrides).
   // Override the actual exec (tests): receives the prompt, returns claude's stdout.
   run?: (prompt: string) => Promise<string>;
 }
@@ -98,15 +99,24 @@ export function createClaudeEnrichClient(opts: ClaudeEnrichOptions = {}): Enrich
   const timeoutMs = opts.timeoutMs ?? 240_000;
   const maxBuffer = opts.maxBuffer ?? 8 * 1024 * 1024;
   const bin = opts.bin ?? "claude";
+  // Cost tiering: the CLI is key-free but tokens still burn subscription spend, so PIN
+  // the model instead of inheriting the session default (likely opus — the priciest
+  // tier). `sonnet` is the default: strong enough for grounded extraction + RU
+  // translation at a fraction of opus cost. Set ENRICH_MODEL=haiku for translation-only
+  // batches, or pass opts.model to override per call.
+  const model = opts.model ?? process.env.ENRICH_MODEL ?? "sonnet";
   const run =
     opts.run ??
     (async (prompt: string) => {
-      const { stdout } = await execFileP(bin, ["-p", prompt], { timeout: timeoutMs, maxBuffer });
+      const { stdout } = await execFileP(bin, ["-p", prompt, "--model", model], {
+        timeout: timeoutMs,
+        maxBuffer,
+      });
       return stdout;
     });
   return {
     supportsWeb: true,
-    model: opts.model ?? "claude-cli",
+    model,
     async enrich(row: EnrichInput, callOpts?: { web?: boolean }): Promise<EnrichmentResult> {
       const stdout = await run(buildEnrichPrompt(row, callOpts?.web ?? false));
       return extractJsonObject(stdout);
