@@ -107,7 +107,7 @@ exist, raw layer still append-only.
 - [ ] T022 [B] Add `app/workflows/refresh.ts` (`use workflow` `refreshWorkflow`) with
   each stage as a `use step`; change `app/api/cron/refresh/route.ts` to
   `start(refreshWorkflow)` fire-and-forget returning `{runId}`.
-- [ ] T023 [P] [B] Keep `lib/pipeline/run.ts` + `scripts/run-pipeline.mjs` working as
+- [x] T023 [P] [B] Keep `lib/pipeline/run.ts` + `scripts/run-pipeline.mjs` working as
   the offline `.mjs` path (no Workflow) for local-run; verify determinism rule (no
   `Date.now()`/random in workflow bodies).
 
@@ -188,13 +188,13 @@ exist, raw layer still append-only.
   occurrences, idempotent re-run processes 0; +2 unit tests (19/19). The "supersede the
   104 existing seed events" half is the T042 migration, which must land WITH the T043
   feed/calendar cutover (else Hemisfèric vanishes from the feed) — deferred together.)*
-- [ ] T042 [D] Migrate seed: 104 Hemisfèric `events` → 11 `event_series` + 104
+- [x] T042 [D] Migrate seed: 104 Hemisfèric `events` → 11 `event_series` + 104
   `event_occurrences` (regenerate from raw `source_items`); ~228 single-shot events
   untouched.
-- [ ] T043 [D] Feed + calendar cutover: feed UNIONs `events` ∪ `event_series` (JS sort
+- [x] T043 [D] Feed + calendar cutover: feed UNIONs `events` ∪ `event_series` (JS sort
   by score); calendar buckets `event_occurrences` JOIN `event_series`; detail page
   shows full schedule; replace `is_hemisferic` with `is_series`/`occurrence_count`.
-- [ ] T044 [P] [D] `tests/series.test.mjs`: 104→11+104, idempotent re-run (0 new
+- [x] T044 [P] [D] `tests/series.test.mjs`: 104→11+104, idempotent re-run (0 new
   occurrences, `enriched_at` not reset), dedup skips occurrences (SC-009).
 
 ---
@@ -443,3 +443,13 @@ exist, raw layer still append-only.
   this option is DEPRECATED (connection caching is always on now), so the line is a
   no-op that only emits a deprecation warning. Fix = delete the line (and any stray docs
   mention). Trivial + zero-risk; verify `npm run build` + a local DB connect still work.
+- [ ] T138 [B/I] **Production verification / health-check** (user, `backlog:`). Design how we
+  confirm the prod pipeline is OK end-to-end: (1) a `/api/health` (or `/api/cron/*?dry=1`)
+  route returning pipeline freshness — last `source_runs.finished_at` per source, last
+  successful dispatch/refresh/digest, row counts (events/series/places), and stale-source
+  flags; (2) post-deploy smoke (GET `/`, `/places`, a detail page → 200 + non-empty);
+  (3) the cron routes are fail-closed (Bearer) — verify they reject unauthenticated and
+  succeed authenticated; (4) since the enrich engine is `claude -p` (subscription) it is
+  ABSENT on Vercel serverless — prod enrich must use the SDK path OR run enrich off-prod;
+  the health-check should surface "enrich stalled" without failing the site. Decide
+  alerting (the existing weekly digest/rare-alert vs a dedicated health ping).

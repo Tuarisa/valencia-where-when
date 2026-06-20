@@ -60,8 +60,10 @@ export default function Home({ payload }: { payload: SitePayload }) {
   const s = search.trim().toLowerCase();
   const matchesTag = (tags: string[]) => tag === "all" || tags.includes(tag);
 
+  // The FEED shows ordinary events + ONE card per series; calendar-only occurrence
+  // rows (sub-area D, T043) are bucketed onto the calendar, never listed as feed cards.
   const filteredEvents = useMemo(
-    () => payload.events.filter((e) => matchesSearch(e, s) && matchesTag(e.tags)),
+    () => payload.events.filter((e) => !e.calendar_only && matchesSearch(e, s) && matchesTag(e.tags)),
     [payload.events, s, tag],
   );
   const filteredPlaces = useMemo(
@@ -116,7 +118,7 @@ export default function Home({ payload }: { payload: SitePayload }) {
             monthIndex={monthIndex}
             setMonthIndex={setMonthIndex}
           />
-          <MapPanel events={payload.events} places={filteredPlaces} center={payload.map_center} />
+          <MapPanel events={payload.events.filter((e) => !e.calendar_only)} places={filteredPlaces} center={payload.map_center} />
         </div>
 
         <section className="panel">
@@ -152,6 +154,9 @@ function FeedCard({ item }: { item: SiteEvent }) {
         <div className="card-meta">
           <span>{item.date_label}</span>
           <span>{item.location_label}</span>
+          {item.is_series && item.occurrence_count > 0 && (
+            <span>{item.occurrence_count} {pluralSeans(item.occurrence_count)}</span>
+          )}
           <span>score {item.score ?? "—"}</span>
         </div>
         <p>{item.excerpt || "Описание подтянем позже."}</p>
@@ -192,6 +197,9 @@ function Calendar({
 
     const byDate = new Map<number, SiteEvent[]>();
     for (const item of payload.events) {
+      // Skip series feed cards (is_series): they have no single calendar date — their
+      // sessions are placed individually via the calendar-only occurrence rows below.
+      if (item.is_series) continue;
       if (!(item.start_date || "").startsWith(monthKey)) continue;
       const day = Number((item.start_date || "").slice(-2));
       if (!byDate.has(day)) byDate.set(day, []);

@@ -123,6 +123,24 @@ card's source links to GROUND facts + cite them; pure helpers `enrichSourceLinks
 DEFERRED (touch `next dev`/package.json — do carefully): T021 `npm i workflow` +
 `withWorkflow` in `next.config.mjs` + drop `vercel.json` maxDuration; then T022/T055
 workflows.
+**Round-2 (workflow `wjkuqd3dz`, ultracode) — D DONE, B DEFERRED.** Sub-area D landed
+(T042–T044 ✅): `scripts/migrate-hemisferic-series.mjs` (now chained into `db:setup` via
+`db:migrate:series`) converts the 104 `api:hemisferic` events → 11 `event_series` + 104
+`event_occurrences`, marks the 104 raw events `status='duplicate'`+`metadata.merged_into_series`
+(idempotent, live-verified 11/104/0-in-feed). `lib/queries.ts` UNIONs events ∪ series
+(`getSeriesEvents`/`seriesToSiteEvents`/`getSeriesDetail`; SiteEvent gains `is_series`/
+`occurrence_count`/`series_id`/`calendar_only`); `Home.tsx` feed shows ONE card per series,
+calendar buckets occurrences into `.day-hemis`, map skips `calendar_only`; series detail at
+`/events/series-<id>-…`. build green, 99/99 tests. **B DEFERRED (T021/T022/T055 reverted
+clean):** `workflow@4.5.0` IS the real Vercel Workflow SDK but does NOT build with
+next@14.2.15 LOCALLY — its auto `/.well-known/workflow/v1/*` routes crash page-data
+collection on Vercel-OIDC resolution (`path.parse(undefined)`) with no linked Vercel project.
+Options: build it only on a real Vercel deploy/preview (skip local gate), or pin compatible
+versions / upgrade Next. T023 ✅ (offline run.ts/.mjs path is the live path, verified).
+**OPS:** the logunespa crawler hit the **Claude subscription monthly spend limit** — so
+`claude -p` (crawler AND the default enrich engine) is unavailable until the limit is raised
+(claude.ai/settings/usage); enrich on Vercel needs the SDK path regardless. New backlog:
+**T138** prod verification/health-check.
 
 **Non-negotiables** (see constitution v1.1.0): append-only raw `source_items`; dedup
 keeps a link to every source (via `entity_sources`) and never merges on fallback geo
