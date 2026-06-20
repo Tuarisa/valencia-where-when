@@ -1,0 +1,13 @@
+{
+  "source": "spec",
+  "name": "card-enrich",
+  "basePath": "specs/card-enrich",
+  "phase": "research",
+  "taskIndex": 0,
+  "totalTasks": 0,
+  "taskIteration": 1,
+  "maxTaskIterations": 5,
+  "globalIteration": 1,
+  "maxGlobalIterations": 100,
+  "awaitingApproval": true
+}
