@@ -98,6 +98,87 @@ export function selectDigest(
   });
 }
 
+// === Series (sub-area D/G, T073) =========================================
+// A recurring offering is rendered as ONE card: the series (title/venue/score)
+// plus its NEXT upcoming occurrence within the horizon — NOT one row per session.
+// The next-occurrence date is computed from event_occurrences (MIN date ≥ today),
+// either at load time (SQL) or purely from an `occurrences` list. No-repeat is
+// keyed on series_id (notifications.series_id), so a series is digested once.
+export interface SeriesCard extends DigestCandidate {
+  // `start_date` here carries the NEXT upcoming occurrence date (so the existing
+  // horizon/render helpers apply unchanged); `series_start` keeps the run start.
+  series_start?: string | null;
+  next_occurrence?: string | null;
+  occurrence_count?: number | null;
+  venue_name?: string | null;
+  recurrence_summary?: string | null;
+  occurrences?: Array<{ occurrence_date?: string | null; status?: string | null }>;
+}
+
+// PURE: earliest occurrence date on/after `today` (a non-cancelled session). Returns
+// null when every occurrence is in the past or cancelled. ISO dates compare lexically.
+export function nextOccurrence(
+  occurrences: Array<{ occurrence_date?: string | null; status?: string | null }> | null | undefined,
+  today: string,
+): string | null {
+  if (!Array.isArray(occurrences)) return null;
+  let best: string | null = null;
+  for (const o of occurrences) {
+    const d = (o?.occurrence_date || "").slice(0, 10);
+    if (!d || d < today) continue;
+    if ((o?.status || "upcoming") === "cancelled") continue;
+    if (best == null || d < best) best = d;
+  }
+  return best;
+}
+
+// PURE: weekly-digest selection for SERIES. Identical gates to selectDigest, but the
+// horizon test runs against the NEXT upcoming occurrence (preferring an explicit
+// `next_occurrence`, else computed from the `occurrences` list, else `start_date`).
+// The chosen date is written back to `start_date` so renderers show ONE card + next date.
+export function selectSeriesDigest(
+  series: SeriesCard[],
+  { today, horizonDays = DIGEST_HORIZON_DAYS, threshold = DIGEST_SCORE_THRESHOLD, holdThreshold = CONFIDENCE_HOLD }: DigestParams,
+): SeriesCard[] {
+  const out: SeriesCard[] = [];
+  for (const s of series) {
+    if (s.notified) continue;
+    if ((s.score ?? 0) < threshold) continue;
+    if (!isFamilyFit(s)) continue;
+    const next = s.next_occurrence ?? nextOccurrence(s.occurrences, today) ?? s.start_date ?? null;
+    if (!withinHorizon(next, today, horizonDays)) continue;
+    const conf = cardConfidence(s);
+    if (conf != null && conf < holdThreshold) continue;
+    out.push({ ...s, next_occurrence: next, start_date: next });
+  }
+  return out;
+}
+
+// Load un-notified upcoming series + their NEXT upcoming occurrence (MIN occurrence_date
+// ≥ today over non-cancelled sessions). The pure selectSeriesDigest then filters. The
+// JOIN collapses N occurrences to ONE row per series (T073). Injectable exec.
+export async function loadSeriesCandidates(
+  { exec = sql, today }: { exec?: typeof sql; today: string },
+): Promise<SeriesCard[]> {
+  return (await exec`
+    SELECT s.id, s.title, s.start_date AS series_start, s.score, s.notified,
+           s.category, s.tags_json, s.enrichment_json, s.enriched_at,
+           s.venue_name, s.recurrence_summary,
+           n.next_occurrence, n.occurrence_count
+    FROM event_series s
+    LEFT JOIN (
+      SELECT series_id,
+             MIN(occurrence_date) AS next_occurrence,
+             COUNT(*) AS occurrence_count
+      FROM event_occurrences
+      WHERE occurrence_date >= ${today} AND COALESCE(status, 'upcoming') <> 'cancelled'
+      GROUP BY series_id
+    ) n ON n.series_id = s.id
+    WHERE s.notified = 0 AND s.status = 'upcoming'
+    ORDER BY s.score DESC NULLS LAST
+  `) as unknown as SeriesCard[];
+}
+
 export interface AlertParams {
   alertThreshold?: number;
   holdThreshold?: number;
@@ -152,16 +233,28 @@ export async function loadNewPlaces({ exec = sql }: { exec?: typeof sql } = {}):
 // PURE: render the digest as plain text. This is the default deliverable — the
 // transport (Telegram/email/webhook) is pluggable below and starts as dry-run
 // output (research G2). Deterministic given its inputs.
-export function renderDigestText(events: DigestCandidate[], places: NewPlace[], mode: "weekly" | "alert" = "weekly"): string {
+export function renderDigestText(
+  events: DigestCandidate[],
+  places: NewPlace[],
+  mode: "weekly" | "alert" = "weekly",
+  series: SeriesCard[] = [],
+): string {
   const lines: string[] = [];
   lines.push(mode === "alert" ? "🔔 Valencia Radar — срочно" : "📅 Valencia Radar — афиша на 2–3 недели");
   lines.push("");
-  if (events.length === 0) {
+  if (events.length === 0 && series.length === 0) {
     lines.push("Ничего нового, подходящего семье, не найдено.");
   } else {
     for (const e of events) {
       const date = (e.start_date || "").slice(0, 10) || "дата уточняется";
       lines.push(`• ${date} — ${e.title ?? "(без названия)"}${e.score != null ? ` (score ${e.score})` : ""}`);
+    }
+    // Recurring offerings: ONE card per series, showing the next upcoming date (T073).
+    for (const s of series) {
+      const next = (s.next_occurrence || s.start_date || "").slice(0, 10);
+      const when = next ? `ближайшая дата ${next}` : "даты уточняются";
+      const cadence = s.recurrence_summary ? ` — ${s.recurrence_summary}` : "";
+      lines.push(`• 🔁 ${s.title ?? "(без названия)"}${cadence} (${when})${s.score != null ? ` (score ${s.score})` : ""}`);
     }
   }
   if (mode === "weekly" && places.length) {
@@ -175,6 +268,7 @@ export function renderDigestText(events: DigestCandidate[], places: NewPlace[], 
 export interface DigestPayload {
   mode: "weekly" | "alert";
   events: DigestCandidate[];
+  series: SeriesCard[];
   places: NewPlace[];
   text: string;
 }
@@ -189,8 +283,15 @@ export async function buildDigest(
     mode === "alert"
       ? selectAlerts(candidates, params)
       : selectDigest(candidates, { today, ...params });
+  // Recurring offerings: one card per series, gated like the weekly digest and shown
+  // with its next upcoming occurrence (T073). Series are weekly-digest only — a rare
+  // alert is for a single high-signal one-off, not a standing schedule.
+  const series =
+    mode === "weekly"
+      ? selectSeriesDigest(await loadSeriesCandidates({ exec, today }), { today, ...params })
+      : [];
   const places = mode === "weekly" ? await loadNewPlaces({ exec }) : [];
-  return { mode, events, places, text: renderDigestText(events, places, mode) };
+  return { mode, events, series, places, text: renderDigestText(events, places, mode, series) };
 }
 
 // Pluggable sender. Default = dry-run (returns the text, delivers nothing). A real
@@ -228,6 +329,23 @@ export async function markPlacesNotified(
   for (const id of ids) {
     await exec`UPDATE places SET notified = 1, notified_at = ${ts} WHERE id = ${id}`;
     await exec`INSERT INTO notifications (place_id, sent_at, channel) VALUES (${id}, ${ts}, ${channel})`;
+    n++;
+  }
+  return n;
+}
+
+// Mark recurring SERIES as notified + log a notifications row each via series_id, so a
+// later digest never repeats the series card (SC-002, T073). One row per series — NOT
+// per occurrence — mirroring the one-card render. Injectable exec.
+export async function markSeriesNotified(
+  ids: number[],
+  { exec = sql, channel = "digest" }: { exec?: typeof sql; channel?: string } = {},
+): Promise<number> {
+  const ts = nowIso();
+  let n = 0;
+  for (const id of ids) {
+    await exec`UPDATE event_series SET notified = 1, notified_at = ${ts} WHERE id = ${id}`;
+    await exec`INSERT INTO notifications (series_id, sent_at, channel) VALUES (${id}, ${ts}, ${channel})`;
     n++;
   }
   return n;
