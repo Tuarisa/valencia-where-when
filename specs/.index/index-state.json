@@ -1,10 +1,10 @@
 {
   "version": "1.0",
-  "updated": "2026-06-20T13:07:43Z",
+  "updated": "2026-06-20T13:14:22Z",
   "directories": [
     {
       "path": "./specs",
-      "specsCount": 4,
+      "specsCount": 5,
       "isDefault": true
     }
   ],
@@ -25,6 +25,12 @@
     {
       "name": "vercel-workflow",
       "path": "./specs/vercel-workflow",
+      "phase": "research",
+      "awaitingApproval": true
+    },
+    {
+      "name": "card-enrich",
+      "path": "./specs/card-enrich",
       "phase": "research",
       "awaitingApproval": true
     },
