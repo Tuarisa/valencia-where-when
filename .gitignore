@@ -34,3 +34,5 @@ yarn-error.log*
 .claude/
 
 build.log
+specs/.current-spec
+**/.progress.md
