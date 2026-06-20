@@ -35,6 +35,17 @@ local dev (sub-area H, wired): `npm run db:local:up` → `npm run db:local:setup
 `npm run dev:local` → `npm run db:local:down` (Docker Postgres + Neon HTTP proxy;
 shim gated on `db.localtest.me`, see `LOCAL_RUN.md`); eval (key-gated): `npm run eval`.
 
+**Loop execution — ULTRACODE BY DEFAULT (user, REQUIRED).** This project runs autonomously
+via `/loop /speckit-implement` ticks. On each tick the main loop must DELEGATE the substantive
+task work to subagents instead of doing reads/edits/builds inline — otherwise it all piles into
+the persistent loop context, which is wasteful and bloats fast. The main loop's job per tick:
+(1) pick the next unblocked task, (2) delegate execution to a subagent (Agent tool) — or a
+**Workflow** for multi-part / parallelizable / file-disjoint work — (3) integrate the returned
+result, run the compile/test gate, and **commit + push**. Keep the loop context lean: subagents
+do the heavy lifting and return conclusions, not file dumps. Background long/slow or independent
+work and let it notify on completion. (Established by the user: "отправляй всё в сабагентов,
+контекст слишком длинный, используй ultracode". Trivial mechanical edits may stay inline.)
+
 **Progress**: Phase 0 done (T001 harness 8/8, T002 GH-Actions scheduler skeleton,
 T003 `.env.example`). **T004 additive schema applied** to the live local DB
 (`entity_sources`, `event_series`/`event_occurrences`, sources cadence cols,
