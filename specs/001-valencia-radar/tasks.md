@@ -169,9 +169,13 @@ exist, raw layer still append-only.
 
 ## Sub-area D: Recurring Events (FR-018, SC-009) — series + occurrences
 
-- [ ] T040 [D] `lib/pipeline/series.ts` `upsertSeries(series, occurrences[])`:
+- [x] T040 [D] `lib/pipeline/series.ts` `upsertSeries(series, occurrences[])`:
   idempotent upserts (unchanged schedule = 0 INSERTs, only `last_seen` bumps);
-  series/occurrence `dedup_hash` per data-model identity.
+  series/occurrence `dedup_hash` per data-model identity. *(done: `seriesHash`
+  (norm(title)|norm(venue)|source) + `occurrenceHash` (series_id|date|time) + injectable
+  `upsertSeries`. Live-verified on local DB: re-run inserts 0 new series/occurrences and
+  PRESERVES `enriched_at`/`score`/`notified` (ON CONFLICT updates only normalizer fields
+  + last_seen); +2 unit tests, 17/17.)*
 - [ ] T041 [D] Rewrite `normalizers/hemisferic.ts` to emit 1 series + N occurrences
   (per-session granularity); mark old Hemisfèric `events` rows `status='superseded'`.
 - [ ] T042 [D] Migrate seed: 104 Hemisfèric `events` → 11 `event_series` + 104

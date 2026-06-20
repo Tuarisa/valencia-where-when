@@ -56,7 +56,10 @@ idempotent, so wiring it into `run.ts` (T038) is now SAFE. Still deferred: place
 DB orchestrator → T064 (place mining; needs places.status + render filter);
 `entity_sources` writes (T033/T034) → need `source_items` (seed has none). **Events dedup wired into `run.ts`** (T038, offline path): order now
 `ingest → normalize → dedup → score → tag → geo` (enrich slots in at T050;
-`refreshWorkflow` exposure is T022). Next: T040 series upsert, T050 enrich skeleton,
+`refreshWorkflow` exposure is T022). **Series helper done** (T040): `lib/pipeline/
+series.ts` `upsertSeries` + `seriesHash`/`occurrenceHash`, idempotent (live-verified:
+re-run = 0 new rows, preserves enriched_at/score/notified). Next: T041 (rewrite
+`normalizers/hemisferic.ts` to emit series via `upsertSeries`), T050 enrich skeleton,
 or T010 parser registry.
 
 **Non-negotiables** (see constitution v1.1.0): append-only raw `source_items`; dedup
