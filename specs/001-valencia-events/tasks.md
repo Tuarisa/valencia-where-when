@@ -36,9 +36,9 @@ tasks EXTEND files in `lib/pipeline/`, `app/`, `scripts/`. Each task must end gr
 **⚠️ CRITICAL**: complete before user-story work.
 
 - [ ] T004 Verify/align `db/schema.sql` against data-model.md; confirm enrichment columns (`title_ru`, `description_ru`, `links_json`, `enrichment_json`, `enriched_at`), `notified`/`notified_at`, and `notifications` exist. Add an idempotent migration only if a column is missing. Run `npm run db:schema` against a dev DB.
-- [ ] T005 Refactor `lib/pipeline/normalize.ts` into a **registry/dispatch** keyed by `source_key`/`item_type`; move the existing Hemisfèric path to `lib/pipeline/normalizers/hemisferic.ts` as the first registry entry. Export `normalizeAll()`. No behavior change yet (build + existing data parity).
-- [ ] T006 [P] Add shared normalizer types/helpers in `lib/pipeline/normalizers/types.ts` (`EventDraft`, `PlaceDraft`, `NormalizedOut`, status enum) and a `markRawItem(status, note)` helper that never deletes `source_items`.
-- [ ] T007 [P] Add `tests/normalize-registry.test.mjs` asserting dispatch routes a sample raw item to the right normalizer and unknown sources return `ignored`.
+- [x] T005 Refactor `lib/pipeline/normalize.ts` into a **registry/dispatch** keyed by `source_key`/`item_type`; move the existing Hemisfèric path to `lib/pipeline/normalizers/hemisferic.ts` as the first registry entry. Export `normalizeAll()`. No behavior change yet (build + existing data parity).
+- [x] T006 [P] Add shared normalizer types/helpers in `lib/pipeline/normalizers/types.ts` (`EventDraft`, `PlaceDraft`, `NormalizedOut`, status enum) and a `markRawItem(status, note)` helper that never deletes `source_items`.
+- [x] T007 [P] Add `tests/normalize-registry.test.mjs` asserting dispatch routes a sample raw item to the right normalizer and unknown sources return `ignored`.
 
 **Checkpoint**: pipeline still runs (`npm run pipeline:run`), registry in place, raw layer still append-only.
 

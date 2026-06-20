@@ -1,64 +1,67 @@
 import { sql } from "../db";
-import { nowIso, eventHash } from "./util";
+import { normalizeHemisferic, HEMISFERIC_SOURCE_KEY } from "./normalizers/hemisferic";
+import { markRawItem } from "./normalizers/types";
 
-// Deterministic normalizer for the Hemisfèric schedule API (one event per
-// show/day, sessions kept in metadata). Other sources are normalized by the
-// richer multi-source normalizer (see WORKBOARD.md "normalizer port").
-export async function normalizeHemisferic(): Promise<{ created: number; updated: number; processed: number }> {
-  const rows = (await sql`
-    SELECT * FROM source_items
-    WHERE source_key = 'api:hemisferic'
-      AND (normalized_status IS NULL OR normalized_status = 'pending'
-           OR normalized_at IS NULL OR normalized_at < last_seen)
-  `) as any[];
+// Re-export the Hemisfèric path so existing imports keep working.
+export { normalizeHemisferic } from "./normalizers/hemisferic";
 
+// A registered source normalizer processes ALL pending rows for its source key
+// (batch). The dispatcher runs each registered normalizer, then marks any
+// pending rows from unregistered sources as `ignored` (never deletes them —
+// raw layer is append-only, constitution I).
+export type SourceNormalizer = () => Promise<{ created: number; updated: number; processed: number }>;
+
+// Registry keyed by source_key. Add new sources here as their normalizer module
+// lands (Phase 8). Hemisfèric is the first entry.
+export const NORMALIZER_REGISTRY: Map<string, SourceNormalizer> = new Map([
+  [HEMISFERIC_SOURCE_KEY, normalizeHemisferic],
+]);
+
+// Resolve a normalizer for a source key (pure — testable without a DB).
+export function resolveNormalizer(
+  sourceKey: string,
+  registry: Map<string, SourceNormalizer> = NORMALIZER_REGISTRY,
+): SourceNormalizer | undefined {
+  return registry.get(sourceKey);
+}
+
+// Dispatch every pending raw item to its registered normalizer. Unknown sources
+// resolve to `ignored`. Returns aggregate counts plus a per-source breakdown.
+export async function normalizeAll(): Promise<{
+  created: number;
+  updated: number;
+  processed: number;
+  ignored: number;
+  bySource: Record<string, { created: number; updated: number; processed: number }>;
+}> {
+  const bySource: Record<string, { created: number; updated: number; processed: number }> = {};
   let created = 0;
   let updated = 0;
-  const ts = nowIso();
+  let processed = 0;
 
-  for (const item of rows) {
-    let raw: any = {};
-    try {
-      raw = JSON.parse(item.raw_json || "{}");
-    } catch {
-      raw = {};
-    }
-    const showName: string = raw.show_name || item.title || "Hemisfèric";
-    const day: string | null = raw.schedule_date || (item.published_at || "").slice(0, 10) || null;
-    const sessions: string[] = Array.isArray(raw.session_times) ? raw.session_times : [];
-    const startTime = sessions[0] || null;
-    const poster: string | null = raw.poster_url || null;
-    const description = `${raw.description || showName}${sessions.length ? `\n\nСеансы: ${sessions.join(", ")}` : ""}`;
-
-    const evt = {
-      title: showName,
-      start_date: day,
-      end_date: null as string | null,
-      venue_name: "L'Hemisfèric",
-      address: "Av. del Professor López Piñero, 7, Valencia",
-    };
-    const dedup = eventHash(evt);
-
-    const existing = (await sql`SELECT id FROM events WHERE dedup_hash = ${dedup}`) as any[];
-    if (existing.length) {
-      await sql`UPDATE events SET last_seen = ${ts}, start_time = ${startTime},
-        image_url = COALESCE(image_url, ${poster}), description = ${description},
-        url = COALESCE(${item.url ?? null}, url), source_url = COALESCE(${item.url ?? null}, source_url),
-        metadata_json = ${JSON.stringify({ sessions })} WHERE dedup_hash = ${dedup}`;
-      updated++;
-    } else {
-      await sql`INSERT INTO events
-        (dedup_hash, title, description, category, language, audience, start_date, start_time,
-         venue_name, district, address, city, country, image_url, source, source_url, url,
-         raw_excerpt, source_item_id, metadata_json, status, first_seen, last_seen)
-        VALUES (${dedup}, ${showName}, ${description}, 'show', 'es', 'family', ${day}, ${startTime},
-         ${evt.venue_name}, 'Quatre Carreres', ${evt.address}, 'Valencia', 'Spain', ${poster},
-         'api:hemisferic', ${item.url ?? null}, ${item.url ?? null}, ${item.raw_text ?? null},
-         ${item.id}, ${JSON.stringify({ sessions })}, 'upcoming', ${ts}, ${ts})`;
-      created++;
-    }
-    await sql`UPDATE source_items SET normalized_at = ${ts}, normalized_status = 'normalized' WHERE id = ${item.id}`;
+  // Run each registered (known) source normalizer.
+  for (const [sourceKey, normalizer] of NORMALIZER_REGISTRY) {
+    const res = await normalizer();
+    bySource[sourceKey] = res;
+    created += res.created;
+    updated += res.updated;
+    processed += res.processed;
   }
 
-  return { created, updated, processed: rows.length };
+  // Mark pending rows from unregistered sources as `ignored` (append-only).
+  const known = Array.from(NORMALIZER_REGISTRY.keys());
+  const pending = (await sql`
+    SELECT id, source_key FROM source_items
+    WHERE (normalized_status IS NULL OR normalized_status = 'pending'
+           OR normalized_at IS NULL OR normalized_at < last_seen)
+      AND source_key <> ALL(${known})
+  `) as Array<{ id: number; source_key: string }>;
+
+  let ignored = 0;
+  for (const row of pending) {
+    await markRawItem(row.id, "ignored", `no normalizer for source ${row.source_key}`);
+    ignored++;
+  }
+
+  return { created, updated, processed, ignored, bySource };
 }

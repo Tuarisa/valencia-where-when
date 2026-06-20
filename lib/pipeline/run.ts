@@ -1,5 +1,5 @@
 import { ingestAll } from "./ingest";
-import { normalizeHemisferic } from "./normalize";
+import { normalizeAll } from "./normalize";
 import { scoreAll } from "./score";
 import { tagAll } from "./tags";
 import { geoEnrich } from "./geo";
@@ -9,7 +9,7 @@ import { geoEnrich } from "./geo";
 export async function runPipeline(opts: { geoLimit?: number } = {}) {
   const started = Date.now();
   const ingest = await ingestAll();
-  const normalize = await normalizeHemisferic();
+  const normalize = await normalizeAll();
   const score = await scoreAll();
   const tag = await tagAll();
   const geo = await geoEnrich(opts.geoLimit ?? 30);
