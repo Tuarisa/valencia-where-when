@@ -488,6 +488,29 @@ exist, raw layer still append-only.
   actividades/museu` all returned `TypeError: fetch failed` (cac.es). Investigate TLS/HTTP2, bot-block, or
   transient; may need a real User-Agent / retry / timeout tuning. 4 of 25 sources currently yield no data.
 
+- [ ] T149 [D/F] **Hemisfèric display — duplicates + "10 films/day" look wrong** (user, `backlog:`).
+  Re-verify the Hemisfèric series/occurrences render: the user sees apparent DUPLICATES and "как будто
+  кожен день по 10 фільмів" which shouldn't be. Check `event_occurrences` per series (should be 104 occ /
+  11 series), the feed (ONE card per series), calendar bucketing (`.day-hemis`), and whether a re-ingest/
+  re-normalize created duplicate series/occurrences. Likely an occurrence-explosion or a series-dedup gap.
+
+- [ ] T150 [A] **worldafisha: recover date from the event URL slug + drop /persons/ non-events** (T141
+  finding). worldafisha `source_items` carry only the title in `raw_text` (no date) → 79/80 null-dated.
+  But the event URL encodes the date: `/event/aleksandr-gudkov-valensiya-2026-11-09` → 2026-11-09. Also
+  many entries are `/persons/<artist>` artist pages (NOT events) → drop them. Fix the worldafisha
+  normalizer: parse the date from the `url` slug (deterministic regex, T140) + keep only `/event/` URLs.
+
+- [ ] T151 [A] **Fever normalizer (ISO-dated, ~81 items)** (T141 finding). `web:fever` has NO normalizer
+  so its date-RICH raw items are ignored (`raw_text` carries ISO `2026-06-30 18:00`). Build a fever events
+  normalizer (parse the ISO datetime + title/venue/price), register it — high yield, easy dates. NOTE: the
+  live fever `raw_text` shows a title/description MISMATCH (generic parse may pair a card title with the
+  wrong body) → verify the fever field pairing.
+
+- [ ] T152 [A] **Relative-date parsing for ES telegram (`este fin de semana`, `este mes`)** (T141 finding).
+  valenciabonitatelegram posts use relative Spanish dates ("este fin de semana", "este finde", "este mes",
+  "hoy"/"mañana") → 15/17 null-dated. Optionally resolve them against the post date (source_item `last_seen`)
+  to a concrete weekend/month start. Fuzzy; lower priority than T150/T151.
+
 - [~] T130 [F] **logunespa historical place crawl → seed** (user priority; DELEGATED to a
   background subagent so the main loop keeps moving through the plan — places-only,
   20 posts/batch, resumable backward; agent commits/pushes each batch). Walk the
