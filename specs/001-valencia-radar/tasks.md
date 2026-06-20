@@ -438,7 +438,7 @@ exist, raw layer still append-only.
   Verify `lib/pipeline/dedup.ts` `titleSignature` + ≥2-source `isMergeableGroup` already
   collapses these (artist name + date + Spanish city), and that the merged record carries
   both `entity_sources` rows. Add a focused test once both normalizers (T112) land.
-- [ ] T137 [B] **Drop deprecated `fetchConnectionCache`** (user, `backlog:`). `lib/db.ts:3`
+- [x] T137 [B] **Drop deprecated `fetchConnectionCache`** (user, `backlog:`). `lib/db.ts:3`
   sets `neonConfig.fetchConnectionCache = true;` — in current `@neondatabase/serverless`
   this option is DEPRECATED (connection caching is always on now), so the line is a
   no-op that only emits a deprecation warning. Fix = delete the line (and any stray docs
