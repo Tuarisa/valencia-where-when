@@ -30,6 +30,26 @@ function matchesSearch(item: { title?: string; name?: string; description?: stri
   return hay.includes(search);
 }
 
+// Escape dynamic text for the Leaflet popup HTML strings.
+function esc(s: unknown): string {
+  return String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] as string));
+}
+
+// Human-readable map popup (T135): a real title (fall back when the name is still a raw
+// maps link), a category chip, and a short "why-go" line — not just name + location.
+function placePopupHtml(p: SitePlace): string {
+  const named = p.name && !/^https?:/i.test(p.name);
+  const title = named ? p.name : p.category ? p.category[0].toUpperCase() + p.category.slice(1) : "Место";
+  const cat = p.category ? ` <span class="map-cat">${esc(p.category)}</span>` : "";
+  const why = p.excerpt ? `<div class="map-why">${esc(p.excerpt)}</div>` : "";
+  return `<strong>${esc(title)}</strong>${cat}<br><span class="map-loc">${esc(p.location_label)}</span>${why}<br><a href="${p.page_url}">карточка →</a>`;
+}
+
+function eventPopupHtml(e: SiteEvent): string {
+  const why = e.excerpt ? `<div class="map-why">${esc(e.excerpt)}</div>` : "";
+  return `<strong>${esc(e.title)}</strong><br><span class="map-loc">${esc(e.date_label)}</span>${why}<br><a href="${e.page_url}">карточка →</a>`;
+}
+
 export default function Home({ payload }: { payload: SitePayload }) {
   const [search, setSearch] = useState("");
   const [tag, setTag] = useState("all");
@@ -278,17 +298,13 @@ function MapPanel({
 
       for (const p of places) {
         if (p.lat == null || p.lng == null) continue;
-        L.marker([p.lat, p.lng]).addTo(map).bindPopup(
-          `<strong>${p.name}</strong><br>${p.location_label}<br><a href="${p.page_url}">карточка</a>`,
-        );
+        L.marker([p.lat, p.lng]).addTo(map).bindPopup(placePopupHtml(p));
       }
       for (const e of events) {
         if (e.lat == null || e.lng == null) continue;
         L.circleMarker([e.lat, e.lng], {
           radius: 7, color: "#d65a31", fillColor: "#d65a31", fillOpacity: 0.9,
-        }).addTo(map).bindPopup(
-          `<strong>${e.title}</strong><br>${e.date_label}<br><a href="${e.page_url}">карточка</a>`,
-        );
+        }).addTo(map).bindPopup(eventPopupHtml(e));
       }
     });
 

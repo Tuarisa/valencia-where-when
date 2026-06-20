@@ -177,6 +177,9 @@ a { color: inherit; }
 .day-hemis .hemis-session .ev-time { font-weight: 800; color: var(--hemis); margin-right: 4px; }
 
 .panel-map .map-frame { height: 420px; border-radius: 20px; overflow: hidden; border: 1px solid rgba(0,0,0,0.08); }
+.leaflet-popup-content .map-cat { font-size: 0.7rem; background: var(--line); border-radius: 6px; padding: 1px 7px; }
+.leaflet-popup-content .map-loc { color: var(--muted); font-size: 0.8rem; }
+.leaflet-popup-content .map-why { margin-top: 6px; font-size: 0.82rem; line-height: 1.3; color: var(--ink); max-width: 240px; }
 .places-list { margin-top: 14px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
 .place-card { grid-template-columns: 1fr; }
 

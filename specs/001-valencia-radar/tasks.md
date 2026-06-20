@@ -416,6 +416,10 @@ exist, raw layer still append-only.
   (the logunespa `claude -p` crawl already produces these — backfill resolves the
   maps-link-named places; enrich fills the rest); (2) richer popup template in
   `Home.tsx` MapPanel (`name` + tagline + category, not just name + location).
+  *(PART 2 DONE: `placePopupHtml`/`eventPopupHtml` — readable title (falls back to
+  category when the name is still a raw maps link) + category chip + "why-go" excerpt +
+  location, HTML-escaped, + popup CSS. PART 1 (clean names/taglines) flows from the
+  logunespa crawl + enrich — ongoing.)*
 - [~] T131 [A] **concerten — Spain-only pre-filter** (user). The channel ALREADY exists
   as `tg:concerten` ("Зарубежная афиша русскоязычных артистов") — it lists RU-artist
   tours across ALL of Europe, so normalize/ingest must pre-filter to Spain. *(DONE —
