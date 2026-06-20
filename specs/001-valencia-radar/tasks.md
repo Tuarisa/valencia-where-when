@@ -334,7 +334,15 @@ exist, raw layer still append-only.
   normalizers mark raw items `ignored` (append-only). Cadence auto-seeded by
   `seedCadence()` at db:setup; new rows have null `last_fetched` → picked on first
   dispatch. JSON valid, column-consistent; build green, 124/124.)*
-- [ ] T102 [P] Run `quickstart.md` validation scenarios end-to-end.
+- [x] T102 [P] Run `quickstart.md` validation scenarios end-to-end. *(DONE — full E2E on the
+  live local stack (Docker Postgres + Neon HTTP proxy, prod `next start`): stack up + seed clean
+  (406 events / 11 series / 104 occurrences / 65 places / 27 sources / 216 media; series migration
+  idempotent, 0 hemis rows leaked). All core routes **200 + non-empty**: `/` (feed + calendar +
+  Leaflet map w/ real coords), `/places` (65 venues), TWO series detail pages (recurring cutover
+  renders a per-day session schedule), an individual event detail. Server log clean, 0 errors/500s.
+  Only non-200 = `/api/health` 503 — BY DESIGN on a seed-only DB (no pipeline run on record); all
+  counts healthy. Cleanup done. 2 non-blocking findings → T143 (health/smoke ergonomics) + T135
+  (14/65 places mapped).)*
 - [~] T103 [P] Update `WORKBOARD.md` Done/Next; `npm run build` + `node --test tests/`
   clean; tidy dead code. *(DOC HALF DONE: WORKBOARD.md reconciled against the actual tasks.md
   markers — Done/Next/Blocked refreshed + over-claims corrected to match `[~]` partials
@@ -414,6 +422,15 @@ exist, raw layer still append-only.
   Extend T133's `featureKind` (feria|festival|hemisferic|null) with an `excursion` kind derived from the
   `tg:rutatuta_vlc` source / tags, plus a distinct accent colour + legend entry. Needs the rutatuta_vlc
   normalizer (place/event mining — relates to T064); pairs well with **T141** (real data to verify it).
+
+- [ ] T143 [I] **`/api/health` + `npm run smoke` ergonomics on a seed-only DB** (found by the T102
+  E2E run). `pipelineWarnings()` HARD-fails (`ok=false` → 503) when there is "no successful pipeline
+  run on record" (`source_runs` empty), so on a freshly-seeded local DB the smoke gate can NEVER pass
+  even though all row counts are healthy. Options: (a) demote "no pipeline run on record" to a
+  soft/INFO warning when counts are otherwise healthy (keep it a HARD fail on prod where a run is
+  expected), (b) seed a synthetic `source_runs` success row in `db:local:setup`, or (c) document that
+  a local seed-only health-fail is expected and gate `smoke` on row counts. Likely auto-resolves once
+  **T141** live-ingest populates `source_runs`. Low severity; not a render/crash bug.
 
 - [~] T130 [F] **logunespa historical place crawl → seed** (user priority; DELEGATED to a
   background subagent so the main loop keeps moving through the plan — places-only,

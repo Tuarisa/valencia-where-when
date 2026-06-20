@@ -222,6 +222,24 @@ extensionless `../../db` imported (transitively) from a statically-imported pipe
 resolve, so concerten (the FIRST test to import a real normalizer module) failed with ERR_MODULE_NOT_FOUND
 while passing under the agents' tsx self-check; adding `--import tsx` resolves `.ts` like the rest of the
 toolchain (build/run-pipeline). Build green, **137/137** tests (128 + 9 concerten).
+**Tick D (ultracode Workflow `w1h4o8rxw`, E2E + normalizer).** **T102 DONE [x]** — full E2E on
+the LIVE local stack (Docker Postgres + Neon HTTP proxy, prod `next start` on :3939): seed clean
+(406 events / 11 series / 104 occurrences / 65 places / 27 sources / 216 media; series migration
+idempotent, 0 hemis rows leaked), ALL core routes **200 + non-empty** (`/` feed+calendar+Leaflet map
+w/ real coords, `/places` 65 venues, TWO series detail pages = recurring cutover renders a per-day
+session schedule, an individual event detail), server log clean (0 errors/500s), cleanup done. This
+verifies the constitution's "site renders deterministically from the DB". Only non-200 = `/api/health`
+503 BY DESIGN on a seed-only DB (no `source_runs` run on record) → filed **T143** (health/smoke
+ergonomics; likely auto-resolves once T141 live-ingest populates `source_runs`); geo coverage 14/65
+places → T135. **valenciabonitatelegram normalizer built** (`lib/pipeline/normalizers/valenciabonita-telegram.ts`):
+pure `buildValenciabonitaTgEvents` REUSES sibling helpers (looksLikeEvent/postTitle/parseEventDate/
+parsePrice/parseVenue/parseAddress — DRY) + deterministic `detectLang`/`deriveCategory` (no LLM, T140),
+`normalizeValenciabonitaTg` mirrors vidacultural (append-only, idempotent), registered; wires the
+enabled-but-ignored `tg:valenciabonitatelegram` source into the pipeline (FR-001). 7 tests, both verify
+lenses `ok`. **USER DIRECTIVES (2026-06-21, committed `abfe122`):** live internet ingest → `source_items`
+PERMITTED (backlog **T141**; unblocks T033/T034/T136, de-speculates normalizers — see [[valencia-radar-db-gap]]);
+rutatuta_vlc excursions → distinct colour (**T142**, extends T133); `backlog:`-prefixed messages go
+STRAIGHT into the tasks.md backlog (record-only, no deliberation). Build green, **144/144** tests.
 
 **Non-negotiables** (see constitution v1.1.0): append-only raw `source_items`; dedup
 keeps a link to every source (via `entity_sources`) and never merges on fallback geo
