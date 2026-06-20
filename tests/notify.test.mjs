@@ -97,3 +97,28 @@ test('selectAlerts uses a higher bar and ignores horizon', () => {
   ];
   assert.deepEqual(selectAlerts(cands).map((c) => c.id), [1]);
 });
+
+// mirror of renderDigestText
+function renderDigestText(events, places, mode = 'weekly') {
+  const lines = [];
+  lines.push(mode === 'alert' ? '🔔 Valencia Radar — срочно' : '📅 Valencia Radar — афиша на 2–3 недели');
+  lines.push('');
+  if (events.length === 0) lines.push('Ничего нового, подходящего семье, не найдено.');
+  else for (const e of events) {
+    const date = (e.start_date || '').slice(0, 10) || 'дата уточняется';
+    lines.push(`• ${date} — ${e.title ?? '(без названия)'}${e.score != null ? ` (score ${e.score})` : ''}`);
+  }
+  if (mode === 'weekly' && places.length) {
+    lines.push('');
+    lines.push('📍 Новые места на радаре:');
+    for (const p of places) lines.push(`• ${p.name ?? '(место)'}${p.category ? ` — ${p.category}` : ''}`);
+  }
+  return lines.join('\n');
+}
+
+test('renderDigestText: events + new-places block, and empty case', () => {
+  const txt = renderDigestText([{ start_date: '2026-06-25', title: 'Концерт', score: 80 }], [{ name: 'Bar Pepe', category: 'bar' }], 'weekly');
+  assert.ok(txt.includes('Концерт') && txt.includes('2026-06-25'));
+  assert.ok(txt.includes('Новые места') && txt.includes('Bar Pepe'));
+  assert.ok(renderDigestText([], [], 'weekly').includes('Ничего нового'));
+});

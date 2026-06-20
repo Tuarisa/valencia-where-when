@@ -1,4 +1,5 @@
 import { sql } from "../db";
+import { nowIso } from "./util";
 import { CONFIDENCE_HOLD } from "./enrich";
 
 // Notifications (sub-area G, FR-012/013/014/021). The SELECTION logic is PURE +
@@ -118,8 +119,8 @@ export function selectAlerts(
   });
 }
 
-// Load un-notified upcoming event candidates (the pure selectors then filter). Series
-// + the "new places" block join in with T071's full digest builder. Injectable exec.
+// Load un-notified upcoming event candidates (the pure selectors then filter).
+// Injectable exec.
 export async function loadEventCandidates({ exec = sql }: { exec?: typeof sql } = {}): Promise<DigestCandidate[]> {
   return (await exec`
     SELECT id, title, start_date, score, notified, category, tags_json, enrichment_json, enriched_at
@@ -127,4 +128,107 @@ export async function loadEventCandidates({ exec = sql }: { exec?: typeof sql } 
     WHERE notified = 0 AND status = 'upcoming'
     ORDER BY score DESC NULLS LAST
   `) as unknown as DigestCandidate[];
+}
+
+export interface NewPlace {
+  id: number;
+  name?: string | null;
+  category?: string | null;
+  area?: string | null;
+  [k: string]: unknown;
+}
+
+// "New places on the radar" block: un-notified places (places gained a `notified`
+// column in T004). Injectable exec.
+export async function loadNewPlaces({ exec = sql }: { exec?: typeof sql } = {}): Promise<NewPlace[]> {
+  return (await exec`
+    SELECT id, name, category, area
+    FROM places
+    WHERE notified = 0
+    ORDER BY id DESC
+  `) as unknown as NewPlace[];
+}
+
+// PURE: render the digest as plain text. This is the default deliverable — the
+// transport (Telegram/email/webhook) is pluggable below and starts as dry-run
+// output (research G2). Deterministic given its inputs.
+export function renderDigestText(events: DigestCandidate[], places: NewPlace[], mode: "weekly" | "alert" = "weekly"): string {
+  const lines: string[] = [];
+  lines.push(mode === "alert" ? "🔔 Valencia Radar — срочно" : "📅 Valencia Radar — афиша на 2–3 недели");
+  lines.push("");
+  if (events.length === 0) {
+    lines.push("Ничего нового, подходящего семье, не найдено.");
+  } else {
+    for (const e of events) {
+      const date = (e.start_date || "").slice(0, 10) || "дата уточняется";
+      lines.push(`• ${date} — ${e.title ?? "(без названия)"}${e.score != null ? ` (score ${e.score})` : ""}`);
+    }
+  }
+  if (mode === "weekly" && places.length) {
+    lines.push("");
+    lines.push("📍 Новые места на радаре:");
+    for (const p of places) lines.push(`• ${p.name ?? "(место)"}${p.category ? ` — ${p.category}` : ""}`);
+  }
+  return lines.join("\n");
+}
+
+export interface DigestPayload {
+  mode: "weekly" | "alert";
+  events: DigestCandidate[];
+  places: NewPlace[];
+  text: string;
+}
+
+// Build a digest/alert payload: load candidates → pure-select → render text. Does
+// NOT write anything (selection only) — sending + mark-notified are explicit steps.
+export async function buildDigest(
+  { exec = sql, today, mode = "weekly", params = {} }: { exec?: typeof sql; today: string; mode?: "weekly" | "alert"; params?: Partial<DigestParams & AlertParams> },
+): Promise<DigestPayload> {
+  const candidates = await loadEventCandidates({ exec });
+  const events =
+    mode === "alert"
+      ? selectAlerts(candidates, params)
+      : selectDigest(candidates, { today, ...params });
+  const places = mode === "weekly" ? await loadNewPlaces({ exec }) : [];
+  return { mode, events, places, text: renderDigestText(events, places, mode) };
+}
+
+// Pluggable sender. Default = dry-run (returns the text, delivers nothing). A real
+// transport (Telegram/webhook/email) is selected by env in T071's route.
+export type DigestSender = (payload: DigestPayload) => Promise<{ delivered: boolean; transport: string }>;
+
+export const dryRunSender: DigestSender = async () => ({ delivered: false, transport: "dry-run" });
+
+export async function sendDigest(payload: DigestPayload, { sender = dryRunSender }: { sender?: DigestSender } = {}) {
+  return sender(payload);
+}
+
+// Mark events + (optionally) places as notified and log a `notifications` row each,
+// so a later digest never repeats them (SC-002, FR-013). Injectable exec.
+export async function markEventsNotified(
+  ids: number[],
+  { exec = sql, channel = "digest" }: { exec?: typeof sql; channel?: string } = {},
+): Promise<number> {
+  const ts = nowIso();
+  let n = 0;
+  for (const id of ids) {
+    await exec`UPDATE events SET notified = 1, notified_at = ${ts} WHERE id = ${id}`;
+    await exec`INSERT INTO notifications (event_id, sent_at, channel) VALUES (${id}, ${ts}, ${channel})`;
+    n++;
+  }
+  return n;
+}
+
+export async function markPlacesNotified(
+  ids: number[],
+  { exec = sql, channel = "digest" }: { exec?: typeof sql; channel?: string } = {},
+): Promise<number> {
+  const ts = nowIso();
+  let n = 0;
+  for (const id of ids) {
+    await exec`UPDATE places SET notified = 1, notified_at = ${ts} WHERE id = ${id}`;
+    await exec`INSERT INTO notifications (place_id, sent_at, channel) VALUES (${id}, ${ts}, ${channel})`;
+    n++;
+  }
+  return n;
 }

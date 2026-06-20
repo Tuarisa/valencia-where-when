@@ -260,12 +260,17 @@ exist, raw layer still append-only.
   +5 tests (28/28). Live on seed: 295 un-notified → 59 digest / 53 alerts. STILL TODO:
   fold `event_series` + the "new places" block into the candidate set (T071 builder);
   tune the alert bar — 53 alerts means the seed's score-100 cluster trips 85, raise it.)*
-- [ ] T071 [G] `app/workflows/digest.ts` `digestWorkflow(mode)` (select→build→send→
+- [~] T071 [G] `app/workflows/digest.ts` `digestWorkflow(mode)` (select→build→send→
   mark) + `app/api/cron/digest/route.ts` (Bearer, fail-closed; `?mode=weekly|alert`,
   `?dry=1`); on send set `notified`/`notified_at` + insert `notifications` row for
-  events, series, and places (FR-013).
-- [ ] T072 [P] [G] Pluggable `sendDigest(payload)` (default dry-run text); real
-  transport behind an env flag (research G2).
+  events, series, and places (FR-013). *(DONE in notify.ts — `buildDigest`
+  (load→select→render) + `renderDigestText` + `markEventsNotified`/`markPlacesNotified`
+  + `loadNewPlaces`. Live-verified: mark → notified=1 + notified_at + notifications row,
+  and the event drops out of candidates (no-repeat, SC-002). STILL TODO: the Next route
+  (fail-closed Bearer) + Workflow wrapper + folding `event_series` into candidates.)*
+- [x] T072 [P] [G] Pluggable `sendDigest(payload)` (default dry-run text); real
+  transport behind an env flag (research G2). *(done: `DigestSender` type + `dryRunSender`
+  default + `sendDigest({sender})`; real transport selected by env in the route.)*
 - [ ] T073 [G] Series digest renders the card + next upcoming occurrence
   (`MIN(occurrence_date) ≥ today`).
 - [ ] T074 [P] [G] `tests/digest-select.test.mjs` + `tests/alert-select.test.mjs`:

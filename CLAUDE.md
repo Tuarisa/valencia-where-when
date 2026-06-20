@@ -65,11 +65,15 @@ the 104 existing seed events → series + T043 feed/calendar cutover — must la
 (else Hemisfèric vanishes from the feed). **Enrich skeleton done** (T050/T056):
 `lib/pipeline/enrich.ts` — injectable `EnrichClient`, `EnrichmentResult` schema,
 `enrichOne` (COALESCE promote, maps→links_json), `enrichCards` (selection + fail-soft +
-dry); SDK-free/mockable, live-verified COALESCE; 23/23 tests. **Notify selectors done** (T070): `lib/pipeline/notify.ts` — pure
-`selectDigest`/`selectAlerts` + `isFamilyFit` + `cardConfidence` + `withinHorizon` +
-`loadEventCandidates`; live on seed 295→59 digest/53 alerts; 28/28 tests (alert bar
-needs raising — score-100 cluster). Next: T071 (digest workflow/route + send + mark +
-series/new-places block), T051–T053 (Anthropic SDK client — needs key), T010 parser
+dry); SDK-free/mockable, live-verified COALESCE; 23/23 tests. **Notify done** (T070/T072 + T071 logic): `lib/pipeline/notify.ts` — pure
+`selectDigest`/`selectAlerts`/`isFamilyFit`/`cardConfidence`/`withinHorizon` +
+`buildDigest`/`renderDigestText` + pluggable `sendDigest` (dry default) +
+`markEventsNotified`/`markPlacesNotified` (live-verified no-repeat = SC-002); 29/29.
+**Enrich engine (revised per user): `claude -p` (Claude subscription/OAuth, NO API key)
+is the DEFAULT** — the Anthropic SDK (`ANTHROPIC_API_KEY`) is OPTIONAL (constrained
+decoding / Vercel serverless runtime, where the CLI is absent). enrich.ts is
+engine-agnostic (injectable client), so T051 = build a `claude -p` client (no key).
+Next: T071 route (fail-closed Bearer) + T053 `claude -p` enrich client, T010 parser
 registry, or T042+T043 recurring cutover (React feed).
 
 **Non-negotiables** (see constitution v1.1.0): append-only raw `source_items`; dedup
