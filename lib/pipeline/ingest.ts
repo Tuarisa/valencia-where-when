@@ -217,7 +217,9 @@ export function resolveParser(source: { key?: string; type?: string; url?: strin
   return PARSER_REGISTRY.get(resolveParserKey(source))!;
 }
 
-async function upsertSourceItem(item: RawItem, runId: number): Promise<void> {
+// Returns true when the row was NEWLY inserted (false = updated existing). The
+// dispatcher uses the new-item count to decide whether a run "changed" the source.
+async function upsertSourceItem(item: RawItem, runId: number): Promise<boolean> {
   const ts = nowIso();
   const dedup = sourceItemHash(item);
   const rawJson = item.raw_json != null ? JSON.stringify(item.raw_json) : null;
@@ -226,44 +228,94 @@ async function upsertSourceItem(item: RawItem, runId: number): Promise<void> {
     await sql`UPDATE source_items SET last_seen = ${ts}, title = ${item.title ?? null},
       url = ${item.url ?? null}, raw_text = ${item.raw_text ?? null}, raw_html = ${item.raw_html ?? null},
       raw_json = ${rawJson}, run_id = ${runId} WHERE dedup_hash = ${dedup}`;
-  } else {
-    await sql`INSERT INTO source_items
-      (dedup_hash, source_key, run_id, external_id, item_type, title, url, published_at, raw_text, raw_html, raw_json, normalized_status, first_seen, last_seen)
-      VALUES (${dedup}, ${item.source_key}, ${runId}, ${item.external_id ?? null}, ${item.item_type ?? null},
-      ${item.title ?? null}, ${item.url ?? null}, ${item.published_at ?? null}, ${item.raw_text ?? null},
-      ${item.raw_html ?? null}, ${rawJson}, 'pending', ${ts}, ${ts})`;
+    return false;
   }
+  await sql`INSERT INTO source_items
+    (dedup_hash, source_key, run_id, external_id, item_type, title, url, published_at, raw_text, raw_html, raw_json, normalized_status, first_seen, last_seen)
+    VALUES (${dedup}, ${item.source_key}, ${runId}, ${item.external_id ?? null}, ${item.item_type ?? null},
+    ${item.title ?? null}, ${item.url ?? null}, ${item.published_at ?? null}, ${item.raw_text ?? null},
+    ${item.raw_html ?? null}, ${rawJson}, 'pending', ${ts}, ${ts})`;
+  return true;
 }
 
-export async function ingestSource(source: any, minIntervalHours = 6): Promise<{ source: string; status: string; items?: number; reason?: string; error?: string }> {
+// Outcome shape consumed by the dispatcher (T012b) to update cadence state. Legacy
+// callers (ingestAll) still read `status`/`items`.
+export interface IngestOutcome {
+  source: string;
+  status: string;
+  items?: number;
+  newItems?: number;
+  notModified?: boolean;
+  etag?: string | null;
+  lastModified?: string | null;
+  httpStatus?: number;
+  reason?: string;
+  error?: string;
+}
+
+export async function ingestSource(source: any, minIntervalHours = 6): Promise<IngestOutcome> {
   if (source.last_fetched && minIntervalHours > 0 && source.last_fetched >= isoAgo(minIntervalHours)) {
     return { source: source.key, status: "skipped", reason: "fresh_enough" };
   }
   const started = nowIso();
   let httpStatus = 0;
   let items: RawItem[] = [];
+  let etag: string | null = null;
+  let lastModified: string | null = null;
   try {
     const parser = resolveParser(source);
     if (parser.selfFetch) {
+      // Bespoke self-fetch parsers (Hemisfèric) don't go through conditional GET.
       httpStatus = 200;
       items = await parser.parse(source, "");
     } else {
-      const { status, body } = await fetchText(source.url);
-      httpStatus = status;
-      items = await parser.parse(source, body);
+      const res = await fetchText(source.url, {
+        etag: source.etag ?? null,
+        lastModified: source.last_modified ?? null,
+      });
+      httpStatus = res.status;
+      etag = res.etag;
+      lastModified = res.lastModified;
+      if (res.notModified) {
+        // Source unchanged since last fetch — record the cheap no-op run and bail.
+        await sql`INSERT INTO source_runs
+          (source_key, status, started_at, fetched_url, http_status, item_count, changed, not_modified, finished_at)
+          VALUES (${source.key}, 'ok', ${started}, ${source.url}, ${httpStatus}, 0, 0, 1, ${nowIso()})`;
+        await sql`UPDATE sources SET last_fetched = ${nowIso()} WHERE key = ${source.key}`;
+        return { source: source.key, status: "ok", items: 0, newItems: 0, notModified: true, httpStatus };
+      }
+      items = await parser.parse(source, res.body);
     }
     const runRows = (await sql`INSERT INTO source_runs (source_key, status, started_at, fetched_url, http_status, parser_version)
       VALUES (${source.key}, 'ok', ${started}, ${source.url}, ${httpStatus}, 'node-v1') RETURNING id`) as any[];
     const runId = runRows[0].id;
-    for (const item of items) await upsertSourceItem(item, runId);
-    await sql`UPDATE source_runs SET finished_at = ${nowIso()}, item_count = ${items.length} WHERE id = ${runId}`;
-    await sql`UPDATE sources SET last_fetched = ${nowIso()} WHERE key = ${source.key}`;
-    return { source: source.key, status: "ok", items: items.length };
+    let newItems = 0;
+    for (const item of items) {
+      if (await upsertSourceItem(item, runId)) newItems++;
+    }
+    const changed = newItems > 0 ? 1 : 0;
+    await sql`UPDATE source_runs SET finished_at = ${nowIso()}, item_count = ${items.length},
+      changed = ${changed}, not_modified = 0 WHERE id = ${runId}`;
+    // Persist the validators so the next run can do a conditional GET. COALESCE keeps
+    // a previously-stored validator if this response omitted the header.
+    await sql`UPDATE sources SET last_fetched = ${nowIso()},
+      etag = COALESCE(${etag}, etag), last_modified = COALESCE(${lastModified}, last_modified)
+      WHERE key = ${source.key}`;
+    return {
+      source: source.key,
+      status: "ok",
+      items: items.length,
+      newItems,
+      notModified: false,
+      etag,
+      lastModified,
+      httpStatus,
+    };
   } catch (err: any) {
     const msg = `${err?.name || "Error"}: ${err?.message || err}`;
-    await sql`INSERT INTO source_runs (source_key, status, started_at, fetched_url, http_status, item_count, finished_at, notes)
-      VALUES (${source.key}, 'error', ${started}, ${source.url}, ${httpStatus}, 0, ${nowIso()}, ${msg})`;
-    return { source: source.key, status: "error", error: msg };
+    await sql`INSERT INTO source_runs (source_key, status, started_at, fetched_url, http_status, item_count, changed, not_modified, finished_at, notes)
+      VALUES (${source.key}, 'error', ${started}, ${source.url}, ${httpStatus}, 0, 0, 0, ${nowIso()}, ${msg})`;
+    return { source: source.key, status: "error", error: msg, httpStatus };
   }
 }
 

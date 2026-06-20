@@ -94,25 +94,69 @@ export function decodeEntities(s: string): string {
     .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)));
 }
 
-export async function fetchText(url: string, timeoutMs = 30000): Promise<{ status: number; body: string }> {
+// Optional conditional-GET state (research A1): when present, the fetch sends
+// If-None-Match / If-Modified-Since so an unchanged source answers 304 (no body),
+// which the dispatcher turns into a longer poll interval (back-off).
+export interface ConditionalGet {
+  etag?: string | null;
+  lastModified?: string | null;
+}
+
+function conditionalHeaders(cond?: ConditionalGet): Record<string, string> {
+  const h: Record<string, string> = {};
+  if (cond?.etag) h["If-None-Match"] = cond.etag;
+  if (cond?.lastModified) h["If-Modified-Since"] = cond.lastModified;
+  return h;
+}
+
+export async function fetchText(
+  url: string,
+  cond?: ConditionalGet,
+  timeoutMs = 30000,
+): Promise<{ status: number; body: string; etag: string | null; lastModified: string | null; notModified: boolean }> {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await fetch(url, { headers: { "User-Agent": USER_AGENT }, signal: ctrl.signal });
-    const body = await res.text();
-    return { status: res.status, body };
+    const res = await fetch(url, {
+      headers: { "User-Agent": USER_AGENT, ...conditionalHeaders(cond) },
+      signal: ctrl.signal,
+    });
+    const notModified = res.status === 304;
+    const body = notModified ? "" : await res.text();
+    return {
+      status: res.status,
+      body,
+      etag: res.headers.get("etag"),
+      lastModified: res.headers.get("last-modified"),
+      notModified,
+    };
   } finally {
     clearTimeout(t);
   }
 }
 
-export async function fetchJson(url: string, headers: Record<string, string> = {}, timeoutMs = 30000): Promise<{ status: number; data: any }> {
+export async function fetchJson(
+  url: string,
+  headers: Record<string, string> = {},
+  cond?: ConditionalGet,
+  timeoutMs = 30000,
+): Promise<{ status: number; data: any; etag: string | null; lastModified: string | null; notModified: boolean }> {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await fetch(url, { headers: { "User-Agent": USER_AGENT, ...headers }, signal: ctrl.signal });
-    const data = await res.json();
-    return { status: res.status, data };
+    const res = await fetch(url, {
+      headers: { "User-Agent": USER_AGENT, ...headers, ...conditionalHeaders(cond) },
+      signal: ctrl.signal,
+    });
+    const notModified = res.status === 304;
+    const data = notModified ? null : await res.json();
+    return {
+      status: res.status,
+      data,
+      etag: res.headers.get("etag"),
+      lastModified: res.headers.get("last-modified"),
+      notModified,
+    };
   } finally {
     clearTimeout(t);
   }

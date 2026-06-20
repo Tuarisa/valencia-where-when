@@ -43,6 +43,37 @@ async function insertRows(table, rows) {
   return inserted;
 }
 
+// Per-type adaptive-cadence defaults (T014; mirrors lib/pipeline/cadence.ts
+// cadenceDefaults). telegram 10m–3h, web 1h–24h, ticketing/api 2h–24h.
+function cadenceDefaults(type) {
+  if (type === "telegram") return { min: 600, max: 10800 };
+  if (type === "ticketing" || type === "api") return { min: 7200, max: 86400 };
+  return { min: 3600, max: 86400 }; // web + fallback
+}
+
+// Seed cadence so the first dispatch picks every enabled source up (next_due_at=now)
+// and starts polling at the per-type floor. IDEMPOTENT: COALESCE keeps any non-null
+// value already on the row, so a re-seed never clobbers adapted cadence state.
+async function seedCadence() {
+  const sources = await sql(`SELECT key, type FROM sources`);
+  const now = new Date().toISOString().replace(/\.\d+Z$/, "Z");
+  let touched = 0;
+  for (const s of sources) {
+    const { min, max } = cadenceDefaults(s.type);
+    await sql(
+      `UPDATE sources SET
+         min_interval_sec  = COALESCE(min_interval_sec, $1),
+         max_interval_sec  = COALESCE(max_interval_sec, $2),
+         poll_interval_sec = COALESCE(poll_interval_sec, $1),
+         next_due_at       = COALESCE(next_due_at, $3)
+       WHERE key = $4`,
+      [min, max, now, s.key],
+    );
+    touched++;
+  }
+  return touched;
+}
+
 const order = [
   ["sources", "sources.json"],
   ["events", "events.json"],
@@ -60,4 +91,5 @@ for (const [table, file] of order) {
   // load into the same table, so don't let the later one clobber the count.
   summary[table] = (summary[table] || 0) + (await insertRows(table, rows));
 }
-console.log(JSON.stringify({ ok: true, inserted: summary }, null, 2));
+const cadenceTouched = await seedCadence();
+console.log(JSON.stringify({ ok: true, inserted: summary, cadence: cadenceTouched }, null, 2));
