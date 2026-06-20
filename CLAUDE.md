@@ -41,9 +41,15 @@ T003 `.env.example`). **T004 additive schema applied** to the live local DB
 `source_runs` changed/not_modified, places enrich cols, `notifications.series_id/place_id`).
 Sub-area H local stack wired + running (T080–T083; `db:local:up` → seeded
 385 events / 23 sources / 14 places / 216 media). One-off **Feria de Julio 2026**
-source seeded (`web:feriadejuliovlc`, +43 events). Commit + push per task (branch
-`main`, `origin` = SSH). Next code-only: T010 parser registry, T032 dedup convention
-fix + seed migration, T050 enrich skeleton.
+source seeded (`web:feriadejuliovlc`, +43 events). **T032 dedup convention fixed**
+(losers → `status='duplicate'`+`merged_into`, verified on local DB). Commit + push
+per task (branch `main`; `origin` = HTTPS — SSH agent isn't available to the
+non-interactive shell; workflow-file commits need `gh auth refresh -s workflow` or a
+manual SSH push). ⚠️ **dedup is NOT wired into the pipeline**: the first-pass matcher
+over-merges (75→11) and isn't idempotent — needs hardening (T035 strong-match,
+T036 places, T037 geo guard) before T038. `entity_sources` writes (T033/T034) are
+blocked until `source_items` exist (seed has none). Next: dedup hardening
+(T035–T037), or T010 parser registry, or T040 series upsert.
 
 **Non-negotiables** (see constitution v1.1.0): append-only raw `source_items`; dedup
 keeps a link to every source (via `entity_sources`) and never merges on fallback geo

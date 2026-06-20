@@ -270,8 +270,12 @@ export async function dedup({ exec = sql }: { exec?: typeof sql } = {}): Promise
       WHERE id = ${survivor.id ?? null}`;
 
     for (const loser of losers) {
+      // Convention (research R2): losers carry status='duplicate' + merged_into
+      // (matches the seed/render path + the 90 existing seed rows); the survivor
+      // keeps metadata_json.sources[] for attribution. The loader's
+      // status='upcoming' filter then excludes these on re-run (idempotent).
       await exec`UPDATE events
-        SET status = 'merged', metadata_json = ${mergeLoserMetadata(loser, survivor.id ?? null)}, last_seen = ${ts}
+        SET status = 'duplicate', metadata_json = ${mergeLoserMetadata(loser, survivor.id ?? null)}, last_seen = ${ts}
         WHERE id = ${loser.id ?? null}`;
       collapsed++;
     }

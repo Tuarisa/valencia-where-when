@@ -113,14 +113,22 @@ exist, raw layer still append-only.
 - [x] T030 [C] First-pass `lib/pipeline/dedup.ts` (events fuzzy `groupByKey`, survivor
   by weight+score). *(done — but see fixes below)*
 - [x] T031 [P] [C] `tests/dedup.test.mjs` (Komissarenko 3→1). *(done)*
-- [ ] T032 [C] **Reconcile merge convention** (research R2): standardize on
+- [x] T032 [C] **Reconcile merge convention** (research R2): standardize on
   `status='duplicate'` + `metadata_json.merged_into=<survivor_id>` on losers + keep
   `sources[]` on the survivor; update `dedup.ts` (it currently writes `'merged'`).
+  *(done: one-line status fix; verified on the local DB — losers → duplicate+merged_into.
+  `merged_into` was already written; loader's `status='upcoming'` filter excludes them.)*
 - [ ] T033 [C] Add the `entity_sources` writes: one row per contributing
   `source_item_id` (UNIQUE upsert), `role`, `match_method`, `match_score`; survivor id
-  stable.
-- [ ] T034 [C] Migrate the 90 existing seed duplicate rows + backfill `entity_sources`
-  from `merged_into`+`source_item_id` (one-shot script) BEFORE wiring.
+  stable. ⚠️ **BLOCKED on seed reality**: the seed loads no `source_items` (only
+  events/places/media/sources), so `entity_sources.source_item_id REFERENCES
+  source_items(id)` can't be satisfied from seed data. Needs a real ingest run (which
+  populates `source_items`) OR a one-time `source_items` export added to the seed. Guard
+  the insert on `source_item_id` present + `EXISTS(source_items)`.
+- [ ] T034 [C] Backfill `entity_sources` for the 90 seed duplicates from
+  `merged_into`+`source_item_id`. Note: the 90 rows ALREADY use
+  `status='duplicate'`+`merged_into` (no status migration needed). Backfill is BLOCKED
+  by the same missing-`source_items` issue as T033.
 - [ ] T035 [C] Deterministic strong-match pre-pass (exact url / `(source,external_id)`
   / resolved `maps_url` / person-URL) before fuzzy; same-person far-date → related
   link, not hard-merge (research C1/C5).
@@ -131,7 +139,11 @@ exist, raw layer still append-only.
   (Madrid Sol 40.4168,-3.7035); haversine R 75–120 m; never merge on geo alone
   (research C3).
 - [ ] T038 [C] Insert `dedup` into `run.ts` right after `normalize` and expose via
-  `refreshWorkflow`; ensure occurrences are NOT scanned.
+  `refreshWorkflow`; ensure occurrences are NOT scanned. ⚠️ **DO NOT wire until
+  hardening (T035–T037) lands**: a live run on seed data showed the first-pass
+  fuzzy-only matcher OVER-MERGES (75 events → 11; `titleSignature` too aggressive) and
+  is NOT idempotent (a 2nd run merged 1 more — violates FR-020/SC-003). Needs the
+  deterministic strong-match pre-pass + ≥2-signal requirement + geo guard first.
 - [ ] T039 [P] [C] Extend tests: places trio (ids 4/7/8) and Madrid-centroid trio
   (10/11/12) MUST NOT merge; pure-TS Jaro-Winkler + haversine unit tests.
 
