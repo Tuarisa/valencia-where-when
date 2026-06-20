@@ -339,3 +339,147 @@ function mergeLoserMetadata(loser: DedupEvent, survivorId: number | null): strin
   metadata.merged_into = survivorId;
   return JSON.stringify(metadata);
 }
+
+// ===================== Places dedup primitives (sub-area C — T036/T037) =====================
+// Pure, dependency-free building blocks (research C2/C3/C4). The DB orchestrator
+// (writing status='duplicate'+merged_into and unioning recommended_by) lands with
+// the place-mining task T064, once normalizers actually produce duplicate places;
+// the seed's 14 places have no true duplicates. These predicates are what guarantee
+// the must-NOT-merge cases (distinct venues stacked on a geocoder fallback centroid).
+
+// PURE: Jaro-Winkler similarity in [0,1] (1 = identical). Gates place-NAME fuzzy
+// matches; events use the token-signature path instead. ~standard implementation.
+export function jaroWinkler(a: string, b: string): number {
+  const s1 = a ?? "";
+  const s2 = b ?? "";
+  if (s1 === s2) return s1.length ? 1 : 0;
+  if (!s1.length || !s2.length) return 0;
+  const matchDist = Math.max(0, Math.floor(Math.max(s1.length, s2.length) / 2) - 1);
+  const s1m = new Array(s1.length).fill(false);
+  const s2m = new Array(s2.length).fill(false);
+  let matches = 0;
+  for (let i = 0; i < s1.length; i++) {
+    const lo = Math.max(0, i - matchDist);
+    const hi = Math.min(i + matchDist + 1, s2.length);
+    for (let j = lo; j < hi; j++) {
+      if (s2m[j] || s1[i] !== s2[j]) continue;
+      s1m[i] = true;
+      s2m[j] = true;
+      matches++;
+      break;
+    }
+  }
+  if (matches === 0) return 0;
+  let transpositions = 0;
+  let k = 0;
+  for (let i = 0; i < s1.length; i++) {
+    if (!s1m[i]) continue;
+    while (!s2m[k]) k++;
+    if (s1[i] !== s2[k]) transpositions++;
+    k++;
+  }
+  transpositions /= 2;
+  const m = matches;
+  const jaro = (m / s1.length + m / s2.length + (m - transpositions) / m) / 3;
+  let prefix = 0;
+  const maxPrefix = Math.min(4, s1.length, s2.length);
+  for (let i = 0; i < maxPrefix; i++) {
+    if (s1[i] === s2[i]) prefix++;
+    else break;
+  }
+  return jaro + prefix * 0.1 * (1 - jaro);
+}
+
+// PURE: great-circle distance in metres between two lat/lng points (haversine).
+export function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6_371_000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const s =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
+}
+
+// Geocoder fallback centroids where DISTINCT entities pile up when geocoding fails.
+// Coordinates at (≈) these points must NEVER vote in a merge. [lat, lng].
+export const CENTROID_BLACKLIST: ReadonlyArray<readonly [number, number]> = [
+  [40.4168, -3.7035], // Madrid, Puerta del Sol — Nominatim "Spain"/"Madrid" fallback
+  [39.4697065, -0.3763353], // València generic-centre fallback (seed places 4/7/8)
+];
+
+// PURE: is a coordinate at (~60 m of) a blacklisted fallback centroid?
+export function isCentroid(lat?: number | null, lng?: number | null): boolean {
+  if (lat == null || lng == null) return false;
+  return CENTROID_BLACKLIST.some(([clat, clng]) => haversineMeters(lat, lng, clat, clng) <= 60);
+}
+
+const GEO_CORROBORATION_M = 100;
+
+export interface GeoPoint {
+  lat?: number | null;
+  lng?: number | null;
+  geo_source?: string | null;
+}
+
+// PURE: may geographic proximity CORROBORATE that two places are the same? Geo NEVER
+// merges alone — this only adds a signal, and ONLY when both points are real venue
+// pins (geo_source='map_url'), neither sits on a blacklisted centroid, and they are
+// within ~100 m. 'nominatim'/area-fallback coords (all the seed places) never vote.
+export function geoCorroborates(a: GeoPoint, b: GeoPoint, radiusM = GEO_CORROBORATION_M): boolean {
+  if (a.geo_source !== "map_url" || b.geo_source !== "map_url") return false;
+  if (a.lat == null || a.lng == null || b.lat == null || b.lng == null) return false;
+  if (isCentroid(a.lat, a.lng) || isCentroid(b.lat, b.lng)) return false;
+  return haversineMeters(a.lat, a.lng, b.lat, b.lng) <= radiusM;
+}
+
+// A candidate place row for dedup (loose by design, like DedupEvent).
+export interface DedupPlace {
+  id?: number | null;
+  name?: string | null;
+  area?: string | null;
+  district?: string | null;
+  category?: string | null;
+  lat?: number | null;
+  lng?: number | null;
+  geo_source?: string | null;
+  maps_url?: string | null;
+  external_ref?: string | null;
+  source?: string | null;
+  [key: string]: unknown;
+}
+
+const PLACE_NAME_TAU = 0.9;
+
+function normName(name?: string | null): string {
+  return slugify(transliterate(name));
+}
+
+// PURE: place blocking key — name signature + area/district + category. Mirrors the
+// events dedupKey idea (reuses the translit token signature for the name).
+export function placeKey(p: DedupPlace): string {
+  const sig = titleSignature(p.name);
+  const area = slugify(p.area || p.district) || "unknown";
+  const cat = slugify(p.category) || "unknown";
+  return `${sig}|${area}|${cat}`;
+}
+
+// PURE: are two places the same real-world venue? (research C2.)
+//   STRONG: identical maps_url, or identical (source, external_id) → yes.
+//   FUZZY:  same placeKey AND Jaro-Winkler(name) >= tau AND >=1 corroborating signal
+//           beyond the name — a DIFFERENT source (cross-source) OR geoCorroborates
+//           (map_url pins within ~100 m, centroid-guarded). Geo never merges alone.
+export function arePlacesDuplicate(a: DedupPlace, b: DedupPlace, tau = PLACE_NAME_TAU): boolean {
+  if (a === b) return false;
+  const am = (a.maps_url || "").trim().toLowerCase();
+  const bm = (b.maps_url || "").trim().toLowerCase();
+  if (am && bm && am === bm) return true;
+  if (a.external_ref && b.external_ref && a.source && a.source === b.source && a.external_ref === b.external_ref) {
+    return true;
+  }
+  if (placeKey(a) !== placeKey(b)) return false;
+  if (jaroWinkler(normName(a.name), normName(b.name)) < tau) return false;
+  const crossSource = !!(a.source && b.source && a.source !== b.source);
+  return crossSource || geoCorroborates(a, b);
+}

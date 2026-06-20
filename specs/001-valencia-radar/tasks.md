@@ -138,12 +138,17 @@ exist, raw layer still append-only.
   + refuses degenerate "untitled" signatures. Live result: 11 groups/64 false losers → **0**,
   idempotent (RUN1=RUN2=0). STILL TODO: exact url/external_id/maps_url strong-match pre-pass +
   same-person-far-date related link.)*
-- [ ] T036 [C] **Places dedup path**: `placeKey = nameSignature|area|category`,
+- [~] T036 [C] **Places dedup path**: `placeKey = nameSignature|area|category`,
   strong-match on `maps_url`/`external_id`, fuzzy name+category+geo, `recommended_by`
-  union (research C2).
-- [ ] T037 [C] **Geo guard**: only `geo_source='map_url'` votes; centroid blacklist
+  union (research C2). *(PARTIAL — matching logic done + tested: `placeKey`,
+  `arePlacesDuplicate` (strong maps_url/external_id + fuzzy JW≥0.9 + ≥1 corroborating
+  signal). The DB orchestrator (status='duplicate'+merged_into writes + `recommended_by`
+  union) is deferred to T064 place-mining — the seed's 14 places have no true duplicates,
+  and places has no `status` column / render filter yet.)*
+- [x] T037 [C] **Geo guard**: only `geo_source='map_url'` votes; centroid blacklist
   (Madrid Sol 40.4168,-3.7035); haversine R 75–120 m; never merge on geo alone
-  (research C3).
+  (research C3). *(done: `haversineMeters` + `isCentroid` + `CENTROID_BLACKLIST`
+  (Madrid Sol + València fallback) + `geoCorroborates`; nominatim coords never vote.)*
 - [ ] T038 [C] Insert `dedup` into `run.ts` right after `normalize` and expose via
   `refreshWorkflow`; ensure occurrences are NOT scanned. ⚠️ **DO NOT wire until
   hardening (T035–T037) lands**: a live run on seed data showed the first-pass
@@ -152,8 +157,10 @@ exist, raw layer still append-only.
   over-merge + non-idempotency are now FIXED** (T035 partial: translit + cross-source +
   untitled guard → 0 false merges, idempotent). Remaining before wiring: T035 strong-match
   pre-pass, T036 places dedup, T037 geo guard — then this is safe to enable.
-- [ ] T039 [P] [C] Extend tests: places trio (ids 4/7/8) and Madrid-centroid trio
+- [x] T039 [P] [C] Extend tests: places trio (ids 4/7/8) and Madrid-centroid trio
   (10/11/12) MUST NOT merge; pure-TS Jaro-Winkler + haversine unit tests.
+  *(done: +5 tests in dedup.test.mjs — jaroWinkler, haversine/isCentroid,
+  geoCorroborates, both trios NOT merged, genuine dups DO merge; 15/15 pass.)*
 
 ---
 

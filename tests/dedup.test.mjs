@@ -309,3 +309,149 @@ test('isMergeableGroup: cross-source merges, same-source/untitled do not', () =>
   ];
   assert.equal(isMergeableGroup(untitled), false, 'untitled signature must not merge');
 });
+
+// ---------- Places dedup primitives (mirror of lib/pipeline/dedup.ts T036/T037) ----------
+function jaroWinkler(a, b) {
+  const s1 = a ?? '';
+  const s2 = b ?? '';
+  if (s1 === s2) return s1.length ? 1 : 0;
+  if (!s1.length || !s2.length) return 0;
+  const matchDist = Math.max(0, Math.floor(Math.max(s1.length, s2.length) / 2) - 1);
+  const s1m = new Array(s1.length).fill(false);
+  const s2m = new Array(s2.length).fill(false);
+  let matches = 0;
+  for (let i = 0; i < s1.length; i++) {
+    const lo = Math.max(0, i - matchDist);
+    const hi = Math.min(i + matchDist + 1, s2.length);
+    for (let j = lo; j < hi; j++) {
+      if (s2m[j] || s1[i] !== s2[j]) continue;
+      s1m[i] = true; s2m[j] = true; matches++; break;
+    }
+  }
+  if (matches === 0) return 0;
+  let transpositions = 0; let k = 0;
+  for (let i = 0; i < s1.length; i++) {
+    if (!s1m[i]) continue;
+    while (!s2m[k]) k++;
+    if (s1[i] !== s2[k]) transpositions++;
+    k++;
+  }
+  transpositions /= 2;
+  const m = matches;
+  const jaro = (m / s1.length + m / s2.length + (m - transpositions) / m) / 3;
+  let prefix = 0;
+  const maxPrefix = Math.min(4, s1.length, s2.length);
+  for (let i = 0; i < maxPrefix; i++) { if (s1[i] === s2[i]) prefix++; else break; }
+  return jaro + prefix * 0.1 * (1 - jaro);
+}
+function haversineMeters(lat1, lng1, lat2, lng2) {
+  const R = 6371000;
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const s = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
+}
+const CENTROID_BLACKLIST = [[40.4168, -3.7035], [39.4697065, -0.3763353]];
+function isCentroid(lat, lng) {
+  if (lat == null || lng == null) return false;
+  return CENTROID_BLACKLIST.some(([cla, clo]) => haversineMeters(lat, lng, cla, clo) <= 60);
+}
+function geoCorroborates(a, b, r = 100) {
+  if (a.geo_source !== 'map_url' || b.geo_source !== 'map_url') return false;
+  if (a.lat == null || a.lng == null || b.lat == null || b.lng == null) return false;
+  if (isCentroid(a.lat, a.lng) || isCentroid(b.lat, b.lng)) return false;
+  return haversineMeters(a.lat, a.lng, b.lat, b.lng) <= r;
+}
+const normName = (n) => slugify(transliterate(n));
+function placeKey(p) {
+  const sig = titleSignature(p.name);
+  const area = slugify(p.area || p.district) || 'unknown';
+  const cat = slugify(p.category) || 'unknown';
+  return `${sig}|${area}|${cat}`;
+}
+function arePlacesDuplicate(a, b, tau = 0.9) {
+  if (a === b) return false;
+  const am = (a.maps_url || '').trim().toLowerCase();
+  const bm = (b.maps_url || '').trim().toLowerCase();
+  if (am && bm && am === bm) return true;
+  if (a.external_ref && b.external_ref && a.source && a.source === b.source && a.external_ref === b.external_ref) return true;
+  if (placeKey(a) !== placeKey(b)) return false;
+  if (jaroWinkler(normName(a.name), normName(b.name)) < tau) return false;
+  const cross = !!(a.source && b.source && a.source !== b.source);
+  return cross || geoCorroborates(a, b);
+}
+
+test('jaroWinkler: known values + edge cases', () => {
+  assert.ok(jaroWinkler('martha', 'marhta') > 0.95);
+  assert.equal(jaroWinkler('abc', 'abc'), 1);
+  assert.equal(jaroWinkler('', 'x'), 0);
+  assert.equal(jaroWinkler('abc', 'xyz'), 0);
+  assert.ok(jaroWinkler('bar pepe', 'bar pepe!') > 0.9);
+});
+
+test('haversineMeters + isCentroid', () => {
+  assert.equal(haversineMeters(39.46, -0.37, 39.46, -0.37), 0);
+  const oneDeg = haversineMeters(0, 0, 0, 1);
+  assert.ok(oneDeg > 111000 && oneDeg < 111400, 'one degree lng at equator ~111.2km');
+  assert.equal(isCentroid(40.4168, -3.7035), true, 'Madrid Sol is blacklisted');
+  assert.equal(isCentroid(39.4697065, -0.3763353), true, 'Valencia fallback is blacklisted');
+  assert.equal(isCentroid(39.4631, -0.3734), false, 'a real Ruzafa venue is not a centroid');
+});
+
+test('geoCorroborates: only map_url pins vote, centroid-guarded', () => {
+  const near = { lat: 39.46, lng: -0.37, geo_source: 'map_url' };
+  const near2 = { lat: 39.4601, lng: -0.37, geo_source: 'map_url' }; // ~11m
+  const far = { lat: 39.47, lng: -0.37, geo_source: 'map_url' }; // ~1.1km
+  assert.equal(geoCorroborates(near, near2), true, 'two map_url pins within 100m corroborate');
+  assert.equal(geoCorroborates(near, far), false, 'beyond radius does not corroborate');
+  assert.equal(
+    geoCorroborates({ ...near, geo_source: 'nominatim' }, { ...near2, geo_source: 'nominatim' }),
+    false,
+    'nominatim coords never vote (even at 0m)',
+  );
+  const sol = { lat: 40.4168, lng: -3.7035, geo_source: 'map_url' };
+  assert.equal(geoCorroborates(sol, { ...sol }), false, 'blacklisted centroid never corroborates');
+});
+
+test('arePlacesDuplicate: distinct venues on a fallback centroid do NOT merge', () => {
+  // Seed places 10/11/12 — three different unresolved maps links stacked on the
+  // Madrid Puerta del Sol fallback (geo_source=nominatim, category=place).
+  const sol = (id) => ({
+    id, name: `https://maps.app.goo.gl/${id}abc`, area: null, category: 'place',
+    lat: 40.416782, lng: -3.703507, geo_source: 'nominatim', maps_url: `https://maps.app.goo.gl/${id}abc`, source: 'tg:logunespa',
+  });
+  assert.equal(arePlacesDuplicate(sol(10), sol(11)), false);
+  assert.equal(arePlacesDuplicate(sol(11), sol(12)), false);
+  // Seed places 4/7/8 — pool vs cafe vs bar stacked on the València fallback.
+  const p4 = { id: 4, name: 'Piscina Parc de l’Oest', category: 'pool', lat: 39.4697065, lng: -0.3763353, geo_source: 'nominatim', maps_url: 'https://maps.app.goo.gl/p4', source: 'a' };
+  const p7 = { id: 7, name: 'https://maps.app.goo.gl/p7', category: 'cafe', lat: 39.4697065, lng: -0.3763353, geo_source: 'nominatim', maps_url: 'https://maps.app.goo.gl/p7', source: 'b' };
+  assert.equal(arePlacesDuplicate(p4, p7), false, 'pool vs cafe at identical fallback coords must not merge');
+});
+
+test('arePlacesDuplicate: genuine duplicates DO merge', () => {
+  // Strong-match: identical maps_url.
+  assert.equal(
+    arePlacesDuplicate(
+      { id: 1, name: 'A', maps_url: 'https://maps.app.goo.gl/SAME', source: 'a' },
+      { id: 2, name: 'totally different label', maps_url: 'https://maps.app.goo.gl/SAME', source: 'a' },
+    ),
+    true,
+  );
+  // Fuzzy cross-source: same name/area/category from two channels.
+  assert.equal(
+    arePlacesDuplicate(
+      { id: 1, name: 'Bar Pepe', area: 'Ruzafa', category: 'bar', source: 'tg:logunespa' },
+      { id: 2, name: 'Bar Pepe', area: 'Ruzafa', category: 'bar', source: 'tg:rutatuta_vlc' },
+    ),
+    true,
+  );
+  // Fuzzy + geo: same name, same source, two map_url pins ~11m apart.
+  assert.equal(
+    arePlacesDuplicate(
+      { id: 1, name: 'Cafe Luna', area: 'x', category: 'cafe', source: 's', lat: 39.46, lng: -0.37, geo_source: 'map_url' },
+      { id: 2, name: 'Cafe Luna', area: 'x', category: 'cafe', source: 's', lat: 39.4601, lng: -0.37, geo_source: 'map_url' },
+    ),
+    true,
+  );
+});

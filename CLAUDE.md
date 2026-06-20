@@ -48,10 +48,14 @@ non-interactive shell; workflow-file commits need `gh auth refresh -s workflow` 
 manual SSH push). **dedup over-merge FIXED** (T035 partial: Cyrillic→Latin translit in
 `titleSignature` + `isMergeableGroup` requiring ≥2 distinct sources + untitled-guard;
 live 11→0 false merges, idempotent). Also fixed `register("tsx/esm")` → `node --import
-tsx` in `run-pipeline.mjs` (was broken on Node 24). `dedup` still NOT wired into the
-pipeline (T038) until T035 strong-match + T036 places + T037 geo guard. `entity_sources`
-(T033/T034) blocked until `source_items` exist (seed has none). Next: T036 places dedup
-+ T037 geo guard, or T010 parser registry, or T040 series upsert.
+tsx` in `run-pipeline.mjs` (was broken on Node 24). **Dedup matching complete**:
+events (translit + cross-source + untitled guard) + places (T036 partial:
+`arePlacesDuplicate` strong+fuzzy) + geo guard (T037: `geoCorroborates`/`isCentroid`/
+`haversineMeters`/`jaroWinkler`, 15/15 tests). Events dedup over-merge is fixed +
+idempotent, so wiring it into `run.ts` (T038) is now SAFE. Still deferred: place dedup
+DB orchestrator → T064 (place mining; needs places.status + render filter);
+`entity_sources` writes (T033/T034) → need `source_items` (seed has none). Next: T038
+(wire events dedup into run.ts), or T040 series upsert, or T010 parser registry.
 
 **Non-negotiables** (see constitution v1.1.0): append-only raw `source_items`; dedup
 keeps a link to every source (via `entity_sources`) and never merges on fallback geo
