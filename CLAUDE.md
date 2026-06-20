@@ -202,6 +202,21 @@ fixtures in `tests/fixtures/enrich/` from real seed: 7 PATH A / 3 PATH B w/ cita
 Verifier flagged non-canonical `links_json` in 3 B-fixture `expected` blocks → main loop
 stripped it (canonical `links`/`citations` kept; generator falls back to `links`). Clean
 `rm -rf .next && npm run build` green, **128/128** tests, eval key-gate verified exit 0.
+**Tick C (ultracode Workflow `w2ejd5p3b`, concerten + WORKBOARD).** **concerten normalizer built**
+(`lib/pipeline/normalizers/concerten.ts`): pure `buildConcertenEvents` + mandatory Spain pre-filter
+(`isSpainEvent`/`hasNonSpainSignal`, symmetric to worldafisha — drops Europe-wide tours + location-less
+posts) + `spainCity` (picks the actual matched ES city, not blanket Valencia); `normalizeConcerten`
+mirrors `normalizeVidacultural` (append-only `markRawItem` on every processed row, idempotent
+`upsertPlainEvent`), registered in `NORMALIZER_REGISTRY`. This **fulfils T131** (concerten-side Spain
+filter wiring → **T131 [x]**); T136 live worldafisha≈concerten dedup still waits on real `source_items`.
+NOTE: T112 was already done (= vidacultural, not concerten — scout mislabel corrected). **T103 [~]**:
+WORKBOARD.md reconciled vs real tasks.md markers; the multi-lens verifier caught WORKBOARD over-claims
+(it had collapsed `[~]` T041/T050/T070/T071 into `[x]` ranges) → main loop corrected them. **TEST-HARNESS
+FIX**: `npm test` now runs `node --import tsx --test …` — under Node 24's native TS strip (no tsx), an
+extensionless `../../db` imported (transitively) from a statically-imported pipeline `.ts` does NOT
+resolve, so concerten (the FIRST test to import a real normalizer module) failed with ERR_MODULE_NOT_FOUND
+while passing under the agents' tsx self-check; adding `--import tsx` resolves `.ts` like the rest of the
+toolchain (build/run-pipeline). Build green, **137/137** tests (128 + 9 concerten).
 
 **Non-negotiables** (see constitution v1.1.0): append-only raw `source_items`; dedup
 keeps a link to every source (via `entity_sources`) and never merges on fallback geo

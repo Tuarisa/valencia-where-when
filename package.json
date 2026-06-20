@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "node --test tests/**/*.test.mjs",
+    "test": "node --import tsx --test tests/**/*.test.mjs",
     "db:schema": "node scripts/apply-schema.mjs",
     "db:seed": "node scripts/seed.mjs",
     "db:migrate:series": "node --import tsx scripts/migrate-hemisferic-series.mjs",

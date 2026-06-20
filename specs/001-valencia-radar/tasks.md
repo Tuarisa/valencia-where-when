@@ -335,8 +335,10 @@ exist, raw layer still append-only.
   `seedCadence()` at db:setup; new rows have null `last_fetched` → picked on first
   dispatch. JSON valid, column-consistent; build green, 124/124.)*
 - [ ] T102 [P] Run `quickstart.md` validation scenarios end-to-end.
-- [ ] T103 [P] Update `WORKBOARD.md` Done/Next; `npm run build` + `node --test tests/`
-  clean; tidy dead code.
+- [~] T103 [P] Update `WORKBOARD.md` Done/Next; `npm run build` + `node --test tests/`
+  clean; tidy dead code. *(DOC HALF DONE: WORKBOARD.md reconciled against the actual tasks.md
+  markers — Done/Next/Blocked refreshed + over-claims corrected to match `[~]` partials
+  (T041/T050/T070/T071). Build+test sweep is green each tick. Dead-code tidy deferred to final polish.)*
 
 ---
 
@@ -442,13 +444,16 @@ exist, raw layer still append-only.
   renders deterministically without a slow geocode at db:setup. Same fix improves the LIVE geo
   stage (it was also producing centroids). 5 unresolved stay null. Remaining: short "why-go"
   taglines (enrich/haiku) + a couple of mis-geocoded outliers (e.g. MuVIM) to nudge.)*
-- [~] T131 [A] **concerten — Spain-only pre-filter** (user). The channel ALREADY exists
+- [x] T131 [A] **concerten — Spain-only pre-filter** (user). The channel ALREADY exists
   as `tg:concerten` ("Зарубежная афиша русскоязычных артистов") — it lists RU-artist
   tours across ALL of Europe, so normalize/ingest must pre-filter to Spain. *(DONE —
   pure `lib/pipeline/normalizers/spain-filter.ts`: `isSpainEvent`/`hasSpainSignal`/
   `hasNonSpainSignal` with ES+RU city/region/España signals (Valencia/Madrid/Barcelona/…),
   keeps only explicit-Spain items (drops non-Spain + location-less to avoid overload);
-  +3 tests (36/36). WIRE into the concerten normalizer when it lands (T112).)*
+  +3 tests (36/36). **WIRED (this tick)**: `lib/pipeline/normalizers/concerten.ts` gates every
+  post through `isSpainEvent` + `hasNonSpainSignal` at normalize time — symmetric to worldafisha;
+  drops Europe-wide tours + location-less posts; `spainCity` picks the actual matched ES city.
+  9/9 offline tests, registered in `NORMALIZER_REGISTRY`.)*
 - [~] T136 [A] **worldafisha ≈ concerten overlap → dedup** (user, `backlog:`). Both
   sources ALREADY exist: `web:worldafisha` (id 9, `https://worldafisha.com/events/ispaniya`)
   and `tg:concerten` (id 2) — both are the same "Зарубежная афиша" RU-artist-tours feed,
@@ -462,7 +467,8 @@ exist, raw layer still append-only.
   exact 2-feed pair (`web:worldafisha`+`tg:concerten`, same RU-artist tour, differing
   title framing) collapses to ONE survivor that KEEPS both source links; proves the
   ≥2-distinct-source threshold triggers on the pair alone. 118/118. LIVE wiring still
-  pending T112 (concerten normalizer) + real `source_items` to exercise `entity_sources`.)*
+  pending: the concerten normalizer now EXISTS (this tick) — live worldafisha≈concerten dedup
+  awaits real `source_items` rows in the DB to exercise `entity_sources`.)*
 - [x] T137 [B] **Drop deprecated `fetchConnectionCache`** (user, `backlog:`). `lib/db.ts:3`
   sets `neonConfig.fetchConnectionCache = true;` — in current `@neondatabase/serverless`
   this option is DEPRECATED (connection caching is always on now), so the line is a

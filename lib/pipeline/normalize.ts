@@ -3,6 +3,7 @@ import { normalizeHemisferic, HEMISFERIC_SOURCE_KEY } from "./normalizers/hemisf
 import { normalizeWorldafisha, WORLDAFISHA_SOURCE_KEY } from "./normalizers/worldafisha";
 import { normalizeValenciarusa, VALENCIARUSA_SOURCE_KEY } from "./normalizers/valenciarusa";
 import { normalizeVidacultural, VIDACULTURAL_SOURCE_KEY } from "./normalizers/vidacultural";
+import { normalizeConcerten, CONCERTEN_SOURCE_KEY } from "./normalizers/concerten";
 import { markRawItem } from "./normalizers/types";
 
 // Re-export the Hemisfèric path so existing imports keep working.
@@ -21,6 +22,7 @@ export const NORMALIZER_REGISTRY: Map<string, SourceNormalizer> = new Map([
   [WORLDAFISHA_SOURCE_KEY, normalizeWorldafisha],
   [VALENCIARUSA_SOURCE_KEY, normalizeValenciarusa],
   [VIDACULTURAL_SOURCE_KEY, normalizeVidacultural],
+  [CONCERTEN_SOURCE_KEY, normalizeConcerten],
 ]);
 
 // Resolve a normalizer for a source key (pure — testable without a DB).
