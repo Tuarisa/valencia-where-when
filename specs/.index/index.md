@@ -3,15 +3,15 @@
 Auto-generated summary of all specs across configured directories.
 See [index-state.json](./index-state.json) for machine-readable data.
 
-**Last updated:** 2026-06-20T13:20:33Z
+**Last updated:** 2026-06-20T13:28:26Z
 
 ## Directories (1)
 
 | Directory | Specs | Default |
 |-----------|-------|---------|
-| ./specs | 6 | Yes |
+| ./specs | 7 | Yes |
 
-## All Specs (6)
+## All Specs (7)
 
 | Spec | Directory | Phase | Status |
 |------|-----------|-------|--------|
@@ -20,6 +20,7 @@ See [index-state.json](./index-state.json) for machine-readable data.
 | vercel-workflow | ./specs | research | awaiting approval |
 | card-enrich | ./specs | research | awaiting approval |
 | repeateable-events | ./specs | research | awaiting approval |
+| dedup | ./specs | research | awaiting approval |
 | local-run | ./specs | research | awaiting approval |
 
 ---

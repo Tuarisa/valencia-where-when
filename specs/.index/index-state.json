@@ -1,10 +1,10 @@
 {
   "version": "1.0",
-  "updated": "2026-06-20T13:20:33Z",
+  "updated": "2026-06-20T13:28:26Z",
   "directories": [
     {
       "path": "./specs",
-      "specsCount": 6,
+      "specsCount": 7,
       "isDefault": true
     }
   ],
@@ -37,6 +37,12 @@
     {
       "name": "repeateable-events",
       "path": "./specs/repeateable-events",
+      "phase": "research",
+      "awaitingApproval": true
+    },
+    {
+      "name": "dedup",
+      "path": "./specs/dedup",
       "phase": "research",
       "awaitingApproval": true
     },
