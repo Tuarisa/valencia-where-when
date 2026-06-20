@@ -321,9 +321,18 @@ exist, raw layer still append-only.
   `/api/cron/digest` (POST, 401 when secret unset OR mismatched). Apply the same to
   `/api/cron/dispatch` (T013) and `/api/cron/enrich` (T055) when they land; legacy
   `/refresh` keeps its optional guard.)*
-- [ ] T101 [P] Add the spec-named but unconfigured sources to `sources.json` +
+- [x] T101 [P] Add the spec-named but unconfigured sources to `sources.json` +
   ingest: `elcontacto.ru`, `russpain`, `eventbrite` (enabled), `SpainNewsOnline`
   (`enabled=0`/`weight=off`) — FR-001.
+  *(done: 4 rows appended to `data/seed/sources.json` (ids 24–27, now 27 sources /
+  25 enabled): `web:elcontacto` (RU community, good), `web:russpain` (RU agenda, good),
+  `web:eventbrite` (ticketing, good) all `enabled=1`; `web:spainnewsonline`
+  `enabled=0`+`weight="off"` (political news, excluded by default per spec.md curation;
+  notify EXCLUDE already filters 'spainnews'). NO new parser/normalizer needed —
+  `resolveParserKey` routes web/ticketing through `parseGeneric`, and unregistered
+  normalizers mark raw items `ignored` (append-only). Cadence auto-seeded by
+  `seedCadence()` at db:setup; new rows have null `last_fetched` → picked on first
+  dispatch. JSON valid, column-consistent; build green, 124/124.)*
 - [ ] T102 [P] Run `quickstart.md` validation scenarios end-to-end.
 - [ ] T103 [P] Update `WORKBOARD.md` Done/Next; `npm run build` + `node --test tests/`
   clean; tidy dead code.
