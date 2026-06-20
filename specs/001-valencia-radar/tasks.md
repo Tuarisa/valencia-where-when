@@ -399,7 +399,7 @@ exist, raw layer still append-only.
     = logunespa); geo then resolves the maps links to coords → map pins.
   Build: `lib/pipeline/telegram-post.ts` (parse) + `scripts/crawl-telegram.mjs` (paced
   crawler). Validated extraction shape on posts 1800/1799/1795.
-- [ ] T132 [A/F] **Fever extractor — drone show missing** (user). The Fever event pages
+- [x] T132 [A/F] **Fever extractor — drone show missing** (user). The Fever event pages
   (DroneArt Show "next Saturday", Harry Potter) aren't ingested — no Fever extractor yet.
   Fetch individual Fever event pages → events (date/venue/price/poster). Per FR-001/T118.
 - [x] T133 [F] **Special-event color categorization** (user). *(done: `feature` field on
