@@ -1,0 +1,23 @@
+{
+  "id": "a-oceans-hemisferic",
+  "path": "A",
+  "note": "PATH A: Spanish dome-cinema description (seed event id 193, api:hemisferic) translated to RU. Facts (title, venue) preserved verbatim; no invented date/price.",
+  "input": {
+    "title": "Oceans: Our Blue Planet",
+    "description": "(ES-VAL-EN-FR) FULL DOME. PANTALLA 900m². Sumérgete en el hábitat más grande y menos explorado de la Tierra, donde se revelan las historias de las criaturas más asombrosas de los océanos, desde las aguas costeras hasta los mundos más profundos y misteriosos.",
+    "source": "api:hemisferic",
+    "category": "show",
+    "venue_name": "L'Hemisfèric",
+    "links": [
+      { "label": "L'Hemisfèric — Oceans", "url": "https://cac.es/proyeccion/oceans/" }
+    ]
+  },
+  "expected": {
+    "title_ru": "Oceans: Our Blue Planet",
+    "description_ru": "Полнокупольный фильм (экран 900 м²). Погрузитесь в самую большую и наименее изученную среду обитания на Земле — от прибрежных вод до самых глубоких и загадочных глубин океана, где раскрываются истории удивительнейших морских существ.",
+    "category": "show",
+    "venue_name": "L'Hemisfèric",
+    "tags": ["show", "family", "city:valencia"],
+    "confidence": 0.9
+  }
+}

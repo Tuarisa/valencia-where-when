@@ -1,0 +1,21 @@
+{
+  "id": "a-titanic-visitvalencia",
+  "path": "A",
+  "note": "PATH A: English title-only listing (seed event id 71, web:visitvalencia) translated to RU. Sparse card with no price/venue on the card itself, so confidence is moderate and no where/when facts are asserted (nothing to ground without web).",
+  "input": {
+    "title": "Immersive Exhibition “The Legend of the Titanic” in Valencia",
+    "description": "Immersive Exhibition “The Legend of the Titanic” in Valencia",
+    "source": "web:visitvalencia",
+    "category": "exhibition",
+    "audience": "adult",
+    "start_date": "2026-02-27",
+    "end_date": "2026-12-31"
+  },
+  "expected": {
+    "title_ru": "Иммерсивная выставка «Легенда о Титанике» в Валенсии",
+    "description_ru": "Иммерсивная выставка «Легенда о Титанике» в Валенсии.",
+    "category": "exhibition",
+    "tags": ["exhibition", "art", "adult", "city:valencia"],
+    "confidence": 0.7
+  }
+}

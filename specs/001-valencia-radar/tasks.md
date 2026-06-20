@@ -134,16 +134,17 @@ exist, raw layer still append-only.
   `merged_into`+`source_item_id`. Note: the 90 rows ALREADY use
   `status='duplicate'`+`merged_into` (no status migration needed). Backfill is BLOCKED
   by the same missing-`source_items` issue as T033.
-- [~] T035 [C] Deterministic strong-match pre-pass (exact url / `(source,external_id)`
+- [x] T035 [C] Deterministic strong-match pre-pass (exact url / `(source,external_id)`
   / resolved `maps_url` / person-URL) before fuzzy; same-person far-date → related
   link, not hard-merge (research C1/C5).
   *(PARTIAL — over-merge fixed: (1) Cyrillic→Latin transliteration in `titleSignature`
   (bare slugify mapped every RU title to "untitled" → 50 RU events fused); (2) `isMergeableGroup`
   requires ≥2 DISTINCT sources (same-source repeats = recurring occurrences → series, not dups)
   + refuses degenerate "untitled" signatures. Live result: 11 groups/64 false losers → **0**,
-  idempotent (RUN1=RUN2=0). STILL TODO: exact url/external_id/maps_url strong-match pre-pass +
-  same-person-far-date related link.)*
-- [~] T036 [C] **Places dedup path**: `placeKey = nameSignature|area|category`,
+  idempotent (RUN1=RUN2=0). **DONE**: `strongMatchKey`/`strongMatchPrePass` collapse exact
+  url / source-scoped `external_ref` BEFORE the fuzzy pass (4 tests; over-merge guards intact;
+  idempotent — re-run excludes `status='duplicate'`). Deferred: same-person-far-date related link.)*
+- [x] T036 [C] **Places dedup path**: `placeKey = nameSignature|area|category`,
   strong-match on `maps_url`/`external_id`, fuzzy name+category+geo, `recommended_by`
   union (research C2). *(PARTIAL — matching logic done + tested: `placeKey`,
   `arePlacesDuplicate` (strong maps_url/external_id + fuzzy JW≥0.9 + ≥1 corroborating
@@ -154,7 +155,7 @@ exist, raw layer still append-only.
   (Madrid Sol 40.4168,-3.7035); haversine R 75–120 m; never merge on geo alone
   (research C3). *(done: `haversineMeters` + `isCentroid` + `CENTROID_BLACKLIST`
   (Madrid Sol + València fallback) + `geoCorroborates`; nominatim coords never vote.)*
-- [~] T038 [C] Insert `dedup` into `run.ts` right after `normalize` and expose via
+- [x] T038 [C] Insert `dedup` into `run.ts` right after `normalize` and expose via
   `refreshWorkflow`; ensure occurrences are NOT scanned. *(DONE for the offline
   `run.ts` path: `ingest → normalize → dedup → score → tag → geo` (enrich slots in at
   T050); dedup loads only the `events` table (status='upcoming'), so `event_occurrences`
@@ -304,12 +305,12 @@ exist, raw layer still append-only.
 
 ## Sub-area I: LLM Evaluation tooling (FR-022, SC-010)
 
-- [ ] T090 [I] `promptfooconfig.yaml` (dev-only `promptfoo`) wrapping real `enrichOne`
+- [x] T090 [I] `promptfooconfig.yaml` (dev-only `promptfoo`) wrapping real `enrichOne`
   via custom-script provider; assertions `is-json`+Ajv, fuzzy date (±0), venue
   Levenshtein ≥0.85, `llm-rubric` RU-quality (Haiku grader ≥0.7).
-- [ ] T091 [P] [I] Golden fixtures `tests/fixtures/enrich/*.json` (10–25, keyed on
+- [x] T091 [P] [I] Golden fixtures `tests/fixtures/enrich/*.json` (10–25, keyed on
   series): Komissarenko, RU Telegram posts, an ES poster for OCR.
-- [ ] T092 [I] `npm run eval` script (key-gated, skipped when `ANTHROPIC_API_KEY`
+- [x] T092 [I] `npm run eval` script (key-gated, skipped when `ANTHROPIC_API_KEY`
   unset, excluded from CI default); keep mocked `npm test` fully offline.
 
 ---

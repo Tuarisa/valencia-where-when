@@ -1,0 +1,26 @@
+{
+  "id": "series-auroras-hemisferic",
+  "path": "series",
+  "note": "SERIES: second Hemisfèric series ('Auroras + Waiting far away') with two daily session times. Enriched once at the series level; the RU description is faithful and venue is preserved. No single occurrence date is promoted onto the series card.",
+  "input": {
+    "title": "Auroras + Waiting far away",
+    "description": "(ES-EN-FR) FULL DOME. PANTALLA 900 m². La belleza de la Tierra desde el espacio es asombrosa, y todavía más espectacular cuando una aurora boreal ilumina el cielo nocturno.",
+    "source": "api:hemisferic",
+    "category": "show",
+    "venue_name": "L'Hemisfèric",
+    "recurrence_kind": "sessions",
+    "recurrence_summary": "Daily sessions at 15:00 and 20:00",
+    "occurrence_count": 2,
+    "links": [
+      { "label": "L'Hemisfèric — Auroras", "url": "https://cac.es/proyeccion/auroras/" }
+    ]
+  },
+  "expected": {
+    "title_ru": "Auroras + Waiting far away",
+    "description_ru": "Полнокупольный фильм (экран 900 м²). Красота Земли из космоса поражает, и ещё более зрелищной она становится, когда ночное небо озаряет северное сияние.",
+    "category": "show",
+    "venue_name": "L'Hemisfèric",
+    "tags": ["show", "family", "city:valencia"],
+    "confidence": 0.88
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "id": "b-droneart-fever",
+  "path": "B",
+  "note": "PATH B: grounded enrichment of the Fever DroneArt Show card (seed events-fever id 1101). The card carries a Fever link + the official venue link; with {web:true} the enricher grounds the venue/address/price from circuitricardotormo + Fever and cites them. Facts mirror the seed record exactly (no invention).",
+  "input": {
+    "title": "DroneArt Show: Harry Potter™",
+    "description": "DroneArt Show: Harry Potter™ llega a Valencia con más de 1.200 drones iluminados que recrean escenas icónicas de las películas de Harry Potter, acompañados de música en directo sobre la banda sonora de la saga. Espectáculo aéreo al aire libre en el Circuit Ricardo Tormo (Cheste).",
+    "source": "web:fever",
+    "category": "show",
+    "audience": "family",
+    "start_date": "2026-06-26",
+    "start_time": "22:30",
+    "venue_name": "Circuit Ricardo Tormo",
+    "links": [
+      {
+        "label": "Entradas Fever",
+        "url": "https://feverup.com/m/611307/en"
+      },
+      {
+        "label": "Circuit Ricardo Tormo",
+        "url": "https://www.circuitricardotormo.com/eventos/drone-art-show-harry-potter/"
+      }
+    ]
+  },
+  "expected": {
+    "title_ru": "DroneArt Show: Гарри Поттер™",
+    "description_ru": "Шоу дронов DroneArt Show: Гарри Поттер — более 1200 светящихся дронов воссоздают сцены из фильмов о Гарри Поттере под живую музыку. Открытое воздушное шоу на Circuit Ricardo Tormo (Честе).",
+    "category": "show",
+    "venue_name": "Circuit Ricardo Tormo",
+    "address": "Salida Autovía del Este (A-3), 334, 46380 Cheste, Valencia",
+    "price": "от 20,9 €",
+    "is_free": false,
+    "links": [
+      {
+        "label": "Entradas Fever",
+        "url": "https://feverup.com/m/611307/en"
+      },
+      {
+        "label": "Circuit Ricardo Tormo",
+        "url": "https://www.circuitricardotormo.com/eventos/drone-art-show-harry-potter/"
+      }
+    ],
+    "citations": [
+      {
+        "url": "https://www.circuitricardotormo.com/eventos/drone-art-show-harry-potter/",
+        "supports": "address: Salida Autovía del Este (A-3), 334, 46380 Cheste, Valencia"
+      },
+      {
+        "url": "https://feverup.com/m/611307/en",
+        "supports": "price: от 20,9 €"
+      }
+    ],
+    "tags": [
+      "show",
+      "family",
+      "drone-show",
+      "city:valencia"
+    ],
+    "confidence": 0.92
+  }
+}

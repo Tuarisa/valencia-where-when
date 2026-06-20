@@ -1,0 +1,19 @@
+{
+  "id": "a-sailgp-fever",
+  "path": "A",
+  "note": "PATH A: Spanish promo description (seed Fever SailGP event) translated to RU. Venue preserved from the card; no date on the card so none is invented.",
+  "input": {
+    "title": "Spain Sail Grand Prix | Valencia 2026 – Entradas de día",
+    "description": "Prepárate para un fin de semana vibrante, lleno de velocidad, celebración y emoción, con la llegada de SailGP a la animada ciudad de Valencia. ¡Consigue tus entradas!",
+    "source": "web:fever",
+    "category": "other",
+    "venue_name": "La Marina de València"
+  },
+  "expected": {
+    "title_ru": "Spain Sail Grand Prix | Валенсия 2026 — билеты на день",
+    "description_ru": "Приготовьтесь к яркому уикенду, полному скорости, праздника и эмоций: SailGP приезжает в оживлённую Валенсию. Успейте купить билеты!",
+    "venue_name": "La Marina de València",
+    "tags": ["sport", "city:valencia"],
+    "confidence": 0.85
+  }
+}

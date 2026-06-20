@@ -1,0 +1,22 @@
+{
+  "id": "a-brunch-corner-place",
+  "path": "A",
+  "note": "PATH A (place card): translate the English place blurb (seed places id 1, Brunch Corner Ruzafa) to RU. Area/address are card facts and preserved; no web grounding needed, high confidence.",
+  "input": {
+    "title": "Brunch Corner Ruzafa",
+    "description": "Bright brunch cafe with terrace and kid-friendly options.",
+    "source": "tg:rutatuta_vlc",
+    "category": "brunch",
+    "venue_name": "Brunch Corner Ruzafa",
+    "address": "Carrer de Dénia 10, 46006 Valencia"
+  },
+  "expected": {
+    "title_ru": "Brunch Corner Ruzafa",
+    "description_ru": "Светлое кафе для бранча с террасой и опциями для детей.",
+    "category": "brunch",
+    "venue_name": "Brunch Corner Ruzafa",
+    "address": "Carrer de Dénia 10, 46006 Valencia",
+    "tags": ["food", "brunch", "coffee", "family", "area:ruzafa"],
+    "confidence": 0.93
+  }
+}

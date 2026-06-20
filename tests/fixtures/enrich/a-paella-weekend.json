@@ -1,0 +1,26 @@
+{
+  "id": "a-paella-weekend",
+  "path": "A",
+  "note": "PATH A: faithful EN->RU translation of a clean, self-contained gastro card (seed event id 1, tg:rutatuta_vlc). No external link to ground; high confidence because all facts come straight from the card.",
+  "input": {
+    "title": "Paella Weekend by the Sea",
+    "description": "Two-day gastro festival with live music and kids zone.",
+    "source": "tg:rutatuta_vlc",
+    "category": "gastro",
+    "audience": "family",
+    "venue_name": "Marina de Valencia",
+    "address": "Marina de Valencia, 46024 Valencia",
+    "start_date": "2026-07-04",
+    "end_date": "2026-07-05",
+    "price": "Free entry",
+    "is_free": true
+  },
+  "expected": {
+    "title_ru": "Паэлья-уикенд у моря",
+    "description_ru": "Двухдневный гастрономический фестиваль с живой музыкой и детской зоной.",
+    "category": "gastro",
+    "is_free": true,
+    "tags": ["gastro", "family", "music", "outdoor", "free"],
+    "confidence": 0.95
+  }
+}

@@ -184,6 +184,24 @@ build`: HOME and /places both 200. (Note: in Next 14.2.15 `.next/server/vendor-c
 may legitimately be absent — its absence is NOT the problem; a clean build is the fix.)
 `package-lock.json` is clean; if a local `npm start` ever 500s again, `npm ci` + clean
 rebuild resolves it. Vercel (clean install per deploy) is unaffected.
+**Loop restarted (user `/loop /speckit-implement`).** Tick A: **T101 DONE** (4 spec-named
+sources added to `data/seed/sources.json` — elcontacto/russpain/eventbrite enabled,
+spainnewsonline off; routed via existing `parseGeneric`, raw stays `ignored` until
+normalizers exist). Tick B (ultracode Workflow `wzu3tktls`, 3 file-disjoint bundles +
+adversarial verify): **dedup finalized** — **T035 DONE** (the real gap: deterministic
+`strongMatchKey`/`strongMatchPrePass` in `dedup.ts` collapse exact `url` / source-scoped
+`external_ref` BEFORE the fuzzy pass, +4 tests; over-merge guards intact, idempotent);
+**T036/T038 confirmed done** (places `arePlacesDuplicate` logic + tests solid, DB
+orchestrator still deferred to T064; dedup wired in `run.ts` offline order). **Eval
+harness DONE** — **T090** (`promptfooconfig.yaml` + `providers/promptfoo-enrich.mjs` custom
+provider driving the REAL `enrich-client.ts` + Haiku RU-rubric grader), **T092**
+(`npm run eval` via `scripts/eval.mjs`, KEY-GATED → no key/CLI = skip + exit 0, never
+gates CI; runs `promptfoo` via `npx --yes` at runtime, NO new dep), **T091** (12 golden
+fixtures in `tests/fixtures/enrich/` from real seed: 7 PATH A / 3 PATH B w/ citations /
+2 Hemisfèric series; `generate.mjs` threads per-case asserts incl. link-survival).
+Verifier flagged non-canonical `links_json` in 3 B-fixture `expected` blocks → main loop
+stripped it (canonical `links`/`citations` kept; generator falls back to `links`). Clean
+`rm -rf .next && npm run build` green, **128/128** tests, eval key-gate verified exit 0.
 
 **Non-negotiables** (see constitution v1.1.0): append-only raw `source_items`; dedup
 keeps a link to every source (via `entity_sources`) and never merges on fallback geo

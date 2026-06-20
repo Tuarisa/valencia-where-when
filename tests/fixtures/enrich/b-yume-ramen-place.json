@@ -1,0 +1,46 @@
+{
+  "id": "b-yume-ramen-place",
+  "path": "B",
+  "note": "PATH B (place card): logunespa ramen-bar place (seed places-logunespa id 22800). The Telegram post links to the venue's ordering site; with {web:true} the enricher confirms the venue/area and keeps the source ordering link, citing it. Address/area/price match the seed verbatim — already a Russian source, so description_ru is a light cleanup, not a translation.",
+  "input": {
+    "title": "Yume Ramen",
+    "description": "Популярный рамен-бар в La Eliana с хорошим и быстрым обслуживанием, часто приходят с детьми. В выходные лучше бронировать.",
+    "source": "tg:logunespa",
+    "category": "ресторан (рамен-бар, японская кухня)",
+    "venue_name": "Yume Ramen",
+    "address": "La Eliana, Valencia",
+    "price": "блюда примерно 4,50–11,95 евро",
+    "links": [
+      {
+        "label": "Yume Ramen — заказ",
+        "url": "https://yume1.pedidomovil.es/shop"
+      }
+    ]
+  },
+  "expected": {
+    "title_ru": "Yume Ramen",
+    "description_ru": "Популярный рамен-бар в La Eliana: хорошее и быстрое обслуживание, часто приходят с детьми. В выходные лучше бронировать.",
+    "category": "ресторан",
+    "venue_name": "Yume Ramen",
+    "address": "La Eliana, Valencia",
+    "price": "блюда примерно 4,50–11,95 евро",
+    "links": [
+      {
+        "label": "Yume Ramen — заказ",
+        "url": "https://yume1.pedidomovil.es/shop"
+      }
+    ],
+    "citations": [
+      {
+        "url": "https://yume1.pedidomovil.es/shop",
+        "supports": "price: блюда примерно 4,50–11,95 евро"
+      }
+    ],
+    "tags": [
+      "food",
+      "ramen",
+      "family"
+    ],
+    "confidence": 0.85
+  }
+}

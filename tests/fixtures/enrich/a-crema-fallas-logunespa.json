@@ -1,0 +1,20 @@
+{
+  "id": "a-crema-fallas-logunespa",
+  "path": "A",
+  "note": "PATH A: logunespa Las Fallas card (seed events-logunespa id 24796) that is ALREADY Russian. Expected enrichment is a clean, faithful RU description (light copy-edit, no new facts) + tags. Source RU title kept as-is in title_ru.",
+  "input": {
+    "title": "Cremà — окончание Las Fallas (NIT DEL FOC)",
+    "description": "Финал праздника Las Fallas: подношение цветов Mare de Déu, салют NIT DEL FOC на Puente de Monteolivete, огненное шествие Cabalgata del Fuego и сжигание (Cremà) фигур fallas. 19 марта — официальный выходной в Валенсии.",
+    "source": "tg:logunespa",
+    "category": "фестиваль",
+    "start_date": "2026-03-19",
+    "address": "Plaza del Ayuntamiento / Puente de Monteolivete"
+  },
+  "expected": {
+    "title_ru": "Cremà — окончание Las Fallas (NIT DEL FOC)",
+    "description_ru": "Финал праздника Las Fallas: подношение цветов Mare de Déu, салют NIT DEL FOC на мосту Puente de Monteolivete, огненное шествие Cabalgata del Fuego и сжигание фигур (Cremà). 19 марта — официальный выходной в Валенсии.",
+    "category": "фестиваль",
+    "tags": ["festival", "lasfallas", "city:valencia"],
+    "confidence": 0.9
+  }
+}

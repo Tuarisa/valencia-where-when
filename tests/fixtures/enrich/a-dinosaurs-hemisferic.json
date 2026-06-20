@@ -1,0 +1,23 @@
+{
+  "id": "a-dinosaurs-hemisferic",
+  "path": "A",
+  "note": "PATH A: Spanish 3D-cinema description (api:hemisferic 'Caminando entre dinosaurios 3D') translated to RU. Title kept (proper-noun show title), description faithfully rendered; no invented date/price.",
+  "input": {
+    "title": "Caminando entre dinosaurios 3D",
+    "description": "(ES-VAL-EN-FR) Cine Digital 3D, pantalla 22x11m. Viaja a la Alaska del Cretácico y vive las increíbles aventuras de dos grandes dinosaurios en su lucha por sobrevivir.",
+    "source": "api:hemisferic",
+    "category": "show",
+    "venue_name": "L'Hemisfèric",
+    "links": [
+      { "label": "L'Hemisfèric — Caminando entre dinosaurios", "url": "https://cac.es/proyeccion/caminando-entre-dinosaurios/" }
+    ]
+  },
+  "expected": {
+    "title_ru": "Caminando entre dinosaurios 3D (Прогулки с динозаврами)",
+    "description_ru": "Цифровое 3D-кино, экран 22×11 м. Отправьтесь на Аляску мелового периода и переживите невероятные приключения двух больших динозавров в их борьбе за выживание.",
+    "category": "show",
+    "venue_name": "L'Hemisfèric",
+    "tags": ["show", "family", "city:valencia"],
+    "confidence": 0.88
+  }
+}

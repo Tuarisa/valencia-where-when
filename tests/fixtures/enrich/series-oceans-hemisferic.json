@@ -1,0 +1,26 @@
+{
+  "id": "series-oceans-hemisferic",
+  "path": "series",
+  "note": "SERIES: Hemisfèric dome-cinema show modelled as one event_series (the card) with many dated event_occurrences (sessions). Enrichment runs ONCE per series (series.ts: 'enrich runs once per series, not per occurrence'), so the input is the series card and the expected output is the series-level RU translation. No per-occurrence date is asserted; the recurrence summary stays generic.",
+  "input": {
+    "title": "Oceans: Our Blue Planet",
+    "description": "(ES-VAL-EN-FR) FULL DOME. PANTALLA 900m². Sumérgete en el hábitat más grande y menos explorado de la Tierra, donde se revelan las historias de las criaturas más asombrosas de los océanos.",
+    "source": "api:hemisferic",
+    "category": "show",
+    "venue_name": "L'Hemisfèric",
+    "recurrence_kind": "sessions",
+    "recurrence_summary": "Daily sessions at 16:00 and 19:00",
+    "occurrence_count": 2,
+    "links": [
+      { "label": "L'Hemisfèric — Oceans", "url": "https://cac.es/proyeccion/oceans/" }
+    ]
+  },
+  "expected": {
+    "title_ru": "Oceans: Our Blue Planet",
+    "description_ru": "Полнокупольный фильм (экран 900 м²). Погрузитесь в самую большую и наименее изученную среду обитания на Земле, где раскрываются истории удивительнейших морских существ.",
+    "category": "show",
+    "venue_name": "L'Hemisfèric",
+    "tags": ["show", "family", "city:valencia"],
+    "confidence": 0.9
+  }
+}

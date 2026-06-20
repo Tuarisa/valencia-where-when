@@ -39,6 +39,8 @@ export interface DedupEvent {
   source?: string | null;
   source_url?: string | null;
   source_weight?: string | null; // joined from sources.weight
+  url?: string | null; // canonical event URL (events.url) — strong-match key
+  external_ref?: string | null; // stable per-source external id — strong-match key
   metadata_json?: string | null;
   [key: string]: unknown;
 }
@@ -117,6 +119,79 @@ export function dedupKey(event: DedupEvent): string {
   const sig = titleSignature(event.title);
   const city = slugify(event.city) || "unknown";
   return `${sig}|${city}`;
+}
+
+// PURE: strong-match key for an event — the FIRST non-empty of url / external_ref
+// (research D2; schema entity_sources.match_method "url | external_id | ..."). A
+// shared strong key is a DETERMINISTIC duplicate: the same canonical link (or the
+// same per-source external id) is, by construction, the same listing — so it
+// collapses BEFORE the fuzzy title/date pass, with no risk of the over-merge the
+// fuzzy guards exist to prevent. Returns null when the event carries neither key
+// (those rows fall through untouched to the fuzzy pass). Normalised: trimmed +
+// lower-cased so trailing-slash / case variants of the same URL still collide.
+export function strongMatchKey(event: DedupEvent): string | null {
+  const url = (event.url ?? "").trim().toLowerCase().replace(/\/+$/, "");
+  if (url) return `url:${url}`;
+  const ext = typeof event.external_ref === "string" ? event.external_ref.trim() : "";
+  const src = typeof event.source === "string" ? event.source.trim() : "";
+  // external_ref is only unique WITHIN a source, so scope it by source.
+  if (ext) return `ext:${src}|${ext}`;
+  return null;
+}
+
+// PURE pre-pass: collapse events that share a non-empty strongMatchKey into ONE
+// representative each, BEFORE the fuzzy title/date grouping. Each collision group
+// is merged via mergeGroup (survivor keeps every member's source link in
+// metadata_json.sources[]); its losers are accumulated so the orchestrator can
+// soft-collapse them. Returns { survivors, collapses }: `survivors` is the reduced
+// event list (strong-collapsed reps + every key-less passthrough, original order
+// preserved) to feed into groupByKey; `collapses` pairs each loser with its
+// survivor id for the DB write. Idempotent — a re-run finds each survivor alone.
+export interface StrongCollapse {
+  loser: DedupEvent;
+  survivorId: number | null;
+}
+export function strongMatchPrePass(events: DedupEvent[]): {
+  survivors: DedupEvent[];
+  collapses: StrongCollapse[];
+} {
+  const groups = new Map<string, DedupEvent[]>();
+  const order: Array<{ key: string | null; event: DedupEvent }> = [];
+  for (const ev of events) {
+    const key = strongMatchKey(ev);
+    order.push({ key, event: ev });
+    if (key == null) continue;
+    const bucket = groups.get(key);
+    if (bucket) bucket.push(ev);
+    else groups.set(key, [ev]);
+  }
+
+  const repFor = new Map<string, DedupEvent>();
+  const collapses: StrongCollapse[] = [];
+  for (const [key, members] of groups) {
+    if (members.length < 2) {
+      repFor.set(key, members[0]);
+      continue;
+    }
+    const { survivor, losers } = mergeGroup(members);
+    repFor.set(key, survivor);
+    for (const loser of losers) collapses.push({ loser, survivorId: survivor.id ?? null });
+  }
+
+  // Rebuild the list in original order: emit each strong-key group's survivor once
+  // (at the position of its first member), pass key-less events through unchanged.
+  const emitted = new Set<string>();
+  const survivors: DedupEvent[] = [];
+  for (const { key, event } of order) {
+    if (key == null) {
+      survivors.push(event);
+      continue;
+    }
+    if (emitted.has(key)) continue;
+    emitted.add(key);
+    survivors.push(repFor.get(key) ?? event);
+  }
+  return { survivors, collapses };
 }
 
 // PURE: group events by dedupKey, then within each candidate cluster split by a
@@ -304,10 +379,32 @@ export async function dedup({ exec = sql }: { exec?: typeof sql } = {}): Promise
     ORDER BY e.id
   `) as unknown as DedupEvent[];
 
-  const groups = groupByKey(rows);
   const ts = nowIso();
   let merged = 0;
   let collapsed = 0;
+
+  // T035 strong-match pre-pass: deterministically collapse exact-equal url /
+  // (source, external_ref) rows FIRST, then run the fuzzy title/date pass on the
+  // reduced survivor set. Strong survivors carry every collapsed source link.
+  const { survivors, collapses } = strongMatchPrePass(rows);
+  for (const { loser, survivorId } of collapses) {
+    await exec`UPDATE events
+      SET status = 'duplicate', metadata_json = ${mergeLoserMetadata(loser, survivorId)}, last_seen = ${ts}
+      WHERE id = ${loser.id ?? null}`;
+    collapsed++;
+  }
+  // Persist strong survivors' accumulated metadata_json.sources[] before fuzzy.
+  for (const ev of survivors) {
+    if (ev.id == null) continue;
+    if (collapses.some((c) => c.survivorId === ev.id)) {
+      await exec`UPDATE events
+        SET metadata_json = ${ev.metadata_json ?? null}, last_seen = ${ts}
+        WHERE id = ${ev.id}`;
+      merged++;
+    }
+  }
+
+  const groups = groupByKey(survivors);
 
   for (const members of groups.values()) {
     if (!isMergeableGroup(members)) continue;

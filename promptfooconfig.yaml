@@ -1,0 +1,66 @@
+# Valencia Radar — LLM evaluation harness (sub-area I, T090). DEV-ONLY, key-gated.
+#
+# This is PURE CONFIG: it has zero build impact (Next never imports it) and is
+# excluded from `npm test` (the mocked offline suite). It is run only via
+# `npm run eval` (scripts/eval.mjs), which is itself key-gated — see T092.
+#
+# WHAT IT EVALUATES — the enrichment prompt, across the two paths from T139:
+#   PATH A  = RU translation / rephrase. Model tier: HAIKU (fast + safe; env
+#             ENRICH_MODEL, default haiku). No web tools needed.
+#   PATH B  = grounded WebFetch extraction (exact address / hours / price from the
+#             card's source links). Model tier: SONNET — the FLOOR for grounding
+#             (haiku gives up on dead/unreachable links; opus not worth the cost).
+#             In `claude -p` mode WebFetch is BLOCKED unless the call passes
+#             --allowedTools WebFetch — the provider/enrich-client handles this.
+#   series  = once-per-series enrich (treated like PATH A for grading purposes).
+#
+# PROVIDER — a custom JS provider (providers/promptfoo-enrich.mjs) that calls the
+# REAL enrich client (lib/pipeline/enrich-client.ts → `claude -p`, key-free) so we
+# evaluate the production code path, not a re-implementation. With ANTHROPIC_API_KEY
+# present, an SDK path may be substituted later; the default here is `claude -p`.
+#
+# TESTS — golden fixtures in tests/fixtures/enrich/*.json are loaded dynamically by
+# tests/fixtures/enrich/generate.mjs (one promptfoo test case per fixture, with the
+# fixture's `expected` threaded into per-case asserts). The dir may be empty at first.
+
+description: "Valencia Radar enrichment eval — PATH A (RU translate / haiku) + PATH B (grounded WebFetch / sonnet)"
+
+# The "prompt" is a passthrough: the custom provider builds the real claude -p prompt
+# from the card via lib/pipeline/enrich-client.ts:buildEnrichPrompt. We just forward
+# the JSON-encoded card so the provider can parse it back.
+prompts:
+  - "{{card}}"
+
+providers:
+  # Custom JS provider: shells out to the real `claude -p` enrich client (no API key).
+  # The model tier (haiku vs sonnet) is chosen per-path INSIDE the client via
+  # pickEnrichModel(web) — PATH B sets web=true → sonnet + --allowedTools WebFetch.
+  - id: "file://providers/promptfoo-enrich.mjs"
+    label: "claude-p-enrich"
+    config:
+      # Per-call cap; grounded WebFetch (PATH B) adds latency, so keep it generous.
+      timeoutMs: 240000
+
+# Test cases are generated from the golden fixtures at runtime (degrades to an empty
+# list if the fixtures dir is absent/empty — the eval then reports "no cases").
+tests: file://tests/fixtures/enrich/generate.mjs
+
+# Default assertions applied to EVERY case (per-case asserts are appended by the
+# generator from each fixture's `expected`). Output is the enrichment JSON object.
+defaultTest:
+  # Grader for llm-rubric/llm-judge asserts: Haiku (cheap grader, T090). Used only
+  # when ANTHROPIC_API_KEY is set; scripts/eval.mjs guards the whole run on that.
+  options:
+    provider: "anthropic:messages:claude-3-5-haiku-latest"
+  assert:
+    # The enrich client must return a parseable JSON object (is-json on the raw output).
+    - type: is-json
+    # RU-quality rubric — graded by Haiku (T090 ≥0.7 threshold expressed in the rubric).
+    # Requires description_ru be natural, faithful Russian that invents no facts.
+    - type: llm-rubric
+      value: >
+        The output JSON has a non-empty `description_ru` written in fluent, natural
+        Russian (not a literal/garbled machine translation) that faithfully reflects
+        the event in the input card and invents no dates, prices, or addresses.
+
+outputPath: "eval-results.json"

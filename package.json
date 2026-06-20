@@ -18,7 +18,8 @@
     "db:local:down": "docker compose down",
     "db:local:setup": "DATABASE_URL=postgresql://postgres:postgres@db.localtest.me:5432/main npm run db:setup",
     "dev:local": "DATABASE_URL=postgresql://postgres:postgres@db.localtest.me:5432/main next dev",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "eval": "node scripts/eval.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^0.10.4",

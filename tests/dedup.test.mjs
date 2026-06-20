@@ -179,6 +179,118 @@ function mergeGroup(group, rankFn = sourceWeightRank) {
   return { survivor: mergedSurvivor, mergedSources, losers };
 }
 
+// --- mirror of the T035 strong-match pre-pass (lib/pipeline/dedup.ts) ---
+function strongMatchKey(event) {
+  const url = (event.url ?? '').trim().toLowerCase().replace(/\/+$/, '');
+  if (url) return `url:${url}`;
+  const ext = typeof event.external_ref === 'string' ? event.external_ref.trim() : '';
+  const src = typeof event.source === 'string' ? event.source.trim() : '';
+  if (ext) return `ext:${src}|${ext}`;
+  return null;
+}
+function strongMatchPrePass(events) {
+  const groups = new Map();
+  const order = [];
+  for (const ev of events) {
+    const key = strongMatchKey(ev);
+    order.push({ key, event: ev });
+    if (key == null) continue;
+    const bucket = groups.get(key);
+    if (bucket) bucket.push(ev);
+    else groups.set(key, [ev]);
+  }
+  const repFor = new Map();
+  const collapses = [];
+  for (const [key, members] of groups) {
+    if (members.length < 2) { repFor.set(key, members[0]); continue; }
+    const { survivor, losers } = mergeGroup(members);
+    repFor.set(key, survivor);
+    for (const loser of losers) collapses.push({ loser, survivorId: survivor.id ?? null });
+  }
+  const emitted = new Set();
+  const survivors = [];
+  for (const { key, event } of order) {
+    if (key == null) { survivors.push(event); continue; }
+    if (emitted.has(key)) continue;
+    emitted.add(key);
+    survivors.push(repFor.get(key) ?? event);
+  }
+  return { survivors, collapses };
+}
+
+test('T035 strongMatchKey: url > external_ref, normalised, source-scoped', () => {
+  // url wins and is trailing-slash / case normalised
+  assert.equal(
+    strongMatchKey({ url: 'https://X.com/Event/', external_ref: 'abc', source: 's' }),
+    'url:https://x.com/event',
+  );
+  // identical canonical url despite case + trailing slash → same key
+  assert.equal(
+    strongMatchKey({ url: 'https://x.com/event' }),
+    strongMatchKey({ url: 'https://X.com/Event/' }),
+  );
+  // no url → external_ref, scoped by source (same ext, diff source ≠ collide)
+  assert.equal(strongMatchKey({ external_ref: '42', source: 'a' }), 'ext:a|42');
+  assert.notEqual(
+    strongMatchKey({ external_ref: '42', source: 'a' }),
+    strongMatchKey({ external_ref: '42', source: 'b' }),
+  );
+  // neither → null (falls through to fuzzy)
+  assert.equal(strongMatchKey({ title: 'x' }), null);
+});
+
+test('T035 strongMatchPrePass: exact-url rows collapse deterministically (pre-fuzzy)', () => {
+  // Two rows, SAME source, SAME canonical url, but totally different titles a
+  // fuzzy pass would NOT match — only the strong pre-pass collapses them.
+  const rows = [
+    { id: 1, title: 'Wildly Different Label', city: 'Valencia', start_date: '2026-08-01', score: 30, source: 'web:x', source_url: 'https://t.me/x/1', url: 'https://x.com/e/99', source_weight: 'good' },
+    { id: 2, title: 'Утренник для малышей', city: 'Valencia', start_date: '2026-08-01', score: 70, source: 'web:x', source_url: 'https://t.me/x/2', url: 'https://x.com/e/99/', source_weight: 'good' },
+    { id: 3, title: 'Unrelated solo event', city: 'Valencia', start_date: '2026-08-09', score: 10, source: 'web:y', source_url: 'https://t.me/y/3', url: 'https://y.com/e/1', source_weight: 'mine' },
+  ];
+  const { survivors, collapses } = strongMatchPrePass(rows);
+  // ids 1+2 collapse (same url) → one survivor; id 3 passes through
+  assert.equal(survivors.length, 2, 'three rows → two survivors after strong collapse');
+  assert.equal(collapses.length, 1, 'exactly one loser collapsed');
+  // higher score wins the strong group
+  const rep = survivors.find((s) => s.url && s.url.startsWith('https://x.com'));
+  assert.equal(rep.id, 2, 'higher-score row survives the strong group');
+  assert.equal(collapses[0].loser.id, 1);
+  assert.equal(collapses[0].survivorId, 2);
+  // survivor keeps BOTH source links (every source preserved, constitution)
+  const urls = JSON.parse(rep.metadata_json).sources.map((s) => s.source_url).sort();
+  assert.deepEqual(urls, ['https://t.me/x/1', 'https://t.me/x/2']);
+  // untouched passthrough keeps original identity, original order preserved
+  assert.equal(survivors[1].id, 3);
+});
+
+test('T035 strongMatchPrePass: NO strong keys → passthrough unchanged (idempotent)', () => {
+  const rows = [
+    { id: 1, title: 'Slava Komissarenko', city: 'Valencia', start_date: '2026-07-10', source: 'a' },
+    { id: 2, title: 'Morgenstern', city: 'Valencia', start_date: '2026-07-11', source: 'b' },
+  ];
+  const { survivors, collapses } = strongMatchPrePass(rows);
+  assert.equal(collapses.length, 0, 'nothing collapses without strong keys');
+  assert.deepEqual(survivors.map((s) => s.id), [1, 2], 'all rows pass through, order kept');
+  // second run over the survivors is a no-op (idempotent)
+  const again = strongMatchPrePass(survivors);
+  assert.equal(again.collapses.length, 0);
+  assert.equal(again.survivors.length, 2);
+});
+
+test('T035 strongMatchPrePass: external_ref collapses only within the same source', () => {
+  const rows = [
+    { id: 1, title: 'A', city: 'Valencia', start_date: '2026-09-01', score: 20, source: 'feed', external_ref: 'EVT-7', source_url: 'u1', source_weight: 'good' },
+    { id: 2, title: 'B', city: 'Valencia', start_date: '2026-09-01', score: 50, source: 'feed', external_ref: 'EVT-7', source_url: 'u2', source_weight: 'good' },
+    { id: 3, title: 'C', city: 'Valencia', start_date: '2026-09-01', source: 'other', external_ref: 'EVT-7', source_url: 'u3' },
+  ];
+  const { survivors, collapses } = strongMatchPrePass(rows);
+  // ids 1+2 (same source, same ext) collapse; id 3 (other source) does NOT
+  assert.equal(collapses.length, 1);
+  assert.equal(collapses[0].loser.id, 1, 'lower score loses');
+  assert.equal(survivors.length, 2);
+  assert.ok(survivors.some((s) => s.id === 3), 'cross-source same-ext stays separate');
+});
+
 // --- Fixture: ONE concert, three sources, conflicting dates + titles ---
 const records = [
   {

@@ -1,0 +1,52 @@
+{
+  "id": "b-titanic-bombasgens",
+  "path": "B",
+  "note": "PATH B: grounded enrichment of the Titanic exhibition Fever card (seed event id 71-related, web:fever m/522272). With {web:true} the enricher WebFetches the Fever/venue page and grounds the venue + address + price; every added where/when/price fact carries a citation (constitution: ground-or-flag). Facts here match the documented bombasgens.com grounding noted in CLAUDE.md.",
+  "input": {
+    "title": "La leyenda del Titanic. La exposición definitiva en Bombas Gens",
+    "description": "La leyenda del Titanic. La exposición definitiva en Bombas Gens Centre d'Arts Digitals.",
+    "source": "web:fever",
+    "category": "exhibition",
+    "venue_name": "Bombas Gens Centre d'Arts Digitals",
+    "links": [
+      {
+        "label": "Entradas Fever",
+        "url": "https://feverup.com/m/522272"
+      }
+    ]
+  },
+  "expected": {
+    "title_ru": "Легенда о «Титанике». Окончательная выставка в Bombas Gens",
+    "description_ru": "Иммерсивная выставка «Легенда о Титанике» в цифровом арт-центре Bombas Gens Centre d'Arts Digitals в Валенсии.",
+    "category": "exhibition",
+    "venue_name": "Bombas Gens Centre d'Arts Digitals",
+    "address": "Av. de Burjassot 54, 46009 Valencia",
+    "price": "9,5 €",
+    "links": [
+      {
+        "label": "Entradas Fever",
+        "url": "https://feverup.com/m/522272"
+      },
+      {
+        "label": "Bombas Gens Centre d'Arts Digitals",
+        "url": "https://www.bombasgens.com/"
+      }
+    ],
+    "citations": [
+      {
+        "url": "https://www.bombasgens.com/",
+        "supports": "address: Av. de Burjassot 54, 46009 Valencia"
+      },
+      {
+        "url": "https://feverup.com/m/522272",
+        "supports": "price: 9,5 €"
+      }
+    ],
+    "tags": [
+      "exhibition",
+      "art",
+      "city:valencia"
+    ],
+    "confidence": 0.9
+  }
+}
