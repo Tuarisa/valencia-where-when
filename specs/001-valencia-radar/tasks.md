@@ -472,7 +472,12 @@ exist, raw layer still append-only.
   it carries stale null-dates — the local-first re-bake must re-normalize with this fixed parser. The local
   DB was restored to the canonical seed afterwards; the 898 raw `source_items` persist.)*
 
-- [ ] T146 [A] **Web normalizers ingest junk "events" (nav/contact/list cruft)** (T141 finding). The
+- [x] T146 [A] **Web normalizers ingest junk "events" (nav/contact/list cruft)** (T141 finding). *(DONE
+  2026-06-21 — deterministic `isJunkCard(title, body, sourceName?)` in valenciarusa.ts, reused by
+  vidacultural.ts: drops bare email/@handle, nav/legal labels (Контакты/Подписаться/Войти/Правовая
+  информация/Política/Cookies RU+UK+ES+EN), bare channel-header lines, "pinned a photo/message" (strips
+  `499 views 15:28`/`25°` chrome first). Live: valenciarusa 22→19, vidacultural 17→10; 0 real events lost.
+  16 tests. Pre-existing parsePrice trailing-"40 €" quirk noted, out of scope.)* — original finding:
   generic web parse + valenciarusa normalizer emit non-events: title `info@valenciarusa.es`, venue
   `valenciarusa.es info@…`; real titles carry a date prefix + "VB" cruft. Add an event-vs-chrome guard
   (drop contact/nav/footer cards) + title cleanup (strip leading date tokens + trailing source tags). Also
@@ -519,7 +524,7 @@ exist, raw layer still append-only.
   "hoy"/"mañana") → 15/17 null-dated. Optionally resolve them against the post date (source_item `last_seen`)
   to a concrete weekend/month start. Fuzzy; lower priority than T150/T151.
 
-- [ ] T153 [A] **spain-filter: recognise Latin-transliterated city slugs** (T150 finding, HIGH for
+- [x] T153 [A] **spain-filter: recognise Latin-transliterated city slugs** (T150 finding, HIGH for
   worldafisha yield). `spain-filter.ts` matches Latin `madrid`/`malaga` + Cyrillic, but NOT the Latin
   TRANSLITERATIONS used in worldafisha URL slugs / RU posts: `valensiya`, `barselona`, `marbelya`,
   `alikante`, `sevilya`, `malaga`(ok)… → 21 of 23 real worldafisha Valencia/Alicante events are dropped at

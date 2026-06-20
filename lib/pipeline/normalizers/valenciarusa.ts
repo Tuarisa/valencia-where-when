@@ -13,6 +13,8 @@ import type { RawItem } from "./types";
 
 export const VALENCIARUSA_SOURCE_KEY = "web:valenciarusa";
 const SOURCE_URL = "https://www.valenciarusa.es/sobytiya";
+// Display name of the site — used by isJunkCard to recognise bare header/chrome cards.
+const VALENCIARUSA_NAME = "Валенсия Русская";
 
 interface RawWeb {
   kind?: string;
@@ -45,6 +47,92 @@ export function parsePrice(text?: string | null): { price: string | null; isFree
     if (amount) return { price: `${amount} €`, isFree: 0 };
   }
   return { price: null, isFree: null };
+}
+
+// T146 — deterministic non-event / site-chrome guard (no LLM, per T140). The generic
+// web + telegram parsers also emit nav links, contact/legal pages, channel headers and
+// Telegram meta posts ("pinned a photo"). These are NOT events; dropping them keeps the
+// feed clean. Everything here is a pure keyword/shape test — a REAL event (which always
+// carries a date, venue cue or a substantial body) is never matched.
+
+// Pure nav / legal / chrome labels that appear as a WHOLE card (RU/UK/ES/EN). Matched
+// case-insensitively against the entire compacted card text, so a real event whose body
+// merely mentions e.g. "cookies" is unaffected — only a card that is ONLY the label drops.
+const NAV_LABELS = [
+  "контакты", "контакти", "подписаться", "підписатися", "войти", "увійти",
+  "правовая информация", "правова інформація", "конфиденциальность", "конфіденційність",
+  "политика конфиденциальности", "політика конфіденційності",
+  "о нас", "про нас", "новости", "новини", "события", "події", "гиды", "гіди",
+  "рестораны", "ресторани", "услуги", "послуги", "документы", "документи",
+  "política de privacidad", "política de cookies", "política de cookies y privacidad",
+  "aviso legal", "cookies", "privacy", "privacy policy", "legal", "terms", "contact",
+  "subscribe", "log in", "login", "sign in",
+];
+
+// PURE (T146): is the whole compacted text just an email address (optionally "mailto:")?
+// A genuine event body that happens to contain a contact email is long and has other
+// content, so we only treat a card that is ONLY an email as chrome.
+function isBareEmail(text: string): boolean {
+  return /^(?:mailto:)?\s*[^\s@]+@[^\s@]+\.[^\s@]{2,}\s*$/i.test(text);
+}
+
+// PURE (T146): is the whole compacted text just a Telegram @handle (e.g. "@janeS_31")?
+function isBareHandle(text: string): boolean {
+  return /^@[A-Za-z0-9_]{3,}$/.test(text);
+}
+
+// PURE (T146): strip trailing Telegram view/time/forward meta a header card may carry,
+// e.g. "<channel> 499 views 15:28", "<channel> pinned a photo". Returns the core line.
+function stripPostMeta(text: string): string {
+  return text
+    .replace(/\bpinned a (?:photo|message|video|file|poll|live stream)\b.*$/i, "")
+    .replace(/\b\d[\d.,kKmM]*\s*views?\b.*$/i, "")
+    .replace(/\b\d{1,2}:\d{2}\b\s*$/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// PURE (T146): decide whether a parsed card is non-event chrome/meta and must be DROPPED.
+// `title`/`body` are the raw title + body text; `sourceName` (optional) is the channel /
+// site display name so a bare header line ("<channel name>", or "<channel> pinned a
+// photo") is matched exactly. Deterministic keyword/shape tests only — a real event is
+// never matched (it carries a date, a venue cue or a substantial multi-clause body).
+export function isJunkCard(
+  title?: string | null,
+  body?: string | null,
+  sourceName?: string | null,
+): boolean {
+  const t = compact(title) ?? "";
+  const b = compact(body) ?? "";
+  // The card text we test = the longer of title/body (header cards repeat the name in both).
+  const text = (b.length >= t.length ? b : t).trim();
+  if (!text) return true; // empty card
+
+  // Telegram meta posts ("… pinned a photo / message").
+  if (/\bpinned a (?:photo|message|video|file|poll|live stream)\b/i.test(text)) return true;
+
+  const lower = text.toLowerCase();
+
+  // Whole card is an email address or a bare @handle.
+  if (isBareEmail(text) || isBareHandle(text)) return true;
+
+  // Whole card is a pure nav / legal / chrome label (exact match after compaction).
+  if (NAV_LABELS.includes(lower)) return true;
+
+  // Bare channel/site header line: the card is ONLY the source name (optionally with
+  // trailing Telegram view/time meta, or a leading 🔔-style decoration already compacted).
+  if (sourceName) {
+    const name = compact(sourceName)?.toLowerCase() ?? "";
+    if (name) {
+      const core = stripPostMeta(text).toLowerCase();
+      if (core === name) return true;
+      // also catch "<name> | <name>"-style duplicated headers and trailing temperature
+      // chrome a snapshot may leave (e.g. "Валенсия Русская 25 °").
+      const coreNoTemp = core.replace(/\s*\d{1,3}\s*°.*$/u, "").trim();
+      if (coreNoTemp === name) return true;
+    }
+  }
+  return false;
 }
 
 // Venue cue words (RU/ES) — when one precedes a proper-noun phrase we treat the rest
@@ -90,6 +178,10 @@ export function buildValenciarusaEvents(
 
     const title = compact(item.title);
     if (!title) continue;
+
+    // T146: drop nav / contact / legal / chrome cards (email, "Правовая информация",
+    // bare site-name header). Deterministic; a real dated listing is never matched.
+    if (isJunkCard(title, item.raw_text, VALENCIARUSA_NAME)) continue;
 
     const haystack = `${title} ${item.raw_text || ""}`;
     const start = parseEventDate(haystack, today);

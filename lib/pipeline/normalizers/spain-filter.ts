@@ -23,6 +23,16 @@ const SPAIN_SIGNALS = [
   "palma", "пальма", "mallorca", "майорк",
   "tenerife", "тенериф", "canaria", "канар", "canarias",
   "españa", "espana", "spain", "испани",
+  // Latin transliterations of Spanish cities used in worldafisha URL slugs and many
+  // RU posts (T153). Kept tight + Spain-only — each is an unambiguous Spanish place.
+  // (madrid/malaga/bilbao already match their ES spelling above.)
+  "valensi",   // valensiya → Valencia
+  "barselon",  // barselona → Barcelona
+  "alikante",  // alikante → Alicante
+  "marbel",    // marbelya → Marbella
+  "sevil",     // sevilya → Sevilla
+  "saragos",   // saragosa → Zaragoza
+  "tenerif",   // tenerife (Latin, no final e) → Tenerife
 ];
 
 // Clearly-non-Spain hubs common in these tours (for diagnostics / a stricter mode).

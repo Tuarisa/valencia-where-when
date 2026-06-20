@@ -1,7 +1,7 @@
 import { sql } from "../../db";
 import { compact, nowIso } from "../util";
 import { parseEventDate, upsertPlainEvent, type EventInsert } from "./worldafisha";
-import { parsePrice, parseVenue, parseAddress } from "./valenciarusa";
+import { parsePrice, parseVenue, parseAddress, isJunkCard } from "./valenciarusa";
 import type { RawItem } from "./types";
 
 // T112 — Vida Cultural de Valencia (telegram source, key `tg:vidacultural_Valencia`,
@@ -16,6 +16,9 @@ import type { RawItem } from "./types";
 
 export const VIDACULTURAL_SOURCE_KEY = "tg:vidacultural_Valencia";
 const SOURCE_URL = "https://t.me/s/vidacultural_Valencia";
+// Channel display name — used by isJunkCard (T146) to drop bare channel-header / "pinned
+// a photo" / "<channel> 499 views 15:28" meta posts that carry no event content.
+const VIDACULTURAL_NAME = "Культурне життя Валенсії/Vida Cultural de Valencia";
 
 interface RawTelegram {
   kind?: string;
@@ -70,6 +73,9 @@ export function buildVidaculturalEvents(
   for (const item of rows) {
     const raw = parseRaw(item);
     const body = item.raw_text || "";
+    // T146: drop channel-header / "pinned a photo" / bare-@handle meta posts up front
+    // (deterministic — a real event post is never matched), then apply the event gate.
+    if (isJunkCard(item.title, body, VIDACULTURAL_NAME)) continue;
     const start = parseEventDate(body, today);
     if (!looksLikeEvent(body, start != null)) continue;
 

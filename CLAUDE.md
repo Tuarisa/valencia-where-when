@@ -283,6 +283,18 @@ still dropped at the Spain gate. Gate: clean build green, **177/177** tests (155
 **Seed-rebuild (user "перестрой seed чтоб без null дат") IN PROGRESS** — recovering dates first (T150/T151
 done; T153/T146/T152 next), then re-normalize on the live DB + export the clean dated seed; the destructive
 `data/seed/` overwrite will be confirmed with the user first (curated feria/fever/logunespa content).
+**Tick H (clean-quality, ultracode Workflow `w397bvz78`).** **T153 DONE [x]** — spain-filter.ts +7
+Latin-translit city stems (valensi/barselon/alikante/marbel/sevil/saragos/tenerif); live worldafisha
+`/event/` slugs through the Spain gate **2/23 → 23/23** (non-Spain still excluded). **T146 DONE [x]** —
+deterministic `isJunkCard` (email/@handle/nav+legal labels/channel-header/"pinned a photo") in
+valenciarusa.ts, reused by vidacultural.ts; live valenciarusa 22→19, vidacultural 17→10, 0 real events
+lost. Both verify `ok` (the "ignore parallel-bundle files" instruction killed the prior false-positive
+scope flags). Gate: clean build green, **194/194** tests. **MEASURED (read-only, all date fixes applied)**:
+the 6 normalizers now yield **107 events / 91 dated (85%)** from 238 raw `source_items` (worldafisha 23/23,
+valenciarusa 19/19, vidacultural 10/9, concerten 5/3, valenciabonita 5/2 [relative ES dates→T152], fever
+45/35). Was ~42 events near-all-null before. NEXT: confirm seed-rebuild scope/overwrite policy with the
+user, then re-normalize→export the clean dated seed (the other ~13 sources still lack normalizers → all
+`ignored`; full T144 bake wants those too).
 
 **Non-negotiables** (see constitution v1.1.0): append-only raw `source_items`; dedup
 keeps a link to every source (via `entity_sources`) and never merges on fallback geo
