@@ -686,7 +686,12 @@ exist, raw layer still append-only.
   (+2 T156); regression confirmed — worldafisha+concerten still merges, lacotorra survives. The live DB
   still shows the 41 stale dups (read-only verify) — cleared on the next clean re-bake (T157).)*
 
-- [ ] T157 [C] **Run geo on the baked seed events (lat/lng for the map)** (bake follow-up). The seed bake
+- [x] T157 [C] **Run geo on the baked seed events (lat/lng for the map)** (bake follow-up). The seed bake
   ran normalize→dedup→score→tag but SKIPPED geo (Nominatim, slow/network). So the 239 freshly-baked
   events.json rows have null lat/lng → not on the map (they DO show in feed/calendar by date). Run
   `geoEnrich` over them (paced) + re-export, OR let the live pipeline fill geo. Deterministic geo per T135.
+  *(DONE 2026-06-21 — `geoEnrich(300, 1100)` on the live DB: events_updated 170, places_updated 46.
+  Re-exported `data/seed/events.json` with coords: **155/239 events geocoded (65%)**, 0 null-date kept.
+  By source: lacotorra 50/56, fever 33/34, ticketmaster 22/22, eventbrite 14/14, palau 10/10, vidacultural
+  9/9, songkick 8/8; the 84 null are venues that only resolve to the València centroid → kept null per the
+  `isCentroid` guard (better null than a fake pin, T135). The map now renders ~155 dated events + places.)*
