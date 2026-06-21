@@ -648,3 +648,17 @@ exist, raw layer still append-only.
   crawler's `claude -p` extraction (much of name/area/category/price is rule-parseable from
   the post + maps `q=` — reserve the LLM only for the RU description / ambiguous classify);
   enrich fields that are pure copies/parses. Saved as a feedback memory (`prefer-js-over-llm`).
+
+- [~] T144-norms **10 remaining event normalizers built + wired** (palau/ticketmaster/songkick/
+  visitvalencia/hoyvalencia/eventbrite/laganzua/lacotorra/elcontacto/russpain). *(DONE: all 10 built
+  against REAL live data, registered in `NORMALIZER_REGISTRY` (17 total), 289/289 tests, build green.
+  Real-data measure: 709 raw → 367 events, 239 dated (65%). GOOD: palau 10/10, ticketmaster 28/28.
+  Quality issues → T154.)*
+
+- [ ] T154 [A] **Fix the suspicious new normalizers (real-data quality)** (T144-norms finding). The 10
+  new normalizers pass synthetic tests but several misbehave on REAL data (adversarial verify died on the
+  session limit): **visitvalencia** 56 events / 0 dated (dates not parsed), **lacotorra** 8 raw → 56 events
+  (explosion?), **laganzua** 1/47 (over-filter), **eventbrite** 7/61 (low yield), **elcontacto** 0/3 +
+  **russpain** 0/4 (RU sites, 0 events). Diagnose each on live `source_items` + fix the parser
+  deterministically; drop chrome, parse real dates, don't fabricate. Then re-measure + adversarial-verify.
+  (songkick 8-dated/26 + hoyvalencia 38/76 have plausible explanations — verify if time permits.)
