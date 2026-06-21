@@ -28,7 +28,12 @@ export interface SiteEvent {
   occurrence_count: number; // sessions in the series (0 for ordinary events)
   series_id: number | null; // event_series.id this row belongs to (card or occurrence)
   calendar_only: boolean; // an occurrence row: shown on the calendar, hidden from the feed
-  feature: string | null; // special-event kind for color coding: feria | festival | hemisferic | excursion | null
+  feature: string | null; // special-event kind for color coding: feria | festival | hemisferic | excursion | exposition | null
+  // Standing/long-running events (exhibitions) that run continuously over a multi-day
+  // [start_date, end_date] span (T175). The calendar renders these as ONE horizontal
+  // spanning bar in a top lane (not a per-day card duplicated across the range), and
+  // the feed shows an "ongoing" badge instead of a single date.
+  is_exposition: boolean;
   start_date: string | null;
   end_date: string | null;
   start_time: string | null;
@@ -97,6 +102,32 @@ function displayTitle(row: EventRow): string {
   return row.title_ru || deriveTitle(row.title);
 }
 
+// Day-span helper: whole-day count between two ISO dates (end − start), or null.
+function spanDays(startDate?: string | null, endDate?: string | null): number | null {
+  if (!startDate || !endDate) return null;
+  const s = Date.parse(startDate.slice(0, 10));
+  const e = Date.parse(endDate.slice(0, 10));
+  if (Number.isNaN(s) || Number.isNaN(e)) return null;
+  return Math.round((e - s) / 86_400_000);
+}
+
+// Detect a "standing" exhibition (T175): an event that runs CONTINUOUSLY over a genuine
+// multi-day [start_date, end_date] span (≥ MIN_EXPO_SPAN_DAYS apart) AND reads as an
+// exhibition — by an explicit exhibition title/category signal (RU выстав/экспоз,
+// ES exposición, EN exhibition), OR a 'culture' category that carries such a span.
+// These are rendered as one spanning calendar bar, not a per-day card. Deterministic.
+const MIN_EXPO_SPAN_DAYS = 4;
+const EXPO_TEXT_RE = /выстав|экспоз|exposici[oó]n|exhibition/i;
+export function isExposition(row: EventRow): boolean {
+  const days = spanDays(row.start_date, row.end_date);
+  if (days == null || days < MIN_EXPO_SPAN_DAYS) return false;
+  const cat = (row.category || "").toLowerCase();
+  const text = `${row.title || ""} ${row.category || ""}`;
+  if (EXPO_TEXT_RE.test(text)) return true;
+  // A multi-day 'culture' event with no other explicit kind reads as an exposition too.
+  return cat === "culture";
+}
+
 // Categorize "special" events so the calendar/feed can color them distinctly (T133).
 // Extensible: each kind maps to its own accent in globals.css. Returns null for an
 // ordinary event.
@@ -112,6 +143,9 @@ export function featureKind(row: EventRow): string | null {
   if (tags.includes("feria-de-julio")) return "feria";
   if (cat === "festival" || cat === "fireworks") return "festival";
   if (tags.includes("festival") || tags.includes("featured")) return "festival";
+  // Standing exhibitions (T175) — checked AFTER the festival/feria kinds so an explicit
+  // festival span doesn't get reclassified, but before the null fall-through.
+  if (isExposition(row)) return "exposition";
   return null;
 }
 
@@ -130,6 +164,7 @@ export function toSiteEvent(row: EventRow): SiteEvent {
     series_id: null,
     calendar_only: false,
     feature: featureKind(row),
+    is_exposition: isExposition(row),
     start_date: row.start_date ?? null,
     end_date: row.end_date ?? null,
     start_time: row.start_time ?? null,
@@ -217,6 +252,7 @@ export function seriesToSiteEvents(
     excerpt: excerpt(series.description || series.raw_excerpt),
     is_hemisferic: series.source === "api:hemisferic",
     feature: featureKind(series),
+    is_exposition: false, // recurring series render via occurrence rows, not a span bar
     end_date: series.end_date ?? null,
     venue_name: series.venue_name ?? null,
     district: series.district ?? null,

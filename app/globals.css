@@ -15,6 +15,9 @@
   --excursion: #0f8a7e;
   --excursion-soft: rgba(15, 138, 126, 0.13);
   --excursion-line: rgba(15, 138, 126, 0.34);
+  --exposition: #2f6fb0;
+  --exposition-soft: rgba(47, 111, 176, 0.14);
+  --exposition-line: rgba(47, 111, 176, 0.34);
   --shadow: 0 24px 60px rgba(70, 42, 16, 0.12);
   --radius: 24px;
 }
@@ -159,6 +162,7 @@ a { color: inherit; }
 .legend-dot.legend-hemis { background: var(--hemis); }
 .legend-dot.legend-feria { background: var(--feria); }
 .legend-dot.legend-excursion { background: var(--excursion); }
+.legend-dot.legend-exposition { background: var(--exposition); }
 
 .calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
 .day-cell {
@@ -185,6 +189,50 @@ a { color: inherit; }
 .day-hemis[open] > summary::before { content: '▾ '; }
 .day-hemis .hemis-session { display: block; padding: 4px 7px 4px 16px; font-size: 0.75rem; line-height: 1.25; color: var(--ink); text-decoration: none; }
 .day-hemis .hemis-session .ev-time { font-weight: 800; color: var(--hemis); margin-right: 4px; }
+
+/* Exposition spanning-bar lane (T175): a thin top strip over the same 7-col rhythm as the
+   calendar grid. Each bar is a horizontal segment that spans the day columns it covers in
+   its week-row; overlapping expositions stack into separate lane-rows. Visually reads as
+   "это идёт постоянно" — one continuous strip, not a card on every day. */
+.expo-lane {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px 8px;
+  margin-bottom: 8px;
+}
+.expo-bar {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 4px;
+  background: var(--exposition-soft);
+  border: 1px solid var(--exposition-line);
+  border-left: 3px solid var(--exposition);
+  color: var(--exposition);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+}
+/* Round only the true start/end edges so a multi-week bar reads as one continuous run. */
+.expo-bar:not(.is-bar-start) { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left-width: 1px; }
+.expo-bar:not(.is-bar-end) { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.expo-bar-label { overflow: hidden; text-overflow: ellipsis; }
+.expo-bar:hover { background: rgba(47, 111, 176, 0.22); }
+
+.feed-card.feature-exposition { background: var(--exposition-soft); border-color: var(--exposition-line); }
+.feed-card.feature-exposition .card-body h3 { color: var(--exposition); }
+.expo-badge {
+  font-weight: 800;
+  color: var(--exposition);
+  background: var(--exposition-soft);
+  border: 1px solid var(--exposition-line);
+  border-radius: 999px;
+  padding: 2px 10px;
+}
 
 .panel-map .map-frame { height: 420px; border-radius: 20px; overflow: hidden; border: 1px solid rgba(0,0,0,0.08); }
 .leaflet-popup-content .map-cat { font-size: 0.7rem; background: var(--line); border-radius: 6px; padding: 1px 7px; }
