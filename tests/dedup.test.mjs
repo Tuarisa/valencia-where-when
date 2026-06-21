@@ -188,6 +188,17 @@ function strongMatchKey(event) {
   if (ext) return `ext:${src}|${ext}`;
   return null;
 }
+// PURE guard (mirror of lib/pipeline/dedup.ts isStrongCollapsible): a strong-key
+// collision group collapses only when cross-source (≥2 distinct sources) OR a
+// same-source NON-degenerate title (a genuine re-fetch). A same-source "untitled"
+// group keyed on a shared url+date would fuse distinct occurrences → released to
+// the fuzzy pass instead (where the ≥2-source guard protects it).
+function isStrongCollapsible(group) {
+  if (group.length < 2) return false;
+  if (distinctSourceCount(group) >= 2) return true;
+  return titleSignature(group[0]?.title) !== 'untitled';
+}
+
 function strongMatchPrePass(events) {
   const groups = new Map();
   const order = [];
@@ -201,8 +212,10 @@ function strongMatchPrePass(events) {
   }
   const repFor = new Map();
   const collapses = [];
+  const released = new Set();
   for (const [key, members] of groups) {
     if (members.length < 2) { repFor.set(key, members[0]); continue; }
+    if (!isStrongCollapsible(members)) { released.add(key); continue; }
     const { survivor, losers } = mergeGroup(members);
     repFor.set(key, survivor);
     for (const loser of losers) collapses.push({ loser, survivorId: survivor.id ?? null });
@@ -210,7 +223,7 @@ function strongMatchPrePass(events) {
   const emitted = new Set();
   const survivors = [];
   for (const { key, event } of order) {
-    if (key == null) { survivors.push(event); continue; }
+    if (key == null || released.has(key)) { survivors.push(event); continue; }
     if (emitted.has(key)) continue;
     emitted.add(key);
     survivors.push(repFor.get(key) ?? event);
@@ -300,6 +313,79 @@ test('T141 strongMatchPrePass: distinct events sharing ONE page url are NOT coll
   assert.equal(dup.survivors.length, 1, 'a genuine re-fetch (same url+title+date) collapses to 1');
   assert.equal(dup.collapses.length, 1);
   assert.equal(dup.survivors[0].id, 11, 'higher-score copy survives');
+});
+
+test('T156 feria: same-source recurring concerts at ONE venue/centroid → 0 merges', () => {
+  // Real failure (web:feriadejuliovlc): 43 "Conciertos de Viveros / Feria de Julio"
+  // events — SAME source, SAME venue ("Jardins de Vivers"), SAME maps URL, all on the
+  // València fallback CENTROID (39.476,-0.368), but DISTINCT artists (titles) on
+  // DISTINCT nights. These are recurring occurrences of a festival, NOT duplicates.
+  // The old url-ALONE strong key collapsed all 43 → 2; the fix (url|titleSignature|
+  // start_date key + the ≥2-source guard on EVERY path) keeps every night.
+  const URL = 'https://conciertosdeviverosvlc.com';
+  const lineup = [
+    ['Conciertos de Viveros: Duncan Dhu', '2026-07-02'],
+    ['Conciertos de Viveros: Javi Medina', '2026-07-03'],
+    ['Conciertos de Viveros: Generación 80-90', '2026-07-04'],
+    ['Conciertos de Viveros: Valeria Castro', '2026-07-05'],
+    ['Conciertos de Viveros: Danny Ocean', '2026-07-06'],
+    ['Conciertos de Viveros: Deep Purple', '2026-07-07'],
+    ['Conciertos de Viveros: Garbage', '2026-07-08'],
+    ['Conciertos de Viveros: Juan Magán', '2026-07-09'],
+  ];
+  const rows = lineup.map(([title, start_date], i) => ({
+    id: 1001 + i, title, city: 'Valencia', start_date, score: 50,
+    source: 'web:feriadejuliovlc', source_url: URL, url: URL,
+    // every event pinned to the SAME venue on the centroid fallback coords
+    venue_name: 'Jardins de Vivers', lat: 39.476, lng: -0.368, geo_source: 'manual',
+    source_weight: 'good',
+  }));
+
+  // (1) strong pre-pass: shared url but DISTINCT title+date → distinct strong keys,
+  // nothing collapses (the centroid coords play no role — events have no geo path).
+  const { survivors, collapses } = strongMatchPrePass(rows);
+  assert.equal(collapses.length, 0, 'no same-source strong collapse');
+  assert.equal(survivors.length, rows.length, 'all nights survive the strong pre-pass');
+
+  // (2) fuzzy pass: each night has a distinct title signature → distinct dedupKey,
+  // and even a coincidental same-key cluster would be blocked by the ≥2-source guard.
+  const groups = groupByKey(survivors);
+  let merged = 0, collapsed = 0;
+  for (const m of groups.values()) {
+    if (!isMergeableGroup(m)) continue; // single-source → never mergeable
+    const { losers } = mergeGroup(m); merged++; collapsed += losers.length;
+  }
+  assert.equal(merged, 0, 'no fuzzy merges among same-source occurrences');
+  assert.equal(collapsed, 0, 'zero events marked duplicate — all 8 nights kept');
+
+  // (3) the ≥2-source guard is what protects this: force the whole lineup into ONE
+  // fuzzy group (same title) and it STILL must not merge while single-source.
+  const sameTitle = rows.map((r) => ({ ...r, title: 'Conciertos de Viveros' }));
+  assert.equal(distinctSourceCount(sameTitle), 1);
+  assert.equal(isMergeableGroup(sameTitle), false, 'same-source cluster never merges');
+});
+
+test('T156 isStrongCollapsible: ≥2-source guard + untitled guard on the strong path', () => {
+  // Cross-source (≥2 distinct sources) sharing a strong key → collapse (the legit dup).
+  assert.equal(isStrongCollapsible([
+    { id: 1, title: 'X', source: 'a' }, { id: 2, title: 'X', source: 'b' },
+  ]), true, 'two distinct sources, same strong key → collapse');
+  // Same-source with a REAL title → genuine re-fetch of one listing → collapse.
+  assert.equal(isStrongCollapsible([
+    { id: 1, title: 'Concierto Real', source: 'a' }, { id: 2, title: 'Concierto Real', source: 'a' },
+  ]), true, 'same-source identifiable re-fetch → collapse');
+  // Same-source UNTITLED (degenerate) → released, never collapse (would fuse distinct).
+  assert.equal(isStrongCollapsible([
+    { id: 1, title: '«»', source: 'a' }, { id: 2, title: '!!!', source: 'a' },
+  ]), false, 'same-source untitled strong group is released, not collapsed');
+  // A degenerate same-source url+date group passes ALL members through untouched.
+  const page = 'https://x.com/agenda';
+  const deg = strongMatchPrePass([
+    { id: 1, title: '«»', city: 'Valencia', start_date: '2026-08-01', source: 'a', source_url: page, url: page, source_weight: 'good' },
+    { id: 2, title: '!!!', city: 'Valencia', start_date: '2026-08-01', source: 'a', source_url: page, url: page, source_weight: 'good' },
+  ]);
+  assert.equal(deg.collapses.length, 0, 'untitled same url+date does not collapse');
+  assert.deepEqual(deg.survivors.map((s) => s.id), [1, 2], 'both untitled rows survive (released)');
 });
 
 test('T035 strongMatchPrePass: NO strong keys → passthrough unchanged (idempotent)', () => {

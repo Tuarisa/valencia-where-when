@@ -671,12 +671,20 @@ exist, raw layer still append-only.
   (over-merge gone), (b) known cross-source dups still merge to one (e.g. worldafisha≈concerten,
   ticketmaster≈songkick same concert). ("убедись после фикса что дедуп работает и дубли не наплодятся".)
 
-- [ ] T156 [C] **dedup over-merges same-source curated events (feria)** (found during the bake). Running
+- [x] T156 [C] **dedup over-merges same-source curated events (feria)** (found during the bake). Running
   `dedup()` on the live DB collapsed 41 of 43 `web:feriadejuliovlc` events into 2 (they are 43 DISTINCT
   festival events from ONE source). The `isMergeableGroup` ≥2-distinct-source guard should refuse to merge
   same-source events (recurring/series, not dups) — investigate why feria slips through (strong pre-pass on
   a shared key? fuzzy pass guard gap?) and fix. Sidestepped for the seed bake (curated taken from their
   files), but the LIVE pipeline would over-merge feria on prod. Pairs with T155.
+  *(DONE 2026-06-21 — ROOT CAUSE was NOT venue/geo (event dedup has NO geo path; centroid was a red
+  herring): the 41 DB duplicates are STALE artifacts of the OLD url-ALONE `strongMatchKey` (the 43 feria
+  events share just 2 URLs → 2 strong groups → 41 collapsed). Already fixed by the T141 `url|titleSignature|
+  start_date` key (verified: 43 distinct keys → 0 merges). HARDENED on top: `isStrongCollapsible(group)`
+  gates the strong pre-pass with the ≥2-distinct-source rule (cross-source OR same-source+real-title =
+  genuine re-fetch; same-source untitled groups RELEASED to the fuzzy pass, none dropped). 20/20 dedup tests
+  (+2 T156); regression confirmed — worldafisha+concerten still merges, lacotorra survives. The live DB
+  still shows the 41 stale dups (read-only verify) — cleared on the next clean re-bake (T157).)*
 
 - [ ] T157 [C] **Run geo on the baked seed events (lat/lng for the map)** (bake follow-up). The seed bake
   ran normalize→dedup→score→tag but SKIPPED geo (Nominatim, slow/network). So the 239 freshly-baked

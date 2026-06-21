@@ -160,6 +160,25 @@ export interface StrongCollapse {
   loser: DedupEvent;
   survivorId: number | null;
 }
+
+// PURE guard: may a strong-key collision group actually collapse? A shared strong
+// key (url|titleSignature|start_date, or source-scoped external_ref) is normally a
+// deterministic duplicate. The one EXCEPTION the constitution forces (recurring
+// occurrences are NOT duplicates): a SAME-SOURCE group whose title carries no
+// identity content (signature === "untitled"). Such a group keyed on a shared url +
+// date — with no distinguishing title — would fuse genuinely distinct occurrences,
+// so it is RELEASED to the fuzzy pass instead (where isMergeableGroup's ≥2-source
+// guard protects it). Cross-source groups (≥2 distinct sources) always collapse —
+// two independent sources emitting the same strong key is the strongest dup signal,
+// and is exactly the legitimate cross-source merge (worldafisha+concerten) we keep.
+export function isStrongCollapsible(group: DedupEvent[]): boolean {
+  if (group.length < 2) return false;
+  if (distinctSourceCount(group) >= 2) return true;
+  // single-source: collapse only when the title is non-degenerate (a real re-fetch
+  // of one identifiable listing), never on an "untitled" signature.
+  return titleSignature(group[0]?.title) !== "untitled";
+}
+
 export function strongMatchPrePass(events: DedupEvent[]): {
   survivors: DedupEvent[];
   collapses: StrongCollapse[];
@@ -177,9 +196,17 @@ export function strongMatchPrePass(events: DedupEvent[]): {
 
   const repFor = new Map<string, DedupEvent>();
   const collapses: StrongCollapse[] = [];
+  // Strong keys that must NOT collapse (degenerate — see isStrongCollapsible):
+  // their members are released to the fuzzy pass as individual passthroughs, so
+  // a degenerate url+date group (e.g. untitled, single-source) never fuses.
+  const released = new Set<string>();
   for (const [key, members] of groups) {
     if (members.length < 2) {
       repFor.set(key, members[0]);
+      continue;
+    }
+    if (!isStrongCollapsible(members)) {
+      released.add(key);
       continue;
     }
     const { survivor, losers } = mergeGroup(members);
@@ -189,10 +216,11 @@ export function strongMatchPrePass(events: DedupEvent[]): {
 
   // Rebuild the list in original order: emit each strong-key group's survivor once
   // (at the position of its first member), pass key-less events through unchanged.
+  // Members of a RELEASED degenerate group are emitted individually (each kept).
   const emitted = new Set<string>();
   const survivors: DedupEvent[] = [];
   for (const { key, event } of order) {
-    if (key == null) {
+    if (key == null || released.has(key)) {
       survivors.push(event);
       continue;
     }
