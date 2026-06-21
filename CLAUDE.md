@@ -334,6 +334,16 @@ events-logunespa.json 19→10 (dropped 9 dateless). **FOUND T156**: dedup ALSO o
 curated feria (43→2) — the ≥2-source guard slips; sidestepped for the seed (curated taken from files) but
 a LIVE-pipeline bug. **T157**: baked events have no geo (lat/lng null) — run geoEnrich + re-export for the
 map. The persistent local DB + 898 source_items live on. Build green, 295/295.
+**Tick K — dedup hardening + seed geo.** **T156 DONE [x]**: the feria 43→2 "over-merge" was STALE DB
+artifacts of the OLD url-alone strongMatchKey (already fixed by T141 `url|title|date`); hardened the strong
+pre-pass with `isStrongCollapsible` (≥2-distinct-source guard now gates the strong path too; same-source
+untitled groups released to the fuzzy pass). 20/20 dedup tests, no regression. **T157 DONE [x]**:
+`geoEnrich(300)` on the live DB (events 170 / places 46), re-exported `data/seed/events.json` with coords
+— **155/239 events geocoded (65%)**, 0 null-date; 84 null are centroid-only venues kept null per the
+isCentroid guard. SEED is now complete: **294 dated events, 0 nulls, 155 mapped**. 297/297 tests, build
+green. NEXT (T144 local-first remaining): a fresh-DB seed round-trip + render verify (use a throwaway DB to
+keep the persistent `main` + its source_items), then the LOCAL ENRICH pass (`claude -p`/SDK → RU
+translations + grounded facts) → re-export the enriched seed.
 
 **Non-negotiables** (see constitution v1.1.0): append-only raw `source_items`; dedup
 keeps a link to every source (via `entity_sources`) and never merges on fallback geo
