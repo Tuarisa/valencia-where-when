@@ -757,3 +757,9 @@ exist, raw layer still append-only.
   WITHOUT. A re-bake (reset source_items → normalize→dedup→score→tag→geo→enrich → re-export) would add the
   now-parsed prices + fix the few mis-parsed numeric dates. Optional polish; the seed is already correct on
   dates/RU — this just enriches prices. Low priority.
+  *(MEASURED 2026-06-21 — a SURGICAL price backfill (re-parse `parsePrice` over existing events' `raw_excerpt`)
+  does NOT work: 138/238 derived events have no price, but their `raw_excerpt` is title-only (e.g. "SHAPE UP
+  Valencia", "Денис Чужой, Stand Up") — the price text lives in the FULL post `raw_text`, not the excerpt. So
+  recovering prices needs a FULL re-bake (re-normalize from `source_items.raw_text` → which re-creates events
+  → loses enrichment unless re-enriched, ~50 min `claude -p`). Marginal value (prices on ~telegram events) vs
+  heavy cost → DEFERRED. Do it only as part of a future full local-first re-bake, not standalone.)*
