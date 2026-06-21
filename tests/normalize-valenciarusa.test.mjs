@@ -10,9 +10,58 @@ import {
   isJunkCard,
   buildValenciarusaEvents,
   parsePrice,
+  stripValenciarusaNoise,
 } from '../lib/pipeline/normalizers/valenciarusa.ts';
 
 const VR = 'Валенсия Русская';
+
+// Bug 1: the valenciarusa card title leads with a "<МЕС> DD [HH:MM] [N сеансов]
+// [от PRICE €]" date/price BOILERPLATE prefix that no other source emits — it must be
+// stripped so the emitted title leads with the CORE event name (→ cross-source dedup).
+test('stripValenciarusaNoise: removes "<МЕС> DD N сеансов от PRICE €" prefix', () => {
+  assert.equal(
+    stripValenciarusaNoise('ИЮН 28 2 сеансов от 69 € Oxxxymiron в Валенсии: гастроли «Национальность: нет» в Roig Arena'),
+    'Oxxxymiron в Валенсии: гастроли «Национальность: нет» в Roig Arena',
+  );
+});
+
+test('stripValenciarusaNoise: removes "<МЕС> DD HH:MM от PRICE €" prefix', () => {
+  assert.equal(
+    stripValenciarusaNoise('ОКТ 03 19:30 от 49 € «Чемодан» в Аликанте: Кортнев, Агранович и Трескунов'),
+    '«Чемодан» в Аликанте: Кортнев, Агранович и Трескунов',
+  );
+});
+
+test('stripValenciarusaNoise: removes bare "<МЕС> DD" prefix', () => {
+  assert.equal(
+    stripValenciarusaNoise('МАР 18 Виктория Складчикова в Аликанте'),
+    'Виктория Складчикова в Аликанте',
+  );
+});
+
+test('stripValenciarusaNoise: leaves a title without the prefix untouched', () => {
+  assert.equal(stripValenciarusaNoise('Pet Shop Boys в Валенсии'), 'Pet Shop Boys в Валенсии');
+});
+
+test('stripValenciarusaNoise: empty / nullish input is safe', () => {
+  assert.equal(stripValenciarusaNoise(''), null);
+  assert.equal(stripValenciarusaNoise(null), null);
+});
+
+test('buildValenciarusaEvents: emitted title is the CORE name (noise prefix removed)', () => {
+  const rows = [{
+    id: 1,
+    source_key: 'web:valenciarusa',
+    title: 'ИЮН 28 2 сеансов от 69 € Oxxxymiron в Валенсии: гастроли «Национальность: нет» в Roig Arena Auditorio Roig Arena',
+    url: 'https://www.valenciarusa.es/sobytiya/oxxxymiron',
+    raw_text: 'Oxxxymiron концерт в Roig Arena 28 июня 2026',
+    raw_json: '{"kind":"link_card"}',
+  }];
+  const out = buildValenciarusaEvents(rows, new Date(2026, 5, 20));
+  assert.equal(out.length, 1);
+  assert.ok(out[0].draft.title.startsWith('Oxxxymiron'), `title should lead with core name, got: ${out[0].draft.title}`);
+  assert.ok(!/^ИЮН/.test(out[0].draft.title), 'no leading month-prefix noise');
+});
 
 // Helper: a raw source_items row shape (loose, like the live rows).
 const card = (id, title, raw_text = title, raw_json = '{"kind":"link_card"}', url = `https://www.valenciarusa.es/sobytiya/x-${id}`) => ({

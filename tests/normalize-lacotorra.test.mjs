@@ -90,18 +90,27 @@ test("source key matches sources.json (web:lacotorra)", () => {
   assert.equal(LACOTORRA_SOURCE_KEY, "web:lacotorra");
 });
 
-test("parseLacotorraDate: range → start/end ISO + start time", () => {
+test("parseLacotorraDate: multi-day range → start/end ISO, start time DROPPED (Bug 3)", () => {
+  // Bug 3: lacotorra renders a generic OPENING-HOURS time for a multi-day block (e.g.
+  // the Harry Potter drone show's agenda line read "12:00" though it's a 22:30 night
+  // show). For a multi-day range the time is unreliable → null (a wrong time is worse).
   const r = parseLacotorraDate("9 Jun 2026, 10:00 - 5 Aug 2026, 12:00");
   assert.equal(r.start, "2026-06-09");
   assert.equal(r.end, "2026-08-05");
-  assert.equal(r.startTime, "10:00");
+  assert.equal(r.startTime, null);
 });
 
-test("parseLacotorraDate: single day → start only, null end", () => {
+test("parseLacotorraDate: single day → start only, null end, time KEPT", () => {
   const r = parseLacotorraDate("7 Jul 2026, 22:00");
   assert.equal(r.start, "2026-07-07");
   assert.equal(r.end, null);
-  assert.equal(r.startTime, "22:00");
+  assert.equal(r.startTime, "22:00"); // single-day blocks keep their (reliable) time
+});
+
+test("parseLacotorraDate: same-day range → time KEPT (Bug 3 single-day exception)", () => {
+  const r = parseLacotorraDate("26 Jun 2026, 22:30 - 26 Jun 2026, 23:30");
+  assert.equal(r.start, "2026-06-26");
+  assert.equal(r.startTime, "22:30"); // end === start ⇒ single day ⇒ trust the time
 });
 
 test("parseLacotorraDate: non-date line → all null", () => {
@@ -124,7 +133,7 @@ test("buildLacotorraEvents: parses snapshot blocks, drops chrome", () => {
   assert.ok(pupae, "PUPAE event present");
   assert.equal(pupae.start_date, "2026-05-29");
   assert.equal(pupae.end_date, "2026-06-26");
-  assert.equal(pupae.start_time, "10:00");
+  assert.equal(pupae.start_time, null); // Bug 3: multi-day block → unreliable time dropped
   assert.equal(pupae.venue_name, "La Cotorra Galería");
   assert.equal(pupae.city, "Valencia"); // no city line → default Valencia
   assert.equal(pupae.country, "Spain");

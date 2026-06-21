@@ -267,12 +267,30 @@ export function buildLinkCardIndex(rows: RawItem[]): Map<string, LinkCardRef> {
   return byTitle;
 }
 
+// Bug 4 (eventbrite date off-by-one): the snapshot's date-exprs are RELATIVE ("hoy",
+// "mañana", "viernes") — they only make sense relative to WHEN THE PAGE WAS SCRAPED, not
+// when the normalizer happens to run (which can be a different day, shifting every
+// relative date by ±1). The reliable anchor is the snapshot row's scrape timestamp
+// (`first_seen`/`last_seen`). This parses that ISO timestamp into a LOCAL Date at midnight
+// so weekday math (getDay) is stable. Returns null when unparseable (caller falls back to
+// real now). NOTE: we read the calendar date components and build a local Date — Europe/
+// Madrid and the scrape host are same-day for these afternoon/evening scrapes, and using
+// the calendar date avoids a UTC→local −1 slip.
+export function scrapeDateOf(item?: RawItem | null): Date | null {
+  const iso = (item?.first_seen as string) || item?.last_seen || null;
+  if (!iso) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso));
+  if (!m) return null;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+}
+
 // PURE: turn pending Eventbrite raw rows into event drafts. SNAPSHOT-DRIVEN — the snapshot
 // is the authoritative set of real Valencia cards (the link_cards only anchor a subset).
 // We emit ONE event per distinct snapshot card, drop online/out-of-town cards, and attach
 // the canonical `/e/` deep link when a same-title link_card exists (else the listing URL).
-// DB-free (offline unit-testable). `today` is injected for deterministic relative-date
-// resolution.
+// DB-free (offline unit-testable). Relative date-exprs ("hoy"/"mañana"/weekday) resolve
+// against the SNAPSHOT'S SCRAPE DATE (Bug 4) — `today` is only the fallback when the
+// snapshot carries no scrape timestamp.
 export function buildEventbriteEvents(
   rows: RawItem[],
   today: Date = new Date(),
@@ -281,12 +299,15 @@ export function buildEventbriteEvents(
   let snapshot = "";
   let snapshotId = 0;
   let snapshotImage: string | null = null;
+  let refDate = today;
   for (const item of rows) {
     const raw = parseRaw(item);
     if (raw.kind === "page_snapshot") {
       snapshot = item.raw_text || "";
       snapshotId = item.id;
       snapshotImage = raw.meta?.["og:image"] || null;
+      // Bug 4: anchor relative dates to WHEN THIS PAGE WAS SCRAPED, not run-time now.
+      refDate = scrapeDateOf(item) ?? today;
       break;
     }
   }
@@ -303,7 +324,7 @@ export function buildEventbriteEvents(
     // through the card shape (e.g. "Explore more events").
     if (isJunkCard(title, title, EVENTBRITE_NAME)) continue;
 
-    const start = parseEventbriteDate(card.dateExpr, today);
+    const start = parseEventbriteDate(card.dateExpr, refDate);
     const start_time = parseEventbriteTime(card.dateExpr);
 
     // Attach the canonical /e/ deep link when a same-title link_card exists; otherwise

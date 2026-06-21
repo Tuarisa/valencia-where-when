@@ -1,6 +1,6 @@
 import { sql } from "../db";
 import { slugify } from "../format";
-import { nowIso } from "./util";
+import { compact, nowIso } from "./util";
 
 // Cross-source event dedup (research D2 / data-model "Dedup match & merge").
 // Same real-world event (e.g. "Слава Комиссаренко" listed by three Telegram
@@ -64,7 +64,31 @@ const TITLE_STOPWORDS = new Set<string>([
   // Cyrillic title's framing doesn't add a spurious token that breaks the match
   // (e.g. "стендап"→"stendap", "концерт"→"kontsert").
   "stendap", "standap", "kontsert", "kontserty", "shou", "spektakl", "vecher", "na",
+  // Bug 1 — leading date/price BOILERPLATE tokens some sources (valenciarusa) prefix
+  // onto the title ("ИЮН 28 2 сеансов от 69 € Oxxxymiron …"). Transliterated/ascii
+  // forms of: month abbrevs, "сеансов"(seansov)/"сеанс", "от"(ot), "€/евро/eur",
+  // ticketing framing. Dropping them lets the noisy title share a signature with the
+  // same concert listed cleanly elsewhere. A standalone number is also dropped (see
+  // titleSignature) so "28"/"69"/"2" never enter the signature.
+  "sen", "okt", "noya", "dek", "yanv", "fev", "mar", "apr", "may", "iyun",
+  "iyul", "avg", "sent", "noyab", "dekab",
+  "seansov", "seans", "seansa", "ot", "evro", "eur", "euro", "euros",
+  "gastroli", "gastrol", "bilety", "bilet", "tour",
+  "paquetes", "paquete", "vip", "premium", "palco", "box",
+  // Generic FRAMING / category words (≥6 chars, so they'd otherwise pass the strong-
+  // token overlap check below and over-merge two unrelated "festival"/"spektakl" rows).
+  // These carry no event identity — only the proper name does. Latin + translit forms.
+  "festival", "festivalya", "spektakl", "spektakle", "spektaklya", "spektakli",
+  "teatr", "teatro", "koncert", "concierto", "exhibition", "vystavka",
+  "programma", "programa", "tour2026", "world", "valensii",
 ]);
+
+// Bug 1: a STRONG token = a long, distinctive (≥6 chars) NON-stopword signature token —
+// a proper name like "komissarenko"/"oxxxymiron"/"morgenshtern", never a framing word
+// (those are in the stopword set above). Two cross-source events on the same date+city
+// sharing such a token are the same real-world event. 6 (not 4) avoids short common
+// words; the stopword set removes the long generic ones.
+const STRONG_TOKEN_MIN = 6;
 
 // Russian Cyrillic → Latin map. CRITICAL for this RU-focused app: bare `slugify`
 // strips non-ASCII, so every Cyrillic title (e.g. "Моргенштерн", "Антон Лирник")
@@ -97,8 +121,16 @@ export function titleSignature(title?: string | null): string {
   if (!slug) return "untitled";
   const tokens = slug
     .split("-")
-    .filter((t) => t.length > 1 && !TITLE_STOPWORDS.has(t));
-  if (tokens.length === 0) return slug;
+    // drop stopwords, 1-char noise, and PURE-NUMERIC tokens (Bug 1: the "28"/"69"/"2"
+    // from a "ИЮН 28 2 сеансов от 69 €" date/price prefix carry no event identity and
+    // diverge the signature across sources). Currency/price words are in the stopword
+    // set above.
+    .filter((t) => t.length > 1 && !TITLE_STOPWORDS.has(t) && !/^\d+$/.test(t));
+  if (tokens.length === 0) {
+    // Everything was boilerplate/numeric — fall back to a deterministic non-empty key
+    // (the original slug) so two genuinely-different all-numeric titles don't collide.
+    return slug;
+  }
   return tokens.sort().join("-");
 }
 
@@ -283,6 +315,206 @@ export function groupByKey(
     flush();
   }
   return groups;
+}
+
+// ===================== Bug 1/2 cross-source containment merge =====================
+// The exact dedupKey requires IDENTICAL title-signature token SETS. That misses the
+// real-world case where two sources describe the same concert but ONE title carries
+// extra tokens the other lacks — e.g. worldafisha "Oxxxymiron … Национальность: нет"
+// vs valenciarusa "…Oxxxymiron … Национальность: нет … Roig Arena" (trailing venue).
+// A containment pass catches these: when one event's significant token set is a SUBSET
+// of another's AND they share a STRONG (distinctive, len≥4, non-stopword) token, they
+// are the same event. Guarded exactly like the fuzzy pass (≥2 distinct sources, date
+// window, never on an "untitled" signature) so genuinely different events never merge.
+
+// PURE: the significant tokens of a title (the signature split, minus the "untitled"
+// sentinel). Empty array when the title is degenerate.
+export function significantTokens(title?: string | null): string[] {
+  const sig = titleSignature(title);
+  if (sig === "untitled") return [];
+  return sig.split("-").filter(Boolean);
+}
+
+// PURE: do two token lists share a token of length ≥ `min`? (≥4 for the containment
+// corroboration, ≥6 for the standalone distinctive-name signal.)
+function shareTokenOfLen(a: Set<string>, b: Set<string>, min: number): boolean {
+  for (const t of a) if (t.length >= min && b.has(t)) return true;
+  return false;
+}
+
+// PURE: are two events the same real-world event by TITLE relationship? TRUE when EITHER
+//   (1) CONTAINMENT — the smaller significant-token set is a subset of the larger AND
+//       they share a strong (≥4) token (handles "Oxxxymiron …" ⊆ "Oxxxymiron … venue"),
+//   (2) DISTINCTIVE-NAME OVERLAP — they share a long (≥6) NON-framing token, i.e. a
+//       proper name like "komissarenko"/"morgenshtern" (handles the 3-way Komissarenko
+//       cluster where each title adds its OWN venue/date/case tokens so neither is a
+//       strict subset, yet the distinctive surname is unmistakably shared).
+// Framing words ("festival","spektakl",…) are stopwords, so they never satisfy (2) →
+// two different "festival" rows don't merge. Caller adds cross-source + date + city.
+export function titlesContain(a?: string | null, b?: string | null): boolean {
+  const ta = significantTokens(a);
+  const tb = significantTokens(b);
+  if (ta.length === 0 || tb.length === 0) return false;
+  const setA = new Set(ta);
+  const setB = new Set(tb);
+  // (2) distinctive long shared name → same event.
+  if (shareTokenOfLen(setA, setB, STRONG_TOKEN_MIN)) return true;
+  // (1) containment + a strong corroborating token.
+  const [small, big] = setA.size <= setB.size ? [setA, setB] : [setB, setA];
+  for (const t of small) if (!big.has(t)) return false; // small ⊄ big → not contained
+  return shareTokenOfLen(setA, setB, 4);
+}
+
+// PURE: cross-source containment grouping over a survivor list. Returns groups of ≥2
+// events that are the same real-world event by title containment, restricted to:
+//   • DIFFERENT sources (≥2 distinct) — never collapses same-source rows (those are
+//     recurring occurrences or the separate same-source tier rule),
+//   • SAME city,
+//   • start_dates within `windowDays`.
+// Single-linkage union-find over the pairwise predicate; each returned group has ≥2
+// members. Events not in any merge are omitted. Deterministic + order-stable.
+export function containmentGroups(
+  events: DedupEvent[],
+  windowDays = DEFAULT_DATE_WINDOW_DAYS,
+): DedupEvent[][] {
+  const n = events.length;
+  const parent = Array.from({ length: n }, (_, i) => i);
+  const find = (x: number): number => {
+    while (parent[x] !== x) {
+      parent[x] = parent[parent[x]];
+      x = parent[x];
+    }
+    return x;
+  };
+  const union = (a: number, b: number) => {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) parent[Math.max(ra, rb)] = Math.min(ra, rb);
+  };
+
+  const cityOf = (e: DedupEvent) => slugify(e.city) || "unknown";
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      const a = events[i];
+      const b = events[j];
+      if (!a.source || !b.source || a.source === b.source) continue; // cross-source only
+      if (cityOf(a) !== cityOf(b)) continue;
+      const da = epochDay(a.start_date);
+      const db = epochDay(b.start_date);
+      if (da != null && db != null && Math.abs(da - db) > windowDays) continue;
+      if (!titlesContain(a.title, b.title)) continue;
+      union(i, j);
+    }
+  }
+
+  const byRoot = new Map<number, DedupEvent[]>();
+  for (let i = 0; i < n; i++) {
+    const r = find(i);
+    const bucket = byRoot.get(r);
+    if (bucket) bucket.push(events[i]);
+    else byRoot.set(r, [events[i]]);
+  }
+  return [...byRoot.values()].filter((g) => g.length >= 2);
+}
+
+// ===================== Bug 2 same-source ticket-tier merge =====================
+// The fuzzy pass DELIBERATELY requires ≥2 distinct sources (recurring same-source
+// occurrences are NOT duplicates). But a single ticketing source (ticketmaster) sells
+// ONE event under several ticket TIERS, each its own listing: "Rod Stewart" +
+// "Rod Stewart | Paquetes VIP"; "Yandel" + "Yandel — Meet&Greet Upgrade". These ARE
+// one event. A NARROW same-source rule collapses them: SAME source + SAME start_date +
+// SAME start_time + SAME venue, AND one title is the other minus a recognised tier
+// suffix/keyword. Tight on purpose — two genuinely different shows at the same venue on
+// the same day rarely share an exact start_time AND a tier-keyword relationship.
+
+// Recognised ticket-tier keywords/suffixes (ES/EN/RU). Matched as a tail fragment after
+// a separator, or as a standalone keyword the variant adds. Lowercased compare.
+const TIER_KEYWORDS = [
+  "paquetes vip", "paquete vip", "vip packages", "vip package",
+  "meet&greet", "meet & greet", "meet and greet", "meetgreet",
+  "vip пакеты", "vip пакет", "vip experience", "experiencia vip",
+  "premium", "palco", "box seats", "early entry", "upgrade",
+  "vip", "- vip", "| vip",
+];
+
+// PURE: strip a recognised trailing tier marker + its separator off a title, returning
+// the BASE title (lowercased, compacted). When no tier marker is present the title is
+// returned as-is. Used to test whether two same-event listings reduce to one base.
+export function tierBaseTitle(title?: string | null): string {
+  const t = (compact(title) ?? "").toLowerCase();
+  if (!t) return "";
+  // Cut at the first tier keyword that appears after a separator (| , - – : ( ).
+  for (const kw of TIER_KEYWORDS) {
+    const idx = t.indexOf(kw);
+    if (idx <= 0) continue;
+    // require a separator (or whitespace) immediately before the keyword so we don't
+    // chop a word that merely CONTAINS the keyword (e.g. a name ending in "box").
+    const before = t.slice(0, idx);
+    if (/[|,\-–—:(]\s*$|\s$/.test(before)) {
+      const base = before.replace(/[\s|,\-–—:(]+$/, "").trim();
+      if (base.length >= 3) return base;
+    }
+  }
+  return t;
+}
+
+// PURE: are two same-source listings ticket-TIER variants of one event? Requires same
+// source, same start_date, same start_time (BOTH non-null), same venue (case-insensitive),
+// and that reducing each title to its tier-base makes them EQUAL while the raw titles
+// DIFFER (one carries the tier marker, the other doesn't, or they carry different tiers).
+export function areTierVariants(a: DedupEvent, b: DedupEvent): boolean {
+  if (a === b) return false;
+  if (!a.source || a.source !== b.source) return false;
+  if (!a.start_date || a.start_date !== b.start_date) return false;
+  // Times must AGREE. A null time on either side is too weak a signal → reject. BUT the
+  // explicit "00:00" placeholder (ticketmaster renders the meet-&-greet add-on tier with
+  // a 00:00 time, e.g. "La Reina del Flow — Meet&Greet" 00:00 vs the 21:00 concert) is
+  // treated as a WILDCARD that matches the other side's real time.
+  if (!a.start_time || !b.start_time) return false; // need a time on BOTH sides
+  const aPlaceholder = a.start_time === "00:00";
+  const bPlaceholder = b.start_time === "00:00";
+  if (!aPlaceholder && !bPlaceholder && a.start_time !== b.start_time) return false;
+  if (aPlaceholder && bPlaceholder) return false; // two placeholders → no real time signal
+  const va = (compact(a.venue_name as string) ?? "").toLowerCase();
+  const vb = (compact(b.venue_name as string) ?? "").toLowerCase();
+  if (va !== vb) return false; // same venue (both may be "" only if both empty)
+  const baseA = tierBaseTitle(a.title);
+  const baseB = tierBaseTitle(b.title);
+  if (!baseA || baseA !== baseB) return false; // reduce to the SAME base
+  // and the RAW titles must differ (otherwise it's the same listing / a true re-fetch
+  // already handled by the strong pass).
+  return (compact(a.title) ?? "").toLowerCase() !== (compact(b.title) ?? "").toLowerCase();
+}
+
+// PURE: group same-source ticket-tier variants. Single-linkage union-find over
+// areTierVariants; returns groups of ≥2. Events in no group are omitted.
+export function tierVariantGroups(events: DedupEvent[]): DedupEvent[][] {
+  const n = events.length;
+  const parent = Array.from({ length: n }, (_, i) => i);
+  const find = (x: number): number => {
+    while (parent[x] !== x) {
+      parent[x] = parent[parent[x]];
+      x = parent[x];
+    }
+    return x;
+  };
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      if (areTierVariants(events[i], events[j])) {
+        const ra = find(i);
+        const rb = find(j);
+        if (ra !== rb) parent[Math.max(ra, rb)] = Math.min(ra, rb);
+      }
+    }
+  }
+  const byRoot = new Map<number, DedupEvent[]>();
+  for (let i = 0; i < n; i++) {
+    const r = find(i);
+    const bucket = byRoot.get(r);
+    if (bucket) bucket.push(events[i]);
+    else byRoot.set(r, [events[i]]);
+  }
+  return [...byRoot.values()].filter((g) => g.length >= 2);
 }
 
 type RankFn = (weight?: string | null) => number;
@@ -535,30 +767,68 @@ export async function dedup({ exec = sql }: { exec?: typeof sql } = {}): Promise
     }
   }
 
-  const groups = groupByKey(survivors);
+  // Track ids already collapsed (strong + fuzzy) so the later containment / tier passes
+  // never reconsider a loser that's already been soft-collapsed (keeps re-runs idempotent
+  // and avoids double-counting). Strong losers are already collapsed above.
+  const collapsedIds = new Set<number>();
+  for (const { loser } of collapses) if (loser.id != null) collapsedIds.add(loser.id);
 
-  for (const members of groups.values()) {
-    if (!isMergeableGroup(members)) continue;
+  // Resolve one merge group to the DB: survivor keeps accumulated metadata_json.sources[],
+  // every loser → status='duplicate' + merged_into, provenance recorded. Shared by the
+  // fuzzy / containment / tier passes so each preserves the "link to every source" rule.
+  const resolveGroup = async (members: DedupEvent[], matchMethod: string) => {
     const { survivor, losers } = mergeGroup(members);
     merged++;
-
     await exec`UPDATE events
       SET metadata_json = ${survivor.metadata_json}, last_seen = ${ts}
       WHERE id = ${survivor.id ?? null}`;
-
     for (const loser of losers) {
       // Convention (research R2): losers carry status='duplicate' + merged_into
-      // (matches the seed/render path + the 90 existing seed rows); the survivor
-      // keeps metadata_json.sources[] for attribution. The loader's
-      // status='upcoming' filter then excludes these on re-run (idempotent).
+      // (matches the seed/render path); the survivor keeps metadata_json.sources[].
       await exec`UPDATE events
         SET status = 'duplicate', metadata_json = ${mergeLoserMetadata(loser, survivor.id ?? null)}, last_seen = ${ts}
         WHERE id = ${loser.id ?? null}`;
+      if (loser.id != null) collapsedIds.add(loser.id);
       collapsed++;
     }
-    // T033 provenance: survivor + every fuzzy-merged loser (each with a
-    // source_item_id) → one entity_sources row apiece, FK-guarded + idempotent.
-    await persistProvenance(survivor, members, "fuzzy");
+    await persistProvenance(survivor, members, matchMethod);
+  };
+
+  const groups = groupByKey(survivors);
+  for (const members of groups.values()) {
+    if (!isMergeableGroup(members)) continue;
+    await resolveGroup(members, "fuzzy");
+  }
+
+  // Bug 1: cross-source CONTAINMENT pass — same real-world event where one source's
+  // title carries extra tokens (a noise/date/price prefix or a trailing venue) the
+  // other lacks, so the exact-signature fuzzy pass missed it. Operates on survivors
+  // not already collapsed; same ≥2-source + date-window guards (built into
+  // containmentGroups), so genuinely different events never merge.
+  const remaining = survivors.filter((e) => e.id == null || !collapsedIds.has(e.id));
+  for (const members of containmentGroups(remaining)) {
+    // a member may have been collapsed by an overlapping containment group; re-filter.
+    const live = members.filter((e) => e.id == null || !collapsedIds.has(e.id));
+    if (distinctSourceCount(live) < 2) continue;
+    await resolveGroup(live, "contain");
+  }
+
+  // Bug 2: same-source ticket-TIER pass — one event sold in tiers by ONE source
+  // ("Rod Stewart" + "Rod Stewart | Paquetes VIP"). Narrow (same source/date/time/venue
+  // + tier-keyword title relationship), so distinct same-venue events stay separate.
+  const remaining2 = survivors.filter((e) => e.id == null || !collapsedIds.has(e.id));
+  for (const members of tierVariantGroups(remaining2)) {
+    const live = members.filter((e) => e.id == null || !collapsedIds.has(e.id));
+    if (live.length < 2) continue;
+    // Prefer the BASE (plain) listing as the survivor over a tier variant: put the row
+    // whose title already EQUALS its tier-base first, so chooseSurvivor's stable tie-break
+    // keeps "Rod Stewart" rather than "Rod Stewart | Paquetes VIP".
+    const ordered = [...live].sort((a, b) => {
+      const aBase = (compact(a.title) ?? "").toLowerCase() === tierBaseTitle(a.title) ? 0 : 1;
+      const bBase = (compact(b.title) ?? "").toLowerCase() === tierBaseTitle(b.title) ? 0 : 1;
+      return aBase - bBase;
+    });
+    await resolveGroup(ordered, "tier");
   }
 
   return { groups: groups.size, merged, collapsed, provenanceRows };

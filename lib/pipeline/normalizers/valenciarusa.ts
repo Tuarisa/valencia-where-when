@@ -138,6 +138,37 @@ export function isJunkCard(
   return false;
 }
 
+// Bug 1 (cross-source dedup): the valenciarusa card title carries a leading
+// "<МЕС> DD [HH:MM] [N сеансов] [от PRICE €]" date/price BOILERPLATE prefix, e.g.
+//   "ИЮН 28 2 сеансов от 69 € Oxxxymiron в Валенсии…"
+//   "ОКТ 03 19:30 от 49 € «Чемодан» в Аликанте…"
+// That noise prefix never appears in other sources' titles for the same concert, so
+// it broke the cross-source title signature (worldafisha's clean "Oxxxymiron …" never
+// matched). Strip it so the emitted title leads with the CORE event name. The price &
+// date are extracted separately (parsePrice / parseEventDate over the full haystack),
+// so nothing is lost. Deterministic (T140), conservative: only the recognised
+// month+day[+time][+сеансов][+от price €] run at the very start is removed.
+const RU_MONTH_ABBR =
+  "янв|фев|мар|апр|ма[йя]|июн|июл|авг|сен|окт|ноя|дек";
+const VR_NOISE_PREFIX = new RegExp(
+  "^\\s*(?:" + RU_MONTH_ABBR + ")\\.?\\s+\\d{1,2}" + // <МЕС> DD
+    "(?:\\s+\\d{1,2}:\\d{2})?" + // optional HH:MM
+    "(?:\\s+\\d{1,2}\\s+сеанс[\\p{L}]*)?" + // optional "N сеансов" (Cyrillic tail via \p{L})
+    "(?:\\s+от)?\\s*(?:\\d{1,4}(?:[.,]\\d{1,2})?\\s*(?:€|евро|eur))?" + // optional "[от] PRICE €"
+    "\\s*",
+  "iu",
+);
+
+// PURE: strip the leading valenciarusa date/price boilerplate from a card title,
+// returning the core event title. If stripping would leave nothing usable (the whole
+// title was boilerplate), the ORIGINAL title is kept (never emit an empty title).
+export function stripValenciarusaNoise(title?: string | null): string | null {
+  const t = compact(title);
+  if (!t) return t ?? null;
+  const stripped = compact(t.replace(VR_NOISE_PREFIX, ""));
+  return stripped && stripped.length >= 3 ? stripped : t;
+}
+
 // Venue cue words (RU/ES) — when one precedes a proper-noun phrase we treat the rest
 // of that segment as the venue name. Best-effort; venue stays null when unclear.
 const VENUE_CUES = /(?:в\s+|место[:\s]+|venue[:\s]+|в\s+зале\s+|teatro\s+|sala\s+|centro\s+|museo\s+|palau\s+)/i;
@@ -191,11 +222,14 @@ export function buildValenciarusaEvents(
     const { price, isFree } = parsePrice(haystack);
     const venue = parseVenue(haystack);
     const address = parseAddress(haystack);
+    // Bug 1: emit the CORE title (date/price boilerplate stripped) so the same concert
+    // listed cleanly by another source (worldafisha) shares a title signature → dedups.
+    const coreTitle = stripValenciarusaNoise(title) ?? title;
 
     out.push({
       sourceItemId: item.id,
       draft: {
-        title: title.slice(0, 300),
+        title: coreTitle.slice(0, 300),
         description: compact(item.raw_text)?.slice(0, 2000) ?? null,
         category: "culture",
         language: "ru",

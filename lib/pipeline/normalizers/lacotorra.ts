@@ -113,8 +113,6 @@ export function parseLacotorraDate(
   // Fall back to the shared parser if our strict regex somehow disagrees.
   if (!start) start = parseEventDate(t);
 
-  const startTime = m[4] ?? null;
-
   let end: string | null = null;
   if (m[5] && m[6] && m[7]) {
     const endMon = EN_MONTHS[m[6].toLowerCase()] ?? 0;
@@ -123,6 +121,16 @@ export function parseLacotorraDate(
       end = `${m[7]}-${pad(endMon)}-${pad(endDay)}`;
     }
   }
+
+  // Bug 3: lacotorra renders a generic OPENING-HOURS time (e.g. "12:00") for a
+  // multi-day exhibition/show block — NOT the real start time (the Harry Potter drone
+  // show is a 22:30 night show, yet the agenda line reads "26 Jun 2026, 12:00 - 27 Jun
+  // 2026, 20:00"). A wrong time is worse than none (user rule). So we only TRUST the
+  // start time for a SINGLE-day block (no end date, or end === start); for a multi-day
+  // range we drop it (null). Single-day events keep their parsed time.
+  const isMultiDay = end != null && end !== start;
+  const startTime = isMultiDay ? null : (m[4] ?? null);
+
   return { start, end, startTime };
 }
 

@@ -9,7 +9,14 @@ import {
   parseEventbriteDate,
   buildSnapshotIndex,
   buildEventbriteEvents,
+  scrapeDateOf,
 } from "../lib/pipeline/normalizers/eventbrite.ts";
+
+// Weekday-of-an-ISO-date helper for the Bug-4 regression assertions (UTC-stable).
+const WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+function weekday(iso) {
+  return WD[new Date(`${iso}T00:00:00`).getDay()];
+}
 
 // Fixed reference date so relative ("hoy"/"mañana"/weekday) parsing is deterministic.
 // Saturday 2026-06-20 (matches the real snapshot capture: "hoy a las 22:30" cards).
@@ -257,4 +264,55 @@ test("buildEventbriteEvents: an /e/ event with NO snapshot still emits undated",
   assert.equal(events[0].draft.start_date, null);
   assert.equal(events[0].draft.venue_name, null);
   assert.equal(events[0].draft.title, "Some Untracked Concert");
+});
+
+// ===================== Bug 4: relative dates anchor to the SCRAPE date =====================
+
+test("scrapeDateOf: parses the snapshot row's first_seen into a local midnight Date", () => {
+  const d = scrapeDateOf({ first_seen: "2026-06-20T22:28:58Z" });
+  assert.equal(d.getFullYear(), 2026);
+  assert.equal(d.getMonth(), 5); // June (0-based)
+  assert.equal(d.getDate(), 20);
+  assert.equal(d.getDay(), 6); // Saturday
+});
+
+test("scrapeDateOf: falls back to last_seen, then null", () => {
+  assert.equal(scrapeDateOf({ last_seen: "2026-06-20T10:00:00Z" }).getDate(), 20);
+  assert.equal(scrapeDateOf({}), null);
+  assert.equal(scrapeDateOf(null), null);
+});
+
+test("buildEventbriteEvents: relative dates resolve to the SCRAPE day, not the run day (Bug 4)", () => {
+  // Snapshot scraped SATURDAY 2026-06-20; normalizer RUN on a different day (Jun 21).
+  // Pre-fix this shifted every relative date +1 ("Saturday … hoy" stored as Sunday).
+  const rowsWithScrape = ROWS.map((r) =>
+    r.id === 247 ? { ...r, first_seen: "2026-06-20T22:28:58Z" } : r,
+  );
+  const RUN_DAY = new Date(2026, 5, 21); // a SUNDAY — deliberately != scrape day
+  const events = buildEventbriteEvents(rowsWithScrape, RUN_DAY);
+  const byTitle = Object.fromEntries(events.map((e) => [e.draft.title, e.draft]));
+
+  // "Saturday Language Exchange & Party hoy a las 20:30" → scrape day Sat Jun 20.
+  const sat = byTitle["Saturday Language Exchange & Party"];
+  assert.ok(sat, "Saturday event present");
+  assert.equal(sat.start_date, "2026-06-20");
+  assert.equal(weekday(sat.start_date), "Sat", "title says Saturday → stored weekday is Saturday");
+
+  // "Jazz at Loom. Every Sunday … mañana a las 20:30" → scrape day + 1 = Sun Jun 21.
+  const jazz = byTitle["Jazz at Loom. Every Sunday jazz Jam session."];
+  assert.ok(jazz, "Jazz event present");
+  assert.equal(jazz.start_date, "2026-06-21");
+  assert.equal(weekday(jazz.start_date), "Sun", "Every Sunday → stored weekday is Sunday");
+
+  // "Jornada PrimeTime Project viernes a las 09:00" → next Friday on/after Sat Jun 20 = Jun 26.
+  const fri = byTitle["Jornada PrimeTime Project"];
+  assert.ok(fri, "Friday event present");
+  assert.equal(weekday(fri.start_date), "Fri");
+});
+
+test("buildEventbriteEvents: no scrape timestamp → falls back to `today` (back-compat)", () => {
+  // The existing ROWS fixture has no first_seen → behaviour is unchanged (anchors to TODAY).
+  const events = buildEventbriteEvents(ROWS, TODAY); // TODAY = Sat 2026-06-20
+  const byTitle = Object.fromEntries(events.map((e) => [e.draft.title, e.draft]));
+  assert.equal(byTitle["Saturday Language Exchange & Party"].start_date, "2026-06-20");
 });
