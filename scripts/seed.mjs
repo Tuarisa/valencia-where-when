@@ -82,6 +82,7 @@ const order = [
   ["events", "events-logunespa.json"], // T130: dated events mined from tg:logunespa posts
   ["places", "places.json"],
   ["places", "places-logunespa.json"], // T130: historical place recs crawled from tg:logunespa
+  ["places", "places-recommendations.json"], // T159: curated personal recs (curated:recommendations)
   ["media_assets", "media_assets.json"],
 ];
 

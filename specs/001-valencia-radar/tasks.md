@@ -727,7 +727,7 @@ exist, raw layer still append-only.
   occurrences. **Seed is now 100% RU: events.json 343/343 title_ru, all 4 files 0 null dates, 11 Hemisfèric
   series preserved, 0 id collisions.** Helper `scripts/enrich-hemis-seed.mjs`.)*
 
-- [ ] T159 [F] **"Личные рекомендации" source + add 3 tea shops to the map** (user, `backlog:`,
+- [x] T159 [F] **"Личные рекомендации" source + add 3 tea shops to the map** (user, `backlog:`,
   2026-06-21). User wants (a) a new place SOURCE/category for personal chat recommendations
   (`recommended_by` = "личные рекомендации" / similar) — manually-curated places that people suggest in
   chats, NOT a crawled feed; and (b) these 3 specific tea shops (Улун/пуэр, recommended in a Valencia
