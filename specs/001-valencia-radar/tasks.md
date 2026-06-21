@@ -902,7 +902,7 @@ exist, raw layer still append-only.
   the warning is gone. Low priority. *(The other harmless "Skipped not serializable cache item … Warning"
   webpack line is a known Next 14.2 dev-cache quirk, not our bug.)*
 
-- [ ] T175 [D/F] **NEW event category «экспозиция» (standing/long-running event over a date span)** (user,
+- [x] T175 [D/F] **NEW event category «экспозиция» (standing/long-running event over a date span)** (user,
   `backlog:`, 2026-06-21, marked **важно!!**). A third kind of event distinct from one-offs and recurring
   series: a PERMANENT/standing event that runs continuously from date A to date B at a fixed venue —
   exhibitions / museum expositions. User examples: выставка «Алисы в Стране чудес» (id 25491, CaixaForum
