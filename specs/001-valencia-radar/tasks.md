@@ -796,3 +796,63 @@ exist, raw layer still append-only.
     Figma) to derive the design, then implement in `app/` (Home.tsx + globals.css), preserving the existing
     data/render layer (queries.ts, the featureKind accents incl. the new `--excursion`, the map/calendar).
   Substantial visual iteration — likely its own multi-step effort. Keep the deterministic-from-DB render.
+
+- [x] T164 [docs] **Token-cost estimate ($) for `claude -p`/API enrich + AI-less-prod option** (user,
+  `backlog:`, 2026-06-21). Estimate the monthly $ spend if prod enriches WITH an API key, and flesh out the
+  option where prod is AI-LESS and the user enriches LOCALLY (subscription) on a trigger.
+  *(ANSWERED 2026-06-21 — see `specs/001-valencia-radar/cost-estimate.md`. TL;DR: at the live cadence the
+  API-key bill is **single-digit $/month** (haiku translate $1/$5·MTok, sonnet ground $3/$15·MTok; Batch
+  −50%); the recommended shape is **AI-less prod + local subscription bake on a trigger** = $0 AI on the
+  server. Decision belongs to T162 option (1) vs (2).)*
+
+- [x] T165 [B] **Cron / per-source poll-frequency scheme — is there one?** (user, `backlog:`, 2026-06-21:
+  "а что там с кроном и подсчётом того как часто каждый источник будет дёргаться? есть схема?").
+  *(ANSWERED — YES, the adaptive-cadence dispatcher (T011–T015, built). One `*/15` cron tick →
+  `/api/cron/dispatch` → `selectDueSources()` polls ONLY sources whose `next_poll_at` is due; per-source
+  interval = `computePollInterval` = `clamp(observed_gap × 0.33, min, max)`, backoff `×1.5` when a fetch is
+  unchanged / `×2` on error; conditional-GET (ETag/If-Modified-Since) → `304` short-circuits to
+  `source_runs.not_modified` (no normalize, no AI). Per-TYPE seed defaults: telegram 10 min–3 h, web 1 h–24 h,
+  ticketing/api 2 h–24 h. So a fast-moving Telegram channel is checked ~every 10–30 min while a static venue
+  page settles toward once/day — automatically, no per-source cron config. Documented in `cost-estimate.md`.)*
+
+- [x] T166 [docs] **Human-readable architecture diagram of the built system** (user, `backlog:`,
+  2026-06-21: "нарисуй человекопонятную схему архитектуры того что получилось"). Produce a clear,
+  non-engineer-friendly diagram (sources → ingest → pipeline stages → DB → site/notify) with the local-bake
+  vs prod-incremental split and the AI touchpoints marked. *(DELIVERED 2026-06-21 → `ARCHITECTURE.md`.)*
+
+- [ ] T167 [review] **Independent senior-architect code review (fresh eyes)** (user, `backlog:`, 2026-06-21:
+  "проведи код ревью в отдельном агенте так будто ты никогда не видел код, будет независим и действуй как
+  сениор архитектор, приведи примеры структурных улучшений архитектуры"). Run in a SEPARATE agent that
+  reviews the actual code (not the design docs) and gives concrete STRUCTURAL improvement examples. *(IN
+  PROGRESS — background agent writing `specs/001-valencia-radar/code-review-independent.md`.)*
+
+- [ ] T168 [C] **Dedup gap — visible duplicate cards in the feed** (user, 2026-06-21, with screenshots).
+  TWO live duplicate pairs the current dedup misses:
+  1. **Oxxxymiron, 2026-06-28** — id 25182 `web:worldafisha` ("Oxxxymiron - Oxxxymiron Tour 2026
+     «Национальность: нет»") vs id 25209 `web:valenciarusa` ("ИЮН 28 2 сеансов от 69 € Oxxxymiron в
+     Валенсии…"). CROSS-source. Missed because the valenciarusa title carries a date/price NOISE PREFIX,
+     so `titleSignature` diverges → no strong/fuzzy match. Fix: strip leading date/price noise (and the
+     normalizer should not emit it) before signature; core token "oxxxymiron" then matches cross-source.
+  2. **Rod Stewart, 2026-06-30 21:00** — id 25305 ("Rod Stewart") vs id 25299 ("Rod Stewart | Paquetes
+     VIP"), BOTH `web:ticketmaster`. SAME-source variant ("main" + "VIP packages"). The ≥2-distinct-source
+     merge guard (added to stop over-merge) blocks it. Fix: a SEPARATE same-source rule — same date(+time)
+     +venue and one title is the other minus a ticket-tier suffix (`| Paquetes VIP`/`VIP пакеты`/`VIP
+     packages`) → collapse, keep BOTH ticket links.
+  Constraints (constitution): keep a link to EVERY source (entity_sources/metadata), do NOT over-merge
+  genuinely distinct same-day same-venue events, keep the geo guard. Also SCAN for other such near-dups
+  ("и ещё один" implies more), add regression tests, re-run dedup on the local DB so losers flip to
+  `status='duplicate'`, re-bake `data/seed/events.json`. *(IN PROGRESS — background fix agent.)*
+  3. **DroneArt Show: Harry Potter (Шоу дронов), 2026-06-26 Fri** (user, screenshots) — id 25524
+     `web:lacotorra` ("Шоу дронов по вселенной «Гарри Поттера»", Fri **12:00** ← WRONG time, drone shows
+     are night) vs id 1101 `web:fever` ("DroneArt Show: Harry Potter™", Fri 22:30). CROSS-source dup, both
+     Friday. Also id 1102 (fever, Sat 27th 22:30) is already `status='duplicate'` → user says show is
+     "только в пятницу" → confirm real dates from the Fever page and drop/keep the Sat occurrence
+     accordingly; fix the lacotorra 12:00 time.
+
+- [ ] T169 [normalizer] **Eventbrite date off-by-one (weekday/date mismatch)** (user, 2026-06-21,
+  `/events/25487`). Event 25487 "Saturday Language Exchange & Party" (`web:eventbrite`) is stored
+  `start_date=2026-06-21` which is a **Sunday** — a weekly Saturday event landed one day late. The RENDER is
+  correct (`lib/format.ts:14` computes weekday in UTC), so this is a NORMALIZER data bug — likely a timezone
+  shift parsing the Eventbrite datetime (UTC vs Europe/Madrid → −1 day). CHECK whether it is SYSTEMIC across
+  ALL `web:eventbrite` events (compare stored `start_date` weekday vs the title/source weekday); if so, fix
+  the eventbrite normalizer's date parse (parse in Europe/Madrid, not UTC) and re-bake. Add a test.
