@@ -143,3 +143,56 @@ test('parsePrice: existing extraction stays green', () => {
   assert.deepEqual(parsePrice('вход свободный'), { price: 'Free', isFree: 1 });
   assert.deepEqual(parsePrice('нет цены'), { price: null, isFree: null });
 });
+
+// --- T172: city derived from URL slug / title, not hard-coded "Valencia" ---
+
+import { deriveSpanishCity } from '../lib/pipeline/normalizers/spain-filter.ts';
+import { deriveCityFor, urlSlug } from '../lib/pipeline/normalizers/worldafisha.ts';
+
+test('T172 deriveSpanishCity: resolves ES/RU/translit city stems', () => {
+  assert.equal(deriveSpanishCity('концерт в Аликанте'), 'Alicante');
+  assert.equal(deriveSpanishCity('event bi-2-alikante-2026-11-21'), 'Alicante');
+  assert.equal(deriveSpanishCity('Concert in Alicante'), 'Alicante');
+  assert.equal(deriveSpanishCity('morgenshtern-barselona-2026-10-22'), 'Barcelona');
+  assert.equal(deriveSpanishCity('Concierto en Madrid'), 'Madrid');
+  assert.equal(deriveSpanishCity('концерт в Валенсии'), 'Valencia');
+  assert.equal(deriveSpanishCity('no city here'), null);
+});
+
+test('T172 urlSlug: strips the host so a city-named domain does not leak', () => {
+  // valenciarusa.es contains "valenci" in the HOST — must not appear in the slug
+  const slug = urlSlug('https://www.valenciarusa.es/sobytiya/bi-2-vb-spaces-alikante-noyabr-2026');
+  assert.ok(!/valenci/i.test(slug), 'host stripped');
+  assert.ok(/alikante/.test(slug), 'path kept');
+});
+
+test('T172 deriveCityFor: valenciarusa.es Alicante listing → Alicante (domain ignored)', () => {
+  const city = deriveCityFor(
+    'Би-2 в Alicante: концерт 21 ноября 2026 в VB Spaces',
+    '',
+    'https://www.valenciarusa.es/sobytiya/bi-2-vb-spaces-alikante-noyabr-2026',
+  );
+  assert.equal(city, 'Alicante');
+  // worldafisha listing must behave identically (same shared helper)
+  assert.equal(deriveCityFor(
+    'Кристина Орбакайте', '', 'https://worldafisha.com/event/kristina-orbakayte-alikante-2026-08-04',
+  ), 'Alicante');
+});
+
+test('T172 deriveCityFor: plain Valencia listing stays Valencia', () => {
+  assert.equal(deriveCityFor('Концерт в Валенсии', '', 'https://www.valenciarusa.es/sobytiya/koncert'), 'Valencia');
+  assert.equal(deriveCityFor('Концерт без города', '', null), 'Valencia');
+});
+
+test('T172 buildValenciarusaEvents: emits the derived city on the draft', () => {
+  const rows = [{
+    id: 1,
+    title: 'НОЯ 21 2 сеансов от 59 € Би-2 в Alicante: концерт 21 ноября 2026 в VB Spaces VB Spaces',
+    raw_text: 'Би-2 в Alicante: концерт 21 ноября 2026',
+    url: 'https://www.valenciarusa.es/sobytiya/bi-2-vb-spaces-alikante-noyabr-2026',
+    raw_json: '{}',
+  }];
+  const drafts = buildValenciarusaEvents(rows, new Date('2026-06-21T00:00:00Z'));
+  assert.equal(drafts.length, 1);
+  assert.equal(drafts[0].draft.city, 'Alicante');
+});

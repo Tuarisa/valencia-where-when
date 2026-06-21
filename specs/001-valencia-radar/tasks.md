@@ -871,14 +871,14 @@ exist, raw layer still append-only.
   NOT edit concurrently). Then re-normalize lacotorra on the local DB + re-bake the seed. This policy
   generalizes to other all-Spain aggregators (see [[valencia-radar-content-policy]]).
 
-- [ ] T171 [normalizer] **Class-C date-parse bugs in vidacultural / valenciabonita** (found by the T168
+- [x] T171 [normalizer] **Class-C date-parse bugs in vidacultural / valenciabonita** (found by the T168
   fix agent's scan, 2026-06-21). `vidacultural` id 25216 (title "Неділя 28 червня" but stored 2026-08-07 —
   wrong date) and id 25214 (stored year 2027 instead of 2026); `valenciabonita-telegram` id 25230 ("feliz
   sábado" but stored a Monday). Date-parse bugs in `vidacultural.ts` + `valenciabonita-telegram.ts` (NOT the
   four T168/T169 normalizers). Build fixtures from the real rows, fix the parsers (UK/RU weekday handling +
   year inference), add regression tests, re-normalize on the live DB.
 
-- [ ] T172 [geo] **Mis-geo: Alicante events tagged city=Valencia** (found by the T168 fix agent,
+- [x] T172 [geo] **Mis-geo: Alicante events tagged city=Valencia** (found by the T168 fix agent,
   2026-06-21). Би-2 + Орбакайте source URLs contain `-alikante-` but rows are stored `city='Valencia'`. The
   normalizer/geo should read the city from the URL slug / address, not blanket-default to Valencia. Check
   how widespread (other `-alikante-`/`-barselona-` slugs tagged Valencia) and fix the city assignment.

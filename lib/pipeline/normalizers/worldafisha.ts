@@ -1,6 +1,6 @@
 import { sql } from "../../db";
 import { compact, eventHash, nowIso } from "../util";
-import { isSpainEvent, hasNonSpainSignal } from "./spain-filter";
+import { isSpainEvent, hasNonSpainSignal, deriveSpanishCity } from "./spain-filter";
 import type { RawItem } from "./types";
 
 // T110 — worldafisha.com (web source, key `web:worldafisha`, id 9). This is the
@@ -115,6 +115,17 @@ export function parseEventDate(text?: string | null, today: Date = new Date()): 
   const iso = /(\d{4})-(\d{2})-(\d{2})/.exec(t);
   if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
 
+  // T171: a single explicit 4-digit year (2000–2099) anywhere in the post. When a
+  // matched date phrase carries NO adjacent year (e.g. "14 червня" in a post titled
+  // "ALBORAJAZZ 2026"), prefer this over the next-occurrence roll — otherwise a date a
+  // few days in the past rolls a full year forward. Only used when the text contains
+  // exactly ONE distinct year (ambiguous multi-year posts fall back to inference).
+  const standaloneYear = (() => {
+    const ys = [...t.matchAll(/(?<!\d)(20\d{2})(?!\d)/g)].map((m) => m[1]);
+    const uniq = [...new Set(ys)];
+    return uniq.length === 1 ? Number(uniq[0]) : 0;
+  })();
+
   // Collect every candidate (numeric + day-first + month-first), then return whichever
   // appears FIRST in the text (so "первый plausible date" holds across forms). The
   // numeric branch participates in the SAME lowest-index competition rather than
@@ -123,21 +134,27 @@ export function parseEventDate(text?: string | null, today: Date = new Date()): 
   let best: { index: number; iso: string } | null = null;
   const consider = (index: number, month: number, day: number, year4?: string | number) => {
     if (!month || day < 1 || day > 31) return;
-    const year = year4 ? Number(year4) : inferYear(month, day, today);
+    const year = year4 ? Number(year4) : standaloneYear || inferYear(month, day, today);
     const candidate = { index, iso: `${year}-${pad(month)}-${pad(day)}` };
     if (!best || candidate.index < best.index) best = candidate;
   };
 
-  // numeric DD.MM.YYYY / DD/MM/YYYY / DD-MM-YYYY (also DD.MM / DD-MM with no year).
+  // numeric DD.MM.YYYY / DD/MM/YYYY / DD-MM-YYYY (also DD/MM / DD-MM with no year).
   // Not preceded by a "<digit>," decimal so a duration like "1,5-2 часа" isn't read as
-  // a "5-2" date.
-  const num = /(?<![\d.,])\b(\d{1,2})[.\/-](\d{1,2})(?:[.\/-](\d{2,4}))?\b/.exec(t);
+  // a "5-2" date. T171: the DOT separator with NO year (e.g. a rating "7.8") is too
+  // easily confused with a decimal, so the dotted form REQUIRES an explicit year; the
+  // slash/dash forms still parse year-less.
+  const num = /(?<![\d.,])\b(\d{1,2})([.\/-])(\d{1,2})(?:[.\/-](\d{2,4}))?\b/.exec(t);
   if (num) {
     const day = Number(num[1]);
-    const month = Number(num[2]);
-    let year = num[3] ? Number(num[3]) : 0;
+    const sep = num[2];
+    const month = Number(num[3]);
+    let year = num[4] ? Number(num[4]) : 0;
     if (year && year < 100) year += 2000;
-    if (month >= 1 && month <= 12) consider(num.index, month, day, year || undefined);
+    const dottedNoYear = sep === "." && !year;
+    if (month >= 1 && month <= 12 && !dottedNoYear) {
+      consider(num.index, month, day, year || undefined);
+    }
   }
 
   // day-first: "<day> <monthName> [<year>]" (RU/UK/ES, optional "de")
@@ -150,9 +167,11 @@ export function parseEventDate(text?: string | null, today: Date = new Date()): 
   // abbreviations ("МАР 18", "ДЕК 11"). The month word leads, the day follows.
   // NOTE: no leading `\b` — in a `u`-flagged regex `\b` is ASCII-only and never
   // matches before a Cyrillic letter, so a leading "ДЕК"/"ЯНВ" would be skipped.
-  // `(?<![\p{L}\d])` is a Unicode-aware left boundary instead.
+  // `(?<![\p{L}\d])` is a Unicode-aware left boundary instead. T171: the day group
+  // is followed by `(?!\d)` so "<month> <year>" (e.g. "Julio 2026") is NOT misread as
+  // day=20 by swallowing the first two digits of the 4-digit year.
   const monthFirst =
-    /(?<![\p{L}\d])([A-Za-zА-Яа-яёЁЇїІіЄєҐґ]{3,})\.?\s+(\d{1,2})(?:[^\d]{0,12}?(\d{4}))?/u;
+    /(?<![\p{L}\d])([A-Za-zА-Яа-яёЁЇїІіЄєҐґ]{3,})\.?\s+(\d{1,2})(?!\d)(?:[^\d]{0,12}?(\d{4}))?/u;
   const mf = monthFirst.exec(t);
   if (mf) {
     const month = monthFromWord(mf[1]);
@@ -183,6 +202,33 @@ export function dateFromUrl(url?: string | null): string | null {
   const day = Number(m[3]);
   if (month < 1 || month > 12 || day < 1 || day > 31) return null;
   return `${m[1]}-${m[2]}-${m[3]}`;
+}
+
+// PURE (T172): the URL PATH (host stripped) as a space-separated slug, for city
+// derivation. We must drop the host because some source domains literally contain a
+// city stem — e.g. `www.valenciarusa.es` carries "valenci", which would otherwise make
+// EVERY listing resolve to Valencia even when the slug says `-alikante-`. Returns "" on
+// a missing/invalid URL.
+export function urlSlug(url?: string | null): string {
+  if (!url) return "";
+  try {
+    return new URL(url).pathname.replace(/[\/_-]+/g, " ");
+  } catch {
+    return url.replace(/^https?:\/\/[^/]+/i, "").replace(/[\/_-]+/g, " ");
+  }
+}
+
+// PURE (T172): canonical city for a listing whose city lives in the title/text/URL slug
+// rather than a structured field. Builds a city-haystack from title + body + URL slug
+// (host stripped), then resolves the first Spanish city stem; falls back to "Valencia"
+// when no other Spanish city is recognised (these feeds are Valencia-default).
+export function deriveCityFor(
+  title?: string | null,
+  body?: string | null,
+  url?: string | null,
+): string {
+  const hay = `${title || ""} ${body || ""} ${urlSlug(url)}`;
+  return deriveSpanishCity(hay) ?? "Valencia";
 }
 
 // PURE (T150): a worldafisha row is a real event only when its URL is an `/event/`
@@ -234,6 +280,9 @@ export function buildWorldafishaEvents(
     // fall back to free-text parsing only when the URL has no date.
     const start = dateFromUrl(item.url) ?? parseEventDate(haystack, today);
     const cancelled = isCancelledTitle(title);
+    // T172: derive the real city from title/text/URL slug instead of hard-coding
+    // "Valencia" — many worldafisha listings are Alicante/Barcelona tours.
+    const city = deriveCityFor(title, item.raw_text, item.url);
     out.push({
       sourceItemId: item.id,
       cancelled,
@@ -244,7 +293,7 @@ export function buildWorldafishaEvents(
         language: "ru",
         audience: "adult",
         start_date: start,
-        city: "Valencia",
+        city,
         country: "Spain",
         url: item.url ?? SOURCE_URL,
         image_url: raw.meta?.["og:image"] || null,

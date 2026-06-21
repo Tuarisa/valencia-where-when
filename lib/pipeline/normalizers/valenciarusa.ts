@@ -1,6 +1,6 @@
 import { sql } from "../../db";
 import { compact, nowIso } from "../util";
-import { parseEventDate, upsertPlainEvent, type EventInsert } from "./worldafisha";
+import { parseEventDate, upsertPlainEvent, deriveCityFor, type EventInsert } from "./worldafisha";
 import type { RawItem } from "./types";
 
 // T111 — valenciarusa.es (web source, key `web:valenciarusa`, id 7). The most
@@ -225,6 +225,10 @@ export function buildValenciarusaEvents(
     // Bug 1: emit the CORE title (date/price boilerplate stripped) so the same concert
     // listed cleanly by another source (worldafisha) shares a title signature → dedups.
     const coreTitle = stripValenciarusaNoise(title) ?? title;
+    // T172: derive the real city from title/text/URL slug — many listings are Alicante
+    // ("в Аликанте" / `-alikante-` slug). The valenciarusa.es DOMAIN contains "valenci",
+    // so deriveCityFor strips the host before resolving (else everything → Valencia).
+    const city = deriveCityFor(title, item.raw_text, item.url);
 
     out.push({
       sourceItemId: item.id,
@@ -236,7 +240,7 @@ export function buildValenciarusaEvents(
         start_date: start,
         venue_name: venue,
         address,
-        city: "Valencia",
+        city,
         country: "Spain",
         price,
         is_free: isFree,

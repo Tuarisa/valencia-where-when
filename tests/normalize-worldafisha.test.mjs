@@ -77,28 +77,34 @@ function parseEventDate(text, today = new Date()) {
   if (!t) return null;
   const iso = /(\d{4})-(\d{2})-(\d{2})/.exec(t);
   if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
-  const num = /\b(\d{1,2})[.\/-](\d{1,2})(?:[.\/-](\d{2,4}))?\b/.exec(t);
-  if (num) {
-    const day = Number(num[1]);
-    const month = Number(num[2]);
-    let year = num[3] ? Number(num[3]) : 0;
-    if (year && year < 100) year += 2000;
-    if (day >= 1 && day <= 31 && month >= 1 && month <= 12) {
-      if (!year) year = inferYear(month, day, today);
-      return `${year}-${pad(month)}-${pad(day)}`;
-    }
-  }
+  const standaloneYear = (() => {
+    const ys = [...t.matchAll(/(?<!\d)(20\d{2})(?!\d)/g)].map((m) => m[1]);
+    const uniq = [...new Set(ys)];
+    return uniq.length === 1 ? Number(uniq[0]) : 0;
+  })();
   let best = null;
   const consider = (index, month, day, year4) => {
     if (!month || day < 1 || day > 31) return;
-    const year = year4 ? Number(year4) : inferYear(month, day, today);
+    const year = year4 ? Number(year4) : standaloneYear || inferYear(month, day, today);
     const candidate = { index, iso: `${year}-${pad(month)}-${pad(day)}` };
     if (!best || candidate.index < best.index) best = candidate;
   };
+  const num = /(?<![\d.,])\b(\d{1,2})([.\/-])(\d{1,2})(?:[.\/-](\d{2,4}))?\b/.exec(t);
+  if (num) {
+    const day = Number(num[1]);
+    const sep = num[2];
+    const month = Number(num[3]);
+    let year = num[4] ? Number(num[4]) : 0;
+    if (year && year < 100) year += 2000;
+    const dottedNoYear = sep === '.' && !year;
+    if (month >= 1 && month <= 12 && !dottedNoYear) {
+      consider(num.index, month, day, year || undefined);
+    }
+  }
   const dayFirst = /\b(\d{1,2})\s+(?:de\s+)?([A-Za-zА-Яа-яёЁЇїІіЄєҐґ]{3,})\.?(?:\s+(?:de\s+)?(\d{4}))?/u;
   const dm = dayFirst.exec(t);
   if (dm) consider(dm.index, monthFromWord(dm[2]), Number(dm[1]), dm[3]);
-  const monthFirst = /(?<![\p{L}\d])([A-Za-zА-Яа-яёЁЇїІіЄєҐґ]{3,})\.?\s+(\d{1,2})(?:[^\d]{0,12}?(\d{4}))?/u;
+  const monthFirst = /(?<![\p{L}\d])([A-Za-zА-Яа-яёЁЇїІіЄєҐґ]{3,})\.?\s+(\d{1,2})(?!\d)(?:[^\d]{0,12}?(\d{4}))?/u;
   const mf = monthFirst.exec(t);
   if (mf) {
     const month = monthFromWord(mf[1]);
@@ -300,4 +306,47 @@ test('T145: numeric DD-MM with no year infers next occurrence', () => {
 test('T145: day-first preferred when it appears first in the text', () => {
   // "марта" (RU genitive) must not be mis-resolved; "март" stem hits month 3
   assert.equal(parseEventDate('18 марта 2027', TODAY), '2027-03-18');
+});
+
+// --- T171: real-row date-parse bugs (vidacultural / valenciabonita) ---
+
+test('T171: a decimal rating "7.8" is NOT read as a date (real vidacultural id 25216)', () => {
+  // The post has a "Рейтинг глядачів: 7.8" rating early and the REAL date "28 червня
+  // 2026" later. Previously "7.8" was parsed as 2026-08-07. The dotted form now
+  // requires an explicit year, so the UK named date wins.
+  const text =
+    'Фільм займає 1-шу позицію ⭐ Рейтинг глядачів: 7.8 🏆 Рейтинг критиків: 93% ⏱ Тривалість: 1:38 🗓 Неділя, 28 червня 2026 ⏰ 12:00';
+  assert.equal(parseEventDate(text, TODAY), '2026-06-28');
+});
+
+test('T171: dotted DD.MM date still parses WITH a year, but bare D.D decimal does not', () => {
+  assert.equal(parseEventDate('21.06.2026', TODAY), '2026-06-21'); // dotted + year → kept
+  assert.equal(parseEventDate('оценка 7.8 из 10', TODAY), null);   // bare decimal → no date
+});
+
+test('T171: a year-less date uses the post\'s single explicit year, not next-occurrence (real id 25214)', () => {
+  // "ALBORAJAZZ 2026 … 14 червня" — June 14 already passed (today 2026-06-21), but the
+  // post states the year 2026, so we must NOT roll to 2027.
+  const text =
+    'ALBORAJAZZ 2026: фінальний концерт фестивалю вже завтра! 14 червня (неділя) Початок о 20:00';
+  assert.equal(parseEventDate(text, TODAY), '2026-06-14');
+});
+
+test('T171: a year-less date with NO explicit year still rolls to next occurrence', () => {
+  // unchanged behaviour when the post carries no 4-digit year
+  assert.equal(parseEventDate('14 червня (неділя)', TODAY), '2027-06-14');
+});
+
+test('T171: "<Month> 2026" (a year, no day) yields NO date — not day=20 (real id 25230)', () => {
+  // "Feria de Julio 2026" is a festival name + year, not "Julio 20". The month-first
+  // branch must not swallow the first two digits of the year as a day.
+  const text =
+    'Hola amig@s, feliz sábado. … forman parte del calendario pirotécnico de la Feria de Julio 2026 de Valencia.';
+  assert.equal(parseEventDate(text, TODAY), null);
+});
+
+test('T171: month-first with a real day is unaffected by the (?!\\d) guard', () => {
+  // today is 2026-06-21: March already passed → rolls to 2027; December is ahead → 2026
+  assert.equal(parseEventDate('МАР 18 19:00 стендап', TODAY), '2027-03-18');
+  assert.equal(parseEventDate('ДЕК 11 концерт', TODAY), '2026-12-11');
 });
