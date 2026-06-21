@@ -344,6 +344,14 @@ isCentroid guard. SEED is now complete: **294 dated events, 0 nulls, 155 mapped*
 green. NEXT (T144 local-first remaining): a fresh-DB seed round-trip + render verify (use a throwaway DB to
 keep the persistent `main` + its source_items), then the LOCAL ENRICH pass (`claude -p`/SDK → RU
 translations + grounded facts) → re-export the enriched seed.
+**Tick L — seed round-trip VERIFIED + Hemisfèric regression FIXED.** Ran a throwaway-DB (`seedverify`,
+`main` untouched) `db:setup` round-trip + prod render smoke: **PASS** — 294 events, **0 null dates**, all
+routes 200 (`/`, `/places`, detail, real map coords), 183 events / 60 places geo. The verify surfaced a
+REGRESSION I'd introduced: the rebaked `events.json` had **0 Hemisfèric series** — my export took only
+plain derived events, but Hemisfèric normalizes into event_series, so the 104 `api:hemisferic` seed events
+(which `db:migrate:series` turns into 11 series) were dropped. FIXED: re-added the 104 `api:hemisferic`
+events from the pre-rebake events.json (ids 193-296, 0 null dates, no id collision, 11 distinct shows →
+11 series). `events.json` now **343 events, still 0 null dates**; Hemisfèric restored. `c1fa109`.
 
 **Non-negotiables** (see constitution v1.1.0): append-only raw `source_items`; dedup
 keeps a link to every source (via `entity_sources`) and never merges on fallback geo
