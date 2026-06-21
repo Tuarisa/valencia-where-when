@@ -726,3 +726,19 @@ exist, raw layer still append-only.
   Planet" → "Океаны: наша голубая планета", "3,2,1…¡Despegamos!" → "3,2,1… Взлёт!") applied to all
   occurrences. **Seed is now 100% RU: events.json 343/343 title_ru, all 4 files 0 null dates, 11 Hemisfèric
   series preserved, 0 id collisions.** Helper `scripts/enrich-hemis-seed.mjs`.)*
+
+- [ ] T159 [F] **"Личные рекомендации" source + add 3 tea shops to the map** (user, `backlog:`,
+  2026-06-21). User wants (a) a new place SOURCE/category for personal chat recommendations
+  (`recommended_by` = "личные рекомендации" / similar) — manually-curated places that people suggest in
+  chats, NOT a crawled feed; and (b) these 3 specific tea shops (Улун/пуэр, recommended in a Valencia
+  chat) added as map points. Resolve each `maps.app.goo.gl` short link → follow redirect → geocode the
+  venue (deterministic, `lib/pipeline/geo.ts` `resolvePlaceGeo`/`mapsAddressQuery`, per T135) → add as a
+  place (name/category=чайный магазин, lat/lng, source="личные рекомендации", maps_url) into the seed
+  (`data/seed/places-*.json` or a new `places-recommendations.json`) → renders on the map like other places.
+  Links:
+  - https://maps.app.goo.gl/x2mR49odjwgaiUga9?g_st=ic
+  - https://maps.app.goo.gl/ZyMuaf7M4Q6BqX8c6?g_st=ic
+  - https://maps.app.goo.gl/YTut5mmZnBseXpB59
+  (The personal-recs "source" is a curated input pattern — define how such ad-hoc places are added without
+  a crawler; could be a small `data/seed/places-recommendations.json` + a `source` row, or a simple add-place
+  helper. Pairs with the place-mining / map surface work.)
