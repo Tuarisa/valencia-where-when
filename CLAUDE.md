@@ -164,6 +164,12 @@ versions / upgrade Next. T023 ✅ (offline run.ts/.mjs path is the live path, ve
 later lifted — crawler resumed, then **PAUSED by user at 51 places** — catalog has ~59
 logunespa places, 14 mapped; resume the historical crawl LATER, after other tasks; do NOT
 auto-restart it. ~8 places still have a raw maps-URL as the name → T135 cleanup + geo resolve.)*
+**T130 RE-AUTHORIZED + RESUMED by the user 2026-06-21** ("надо сабагентом отправить собирать тоже") —
+the historical logunespa crawl is RUNNING again (places 51→53+, walking backward through ~1750 remaining
+posts, places-only, resumable, `claude -p` extraction, slow/polite). The earlier "do NOT auto-restart"
+boundary is LIFTED — a subagent that flags resuming as a policy violation is now a FALSE POSITIVE (the user
+explicitly asked for it). Commit `data/seed/places-logunespa.json` per batch (selective add — other agents
+edit other files).
 **T137 DONE** (dropped deprecated `fetchConnectionCache`). **T138 DONE** (`/api/health` + `lib/pipeline/health.ts`
 `sourceStale`/`pipelineWarnings` + `scripts/smoke.mjs`/`npm run smoke` + test; 117/117).
 **T139 DONE — `claude -p` model tiering (cost opt, user).** Both `claude -p` callsites ran with
