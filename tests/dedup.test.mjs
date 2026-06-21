@@ -182,7 +182,7 @@ function mergeGroup(group, rankFn = sourceWeightRank) {
 // --- mirror of the T035 strong-match pre-pass (lib/pipeline/dedup.ts) ---
 function strongMatchKey(event) {
   const url = (event.url ?? '').trim().toLowerCase().replace(/\/+$/, '');
-  if (url) return `url:${url}`;
+  if (url) return `url:${url}|${titleSignature(event.title)}|${event.start_date ?? ''}`;
   const ext = typeof event.external_ref === 'string' ? event.external_ref.trim() : '';
   const src = typeof event.source === 'string' ? event.source.trim() : '';
   if (ext) return `ext:${src}|${ext}`;
@@ -219,15 +219,24 @@ function strongMatchPrePass(events) {
 }
 
 test('T035 strongMatchKey: url > external_ref, normalised, source-scoped', () => {
-  // url wins and is trailing-slash / case normalised
+  // url wins and is trailing-slash / case normalised; the key also folds in the
+  // title signature + start_date so distinct events on one shared page stay apart
+  // (untitled + no date → trailing "|untitled|").
   assert.equal(
     strongMatchKey({ url: 'https://X.com/Event/', external_ref: 'abc', source: 's' }),
-    'url:https://x.com/event',
+    'url:https://x.com/event|untitled|',
   );
-  // identical canonical url despite case + trailing slash → same key
+  // identical canonical url + same (absent) title/date despite case + trailing
+  // slash → same key
   assert.equal(
     strongMatchKey({ url: 'https://x.com/event' }),
     strongMatchKey({ url: 'https://X.com/Event/' }),
+  );
+  // SAME shared page url but DIFFERENT title/date → DIFFERENT keys (the over-merge
+  // fix: lacotorra's many events on one snapshot page are NOT collapsed)
+  assert.notEqual(
+    strongMatchKey({ url: 'https://x.com/page', title: 'Concert A', start_date: '2026-08-01' }),
+    strongMatchKey({ url: 'https://x.com/page', title: 'Concert B', start_date: '2026-08-02' }),
   );
   // no url → external_ref, scoped by source (same ext, diff source ≠ collide)
   assert.equal(strongMatchKey({ external_ref: '42', source: 'a' }), 'ext:a|42');
@@ -239,16 +248,17 @@ test('T035 strongMatchKey: url > external_ref, normalised, source-scoped', () =>
   assert.equal(strongMatchKey({ title: 'x' }), null);
 });
 
-test('T035 strongMatchPrePass: exact-url rows collapse deterministically (pre-fuzzy)', () => {
-  // Two rows, SAME source, SAME canonical url, but totally different titles a
-  // fuzzy pass would NOT match — only the strong pre-pass collapses them.
+test('T035 strongMatchPrePass: re-fetched url+title+date rows collapse (pre-fuzzy)', () => {
+  // Two rows, SAME source, SAME canonical url, SAME title + date — a genuine
+  // re-fetch of ONE listing. The strong pre-pass collapses them (the url-only
+  // variants differing by case / trailing slash still collide).
   const rows = [
-    { id: 1, title: 'Wildly Different Label', city: 'Valencia', start_date: '2026-08-01', score: 30, source: 'web:x', source_url: 'https://t.me/x/1', url: 'https://x.com/e/99', source_weight: 'good' },
+    { id: 1, title: 'Утренник для малышей', city: 'Valencia', start_date: '2026-08-01', score: 30, source: 'web:x', source_url: 'https://t.me/x/1', url: 'https://x.com/e/99', source_weight: 'good' },
     { id: 2, title: 'Утренник для малышей', city: 'Valencia', start_date: '2026-08-01', score: 70, source: 'web:x', source_url: 'https://t.me/x/2', url: 'https://x.com/e/99/', source_weight: 'good' },
     { id: 3, title: 'Unrelated solo event', city: 'Valencia', start_date: '2026-08-09', score: 10, source: 'web:y', source_url: 'https://t.me/y/3', url: 'https://y.com/e/1', source_weight: 'mine' },
   ];
   const { survivors, collapses } = strongMatchPrePass(rows);
-  // ids 1+2 collapse (same url) → one survivor; id 3 passes through
+  // ids 1+2 collapse (same url+title+date) → one survivor; id 3 passes through
   assert.equal(survivors.length, 2, 'three rows → two survivors after strong collapse');
   assert.equal(collapses.length, 1, 'exactly one loser collapsed');
   // higher score wins the strong group
@@ -261,6 +271,35 @@ test('T035 strongMatchPrePass: exact-url rows collapse deterministically (pre-fu
   assert.deepEqual(urls, ['https://t.me/x/1', 'https://t.me/x/2']);
   // untouched passthrough keeps original identity, original order preserved
   assert.equal(survivors[1].id, 3);
+});
+
+test('T141 strongMatchPrePass: distinct events sharing ONE page url are NOT collapsed', () => {
+  // Multi-event-per-page sources (lacotorra, eventbrite, hoyvalencia) emit MANY
+  // distinct dated events that all carry the SAME listing/snapshot page url. The
+  // url-ALONE key collapsed all of them into one (the over-merge bug); folding the
+  // title signature + start_date into the key keeps every distinct event apart.
+  const page = 'https://lacotorra.es/agenda';
+  const rows = [
+    { id: 1, title: 'Concierto de Jazz', city: 'Valencia', start_date: '2026-08-01', score: 50, source: 'web:lacotorra', source_url: page, url: page, source_weight: 'good' },
+    { id: 2, title: 'Teatro Infantil', city: 'Valencia', start_date: '2026-08-02', score: 50, source: 'web:lacotorra', source_url: page, url: page, source_weight: 'good' },
+    { id: 3, title: 'Exposición de Arte', city: 'Valencia', start_date: '2026-08-03', score: 50, source: 'web:lacotorra', source_url: page, url: page, source_weight: 'good' },
+    // SAME title but a DIFFERENT date → still a distinct occurrence, distinct key
+    { id: 4, title: 'Concierto de Jazz', city: 'Valencia', start_date: '2026-08-08', score: 50, source: 'web:lacotorra', source_url: page, url: page, source_weight: 'good' },
+  ];
+  const { survivors, collapses } = strongMatchPrePass(rows);
+  // ALL four distinct events survive — nothing collapses despite the shared url
+  assert.equal(collapses.length, 0, 'no over-merge: distinct events on one page stay apart');
+  assert.deepEqual(survivors.map((s) => s.id), [1, 2, 3, 4], 'all four survive, order kept');
+
+  // A TRUE duplicate (same url + same title + same date, two copies) still collapses
+  const dupRows = [
+    { id: 10, title: 'Concierto de Jazz', city: 'Valencia', start_date: '2026-08-01', score: 30, source: 'web:lacotorra', source_url: page, url: page, source_weight: 'good' },
+    { id: 11, title: 'Concierto de Jazz', city: 'Valencia', start_date: '2026-08-01', score: 80, source: 'web:lacotorra', source_url: page, url: page, source_weight: 'good' },
+  ];
+  const dup = strongMatchPrePass(dupRows);
+  assert.equal(dup.survivors.length, 1, 'a genuine re-fetch (same url+title+date) collapses to 1');
+  assert.equal(dup.collapses.length, 1);
+  assert.equal(dup.survivors[0].id, 11, 'higher-score copy survives');
 });
 
 test('T035 strongMatchPrePass: NO strong keys → passthrough unchanged (idempotent)', () => {

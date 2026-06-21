@@ -662,3 +662,11 @@ exist, raw layer still append-only.
   **russpain** 0/4 (RU sites, 0 events). Diagnose each on live `source_items` + fix the parser
   deterministically; drop chrome, parse real dates, don't fabricate. Then re-measure + adversarial-verify.
   (songkick 8-dated/26 + hoyvalencia 38/76 have plausible explanations — verify if time permits.)
+
+- [ ] T155 [C] **Verify dedup post strongMatchKey-fix — no under-merge** (user, `backlog:`). After the
+  bake found strongMatchKey over-merging multi-event-per-page sources (lacotorra 56→1) and the key was
+  tightened to `url|titleSignature|start_date`, CONFIRM the opposite failure didn't appear: genuine
+  duplicates must STILL collapse (the fuzzy pass: titleSignature + date-window + ≥2-distinct-source), so
+  events don't PROLIFERATE. Empirically re-run dedup on the live DB + check (a) lacotorra ~56 survive
+  (over-merge gone), (b) known cross-source dups still merge to one (e.g. worldafisha≈concerten,
+  ticketmaster≈songkick same concert). ("убедись после фикса что дедуп работает и дубли не наплодятся".)

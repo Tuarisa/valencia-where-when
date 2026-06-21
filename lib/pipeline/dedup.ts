@@ -129,9 +129,18 @@ export function dedupKey(event: DedupEvent): string {
 // fuzzy guards exist to prevent. Returns null when the event carries neither key
 // (those rows fall through untouched to the fuzzy pass). Normalised: trimmed +
 // lower-cased so trailing-slash / case variants of the same URL still collide.
+//
+// IMPORTANT — multi-event-per-page sources (lacotorra, eventbrite, hoyvalencia)
+// emit MANY distinct dated events that all share ONE listing/snapshot page url.
+// Keying on the url ALONE collapsed all of them into one (e.g. lacotorra's 56
+// distinct events → 1, 55 wrongly marked duplicate). So the url key also folds in
+// the title signature AND the start_date: same url + same title + same date → SAME
+// key (a genuine re-fetch of one event still collapses, intended); same url +
+// DIFFERENT title/date → DIFFERENT keys (distinct events on a shared page stay
+// separate). The ext: branch is unchanged.
 export function strongMatchKey(event: DedupEvent): string | null {
   const url = (event.url ?? "").trim().toLowerCase().replace(/\/+$/, "");
-  if (url) return `url:${url}`;
+  if (url) return `url:${url}|${titleSignature(event.title)}|${event.start_date ?? ""}`;
   const ext = typeof event.external_ref === "string" ? event.external_ref.trim() : "";
   const src = typeof event.source === "string" ? event.source.trim() : "";
   // external_ref is only unique WITHIN a source, so scope it by source.
