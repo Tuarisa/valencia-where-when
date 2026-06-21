@@ -321,6 +321,19 @@ to FIX (synthetic tests pass but real data is off) → T154**: visitvalencia 56 
 elcontacto 0/3 + russpain 0/4 (RU sites, 0 events), eventbrite 7/61 + songkick 8-dated/26 +
 hoyvalencia 38/76 (check). Adversarial verify never ran (died on the limit) — these need a
 verify+fix pass before the seed bake.
+**Tick J — SEED REBAKED CLEAN (user "перестрой seed чтоб без null дат", drop dateless).** Fixed the 6
+flagged normalizers (T154, all verify ok): eventbrite link_card→snapshot-driven (7→14); visitvalencia
+0-dated = data genuinely has no dates; lacotorra 56 = 1 multi-event snapshot; elcontacto/russpain = 404
+chrome. **dedup over-merge fixed (T035 follow-up)**: `strongMatchKey` keyed on url ALONE collapsed
+multi-event-per-page sources (lacotorra 56→1) — tightened to `url|titleSignature|start_date`; live re-bake
+verified lacotorra 56/56, eventbrite 14/14. **T155 (user "дубли не наплодятся") VERIFIED**: 0 unmerged
+cross-source dup groups (no under-merge). **BAKE** (normalize→dedup→score→tag, geo skipped): 709 raw →
+**294 dated seed events, 0 null dates**. Exported `data/seed/events.json` = 239 derived dated alive events
+(ids 25171-25544, no collision with curated 1001-24796); kept curated feria(43)/fever(2); cleaned
+events-logunespa.json 19→10 (dropped 9 dateless). **FOUND T156**: dedup ALSO over-merges same-source
+curated feria (43→2) — the ≥2-source guard slips; sidestepped for the seed (curated taken from files) but
+a LIVE-pipeline bug. **T157**: baked events have no geo (lat/lng null) — run geoEnrich + re-export for the
+map. The persistent local DB + 898 source_items live on. Build green, 295/295.
 
 **Non-negotiables** (see constitution v1.1.0): append-only raw `source_items`; dedup
 keeps a link to every source (via `entity_sources`) and never merges on fallback geo

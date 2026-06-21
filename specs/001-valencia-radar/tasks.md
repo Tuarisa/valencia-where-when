@@ -670,3 +670,15 @@ exist, raw layer still append-only.
   events don't PROLIFERATE. Empirically re-run dedup on the live DB + check (a) lacotorra ~56 survive
   (over-merge gone), (b) known cross-source dups still merge to one (e.g. worldafisha≈concerten,
   ticketmaster≈songkick same concert). ("убедись после фикса что дедуп работает и дубли не наплодятся".)
+
+- [ ] T156 [C] **dedup over-merges same-source curated events (feria)** (found during the bake). Running
+  `dedup()` on the live DB collapsed 41 of 43 `web:feriadejuliovlc` events into 2 (they are 43 DISTINCT
+  festival events from ONE source). The `isMergeableGroup` ≥2-distinct-source guard should refuse to merge
+  same-source events (recurring/series, not dups) — investigate why feria slips through (strong pre-pass on
+  a shared key? fuzzy pass guard gap?) and fix. Sidestepped for the seed bake (curated taken from their
+  files), but the LIVE pipeline would over-merge feria on prod. Pairs with T155.
+
+- [ ] T157 [C] **Run geo on the baked seed events (lat/lng for the map)** (bake follow-up). The seed bake
+  ran normalize→dedup→score→tag but SKIPPED geo (Nominatim, slow/network). So the 239 freshly-baked
+  events.json rows have null lat/lng → not on the map (they DO show in feed/calendar by date). Run
+  `geoEnrich` over them (paced) + re-export, OR let the live pipeline fill geo. Deterministic geo per T135.
