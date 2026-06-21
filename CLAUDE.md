@@ -352,6 +352,13 @@ plain derived events, but Hemisfèric normalizes into event_series, so the 104 `
 (which `db:migrate:series` turns into 11 series) were dropped. FIXED: re-added the 104 `api:hemisferic`
 events from the pre-rebake events.json (ids 193-296, 0 null dates, no id collision, 11 distinct shows →
 11 series). `events.json` now **343 events, still 0 null dates**; Hemisfèric restored. `c1fa109`.
+**Tick M — LOCAL ENRICH baked (T144 heavy-compute COMPLETE).** Verified `claude -p` (haiku, key-free) on
+a 2-event probe (Harry Potter → Гарри Поттер, clean RU), then a full pass on the live DB: **attempted 303 /
+enriched 303 / 0 errors** (~50 min). Re-exported `data/seed/events.json` (343) with RU — **239/239 derived
+events have `title_ru` (100%)**, 214 `description_ru`; the LLM also cleans noisy titles ("Hola amig@s…" →
+"Фестиваль Июля 2026"). The seed now ships **ingested → normalized → deduped → geo'd → ENRICHED** — the full
+local-first bake (prod ships pre-filled, runs incremental-only). FOLLOW-UP **T158**: enrich the curated
+(feria/fever/logunespa) + the 104 Hemisfèric events (series, skipped by `enrichCards`) for 100% RU. `5ecd0d6`.
 
 **Non-negotiables** (see constitution v1.1.0): append-only raw `source_items`; dedup
 keeps a link to every source (via `entity_sources`) and never merges on fallback geo
