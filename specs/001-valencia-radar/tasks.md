@@ -893,3 +893,11 @@ exist, raw layer still append-only.
   curated feria/fever/logunespa, 0 null dates → confirm the overwrite with the user → re-bake → round-trip
   verify on a throwaway DB. NOTE: the user's LOCAL site (localhost, reads the live DB) ALREADY shows the
   fixes; this is only for the prod-shipping seed.
+
+- [ ] T174 [F] **CSS autoprefixer warning in dev-server logs** (user, `backlog:`, 2026-06-21: "фиксани
+  потом что это за хрень в логах"). `app/globals.css` (~line 111:73) uses a bare `end` value
+  (`justify-content: end` / `align-items: end` / `align-self: end`) → autoprefixer warns "end value has
+  mixed support, consider using flex-end instead". Cosmetic only (dev-server log noise, no render impact).
+  Fix: replace the bare `end` with `flex-end` at that rule (and any siblings). One-line CSS change; verify
+  the warning is gone. Low priority. *(The other harmless "Skipped not serializable cache item … Warning"
+  webpack line is a known Next 14.2 dev-cache quirk, not our bug.)*
