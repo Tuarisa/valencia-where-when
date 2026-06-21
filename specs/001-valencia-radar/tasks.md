@@ -901,3 +901,28 @@ exist, raw layer still append-only.
   Fix: replace the bare `end` with `flex-end` at that rule (and any siblings). One-line CSS change; verify
   the warning is gone. Low priority. *(The other harmless "Skipped not serializable cache item … Warning"
   webpack line is a known Next 14.2 dev-cache quirk, not our bug.)*
+
+- [ ] T175 [D/F] **NEW event category «экспозиция» (standing/long-running event over a date span)** (user,
+  `backlog:`, 2026-06-21, marked **важно!!**). A third kind of event distinct from one-offs and recurring
+  series: a PERMANENT/standing event that runs continuously from date A to date B at a fixed venue —
+  exhibitions / museum expositions. User examples: выставка «Алисы в Стране чудес» (id 25491, CaixaForum
+  València), Titanic, «новая экспозиция в музее». Currently these render as a single card on their start day
+  (or worse, risk looking like a daily event). REQUIREMENTS:
+  1. **Model/detect.** Mark an event as an exposition when it has a multi-day `start_date..end_date` span AND
+     is an exhibition-type (category выставка/exhibition/экспозиция/museum show). Ensure the normalizers
+     CAPTURE `end_date` for these (many exhibitions have an open-until date — today it may be dropped). Add a
+     `featureKind='exposition'` (see `lib/queries.ts` `featureKind` — currently feria|festival|hemisferic|
+     excursion|null) + a distinct thin accent colour (a new `--exposition` CSS var, like `--excursion`).
+  2. **Calendar render (the key ask).** Render an exposition as a horizontal **spanning bar across ALL days
+     of its [start,end] range at the TOP of the calendar month grid** — like a multi-day all-day event /
+     "location" strip in corporate Google Calendar — a THIN bar, visually clearly "это идёт постоянно", NOT a
+     per-day card duplicated 60×. It must still be visible/clickable on every day it spans (don't miss it),
+     but occupy one continuous lane, not flood each day. Multiple overlapping expositions → stack in separate
+     lanes. Clicking the bar → the event detail.
+  3. **Feed.** Show ONE card (as now) but flagged as ongoing — e.g. «идёт до DD месяца» / «постоянная
+     экспозиция», so users see it's a standing thing, not a single date.
+  Touch points: `lib/queries.ts` (featureKind + expose start/end span + an `is_exposition` flag on SiteEvent),
+  `app/Home.tsx` (calendar grid — add a spanning-bar lane above the day cells; feed badge), `app/globals.css`
+  (`--exposition` accent + the bar style), the relevant normalizers (capture `end_date`). Relates to the
+  recurring model (`event_series`) but is SIMPLER (one continuous span, no discrete occurrences) and to the
+  design pass [[T163]]. Likely its own multi-step effort; keep the deterministic-from-DB render.
