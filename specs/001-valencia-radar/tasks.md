@@ -486,11 +486,18 @@ exist, raw layer still append-only.
   (drop contact/nav/footer cards) + title cleanup (strip leading date tokens + trailing source tags). Also
   a concerten meta-post ("Добавили на сайт 16 событий…") slipped past `looksLikeEvent`.
 
-- [ ] T147 [A] **`tg:rutatuta_vlc` ingest fails — Neon "unexpected end of hex escape"** (T141 finding).
+- [x] T147 [A] **`tg:rutatuta_vlc` ingest fails — Neon "unexpected end of hex escape"** (T141 finding).
   `ingestSource('tg:rutatuta_vlc')` errors on INSERT: `could not parse the HTTP request body: unexpected
   end of hex escape` — a special char/encoding in the post content breaks the parameterised query over the
   Neon HTTP proxy. Blocks ALL rutatuta data (and T142). Sanitise the raw content before insert; reproduce
   on the offending post.
+  *(DONE 2026-06-21 — ROOT CAUSE: `parseTelegram` does `title.slice(0,200)`, which cut mid-emoji and left a
+  LONE HIGH SURROGATE (U+D83D) that can't be UTF-8-encoded → the Neon HTTP driver fails serialising it.
+  FIX: pure `sanitizeText()` in `util.ts` (strips lone surrogates + C0/C1 controls except TAB/LF/CR + DEL +
+  BMP noncharacters), applied in `upsertSourceItem` to every text field written (INSERT+UPDATE); `dedup_hash`
+  still from the raw item (identity unchanged). General ingest-robustness fix. Live: rutatuta now ingests
+  (17 parsed / 8 new rows), idempotent, logunespa regression ok, clean RU+emoji preserved. +8 tests, 309/309.
+  rutatuta data now flows → unblocks T142 (still needs a rutatuta normalizer + the excursion accent).)*
 
 - [ ] T148 [A] **`web:cac_*` (4 sources) fetch failed** (T141 finding). `web:cac_agenda/exposiciones/
   actividades/museu` all returned `TypeError: fetch failed` (cac.es). Investigate TLS/HTTP2, bot-block, or

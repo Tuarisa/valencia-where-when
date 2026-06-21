@@ -30,6 +30,29 @@ export function compact(value?: string | null): string | null {
   return v || null;
 }
 
+// Strip bytes that the @neondatabase/serverless driver cannot serialise into its
+// HTTP request body (it fails with "unexpected end of hex escape"). Causes seen in
+// the wild (T147, tg:rutatuta_vlc): a `.slice(0, N)` cut landing mid-surrogate-pair
+// leaves a LONE surrogate (e.g. a chopped emoji), which is not valid UTF-8. Also
+// drops NUL + other C0/C1 control chars (except \t \n \r) and Unicode noncharacters.
+// Pure + minimal: normal text, Cyrillic, links and intact emoji round-trip unchanged.
+// C0 (0x00-0x1F) except TAB/LF/CR, DEL + C1 (0x7F-0x9F).
+const CONTROL_RE =
+  // eslint-disable-next-line no-control-regex
+  /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g;
+const LONE_SURROGATE_RE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+// BMP noncharacters: U+FDD0-U+FDEF and U+FFFE/U+FFFF.
+const NONCHAR_RE = /[\uFDD0-\uFDEF\uFFFE\uFFFF]/g;
+
+export function sanitizeText<T extends string | null | undefined>(value: T): T {
+  if (value == null) return value;
+  const out = String(value)
+    .replace(CONTROL_RE, "")
+    .replace(LONE_SURROGATE_RE, "")
+    .replace(NONCHAR_RE, "");
+  return out as T;
+}
+
 export function sourceItemHash(row: {
   source_key?: string | null;
   external_id?: string | null;

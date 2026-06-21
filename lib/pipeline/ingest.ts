@@ -1,7 +1,7 @@
 import { sql } from "../db";
 import {
   USER_AGENT, nowIso, isoAgo, compact, stripTags, decodeEntities,
-  sourceItemHash, fetchText, fetchJson,
+  sourceItemHash, fetchText, fetchJson, sanitizeText,
 } from "./util";
 
 export interface RawItem {
@@ -222,19 +222,28 @@ export function resolveParser(source: { key?: string; type?: string; url?: strin
 async function upsertSourceItem(item: RawItem, runId: number): Promise<boolean> {
   const ts = nowIso();
   const dedup = sourceItemHash(item);
-  const rawJson = item.raw_json != null ? JSON.stringify(item.raw_json) : null;
+  // Sanitize every text value written to the DB: real posts (e.g. tg:rutatuta_vlc,
+  // T147) can carry a lone surrogate from a `.slice()` cut mid-emoji, a NUL or other
+  // control bytes that the Neon HTTP driver rejects ("unexpected end of hex escape").
+  // dedup_hash is computed from the raw item (above) so dedup identity is unaffected.
+  const externalId = sanitizeText(item.external_id ?? null);
+  const title = sanitizeText(item.title ?? null);
+  const url = sanitizeText(item.url ?? null);
+  const rawText = sanitizeText(item.raw_text ?? null);
+  const rawHtml = sanitizeText(item.raw_html ?? null);
+  const rawJson = item.raw_json != null ? sanitizeText(JSON.stringify(item.raw_json)) : null;
   const existing = (await sql`SELECT id FROM source_items WHERE dedup_hash = ${dedup}`) as any[];
   if (existing.length) {
-    await sql`UPDATE source_items SET last_seen = ${ts}, title = ${item.title ?? null},
-      url = ${item.url ?? null}, raw_text = ${item.raw_text ?? null}, raw_html = ${item.raw_html ?? null},
+    await sql`UPDATE source_items SET last_seen = ${ts}, title = ${title},
+      url = ${url}, raw_text = ${rawText}, raw_html = ${rawHtml},
       raw_json = ${rawJson}, run_id = ${runId} WHERE dedup_hash = ${dedup}`;
     return false;
   }
   await sql`INSERT INTO source_items
     (dedup_hash, source_key, run_id, external_id, item_type, title, url, published_at, raw_text, raw_html, raw_json, normalized_status, first_seen, last_seen)
-    VALUES (${dedup}, ${item.source_key}, ${runId}, ${item.external_id ?? null}, ${item.item_type ?? null},
-    ${item.title ?? null}, ${item.url ?? null}, ${item.published_at ?? null}, ${item.raw_text ?? null},
-    ${item.raw_html ?? null}, ${rawJson}, 'pending', ${ts}, ${ts})`;
+    VALUES (${dedup}, ${item.source_key}, ${runId}, ${externalId}, ${item.item_type ?? null},
+    ${title}, ${url}, ${item.published_at ?? null}, ${rawText},
+    ${rawHtml}, ${rawJson}, 'pending', ${ts}, ${ts})`;
   return true;
 }
 
