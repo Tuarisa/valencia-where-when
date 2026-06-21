@@ -781,3 +781,18 @@ exist, raw layer still append-only.
   when live prod enrich is wanted. Either way the local `claude -p` flow stays for the heavy bake. Decide +
   (if (2)) build `createSdkEnrichClient` + wire `ANTHROPIC_API_KEY` + the enrich cron (T055, was deferred on
   the Workflow SDK — can run as a plain route instead).
+
+- [ ] T163 [F] **Design pass — dalnoboi.org as the base (use Claude Design MCP)** (user, `backlog:`,
+  2026-06-21; the concrete brief for T134). Requirements:
+  - **Colour scheme + visual base from http://dalnoboi.org/** — "это наш дизайн и сайт" (the user's own
+    site) → take its palette/look as the base for Valencia Radar's UI.
+  - **Tag cloud by frequency** — a tag cloud weighted by tag frequency across events/places (tags already
+    exist in `tags_json`); bigger = more frequent. A new feed/sidebar component.
+  - **Lazy loading of posts/events** — the feed should lazy-load (infinite scroll / on-demand) instead of
+    rendering everything at once (the feed is ~340 events).
+  - **Categorization** — clearer category grouping/filtering in the feed (categories already on events:
+    concert/exhibition/excursion/…).
+  - **Use Claude Design** — the design MCP (Vercel `import-claude-design-from-url` from dalnoboi.org, or
+    Figma) to derive the design, then implement in `app/` (Home.tsx + globals.css), preserving the existing
+    data/render layer (queries.ts, the featureKind accents incl. the new `--excursion`, the map/calendar).
+  Substantial visual iteration — likely its own multi-step effort. Keep the deterministic-from-DB render.
