@@ -507,9 +507,15 @@ exist, raw layer still append-only.
   (17 parsed / 8 new rows), idempotent, logunespa regression ok, clean RU+emoji preserved. +8 tests, 309/309.
   rutatuta data now flows → unblocks T142 (still needs a rutatuta normalizer + the excursion accent).)*
 
-- [ ] T148 [A] **`web:cac_*` (4 sources) fetch failed** (T141 finding). `web:cac_agenda/exposiciones/
-  actividades/museu` all returned `TypeError: fetch failed` (cac.es). Investigate TLS/HTTP2, bot-block, or
-  transient; may need a real User-Agent / retry / timeout tuning. 4 of 25 sources currently yield no data.
+- [x] T148 [A] **`web:cac_*` (4 sources) fetch failed → FIXED (incomplete TLS chain)** (T141 finding).
+  Root cause was NOT bot-block/404/transient: cac.es serves an INCOMPLETE TLS cert chain (missing
+  intermediate CA) → Node's `fetch`/undici rejects with `UNABLE_TO_VERIFY_LEAF_SIGNATURE` (curl tolerates
+  it via the system CA bundle). FIX (`lib/pipeline/util.ts`): a per-host `INSECURE_TLS_HOSTS` allowlist
+  (`cac.es` only) + pure `needsInsecureTls(url)` selector; allowlisted hosts bypass undici for a built-in
+  `node:https` GET with `rejectUnauthorized:false` (follows redirects, keeps conditional-GET/UA/timeout) —
+  NOT a global TLS weakening. Live re-ingest: 4/4 sources OK http 200 → **113 source_items**
+  (actividades 38 / agenda 24 / exposiciones 21 / museu 30); `source_runs` all `ok`. 6 focused
+  `needsInsecureTls` tests (no network). NB: no cac normalizer yet → these normalize to `ignored` (→ T177).
 
 - [ ] T149 [D/F] **Hemisfèric display — duplicates + "10 films/day" look wrong** (user, `backlog:`).
   Re-verify the Hemisfèric series/occurrences render: the user sees apparent DUPLICATES and "как будто
@@ -936,3 +942,13 @@ exist, raw layer still append-only.
   EXISTS` means the live `main` table is unaffected — fresh setups only). VERIFIED on a throwaway DB: fresh
   `db:setup` now exit 0, 0 errors, `curated:recommendations` loads with null url, 352 events / 0 null dates /
   11 series. Unblocks prod deploy.
+
+- [ ] T177 [A] **build a cac.es normalizer** (exposiciones → expositions, agenda/actividades → events).
+  Unblocked by T148 (the 4 `web:cac_*` sources now ingest: 113 `source_items` live — actividades 38 /
+  agenda 24 / exposiciones 21 / museu 30 — currently normalizing to `ignored` for lack of a normalizer).
+  Build `lib/pipeline/normalizers/cac.ts` (+ register in `NORMALIZER_REGISTRY`): route `web:cac_exposiciones`
+  (and likely `web:cac_museu`) → the standing/long-running **exposition** category (cross-ref the new T175
+  exposition feature: continuous start/end span, `is_exposition`), and `web:cac_agenda`/`web:cac_actividades`
+  → dated **events**. cac.es is the Ciudad de las Artes y las Ciencias (a flagship Valencia venue), so this
+  is high-value content. Deterministic parse first (T140); inspect the real `source_items` HTML/links for
+  date + title structure before writing rules.
