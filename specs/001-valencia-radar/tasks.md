@@ -703,10 +703,16 @@ exist, raw layer still append-only.
   "Фестиваль Июля 2026"). Engine + quality verified on a 2-event probe first. This closes the heavy
   local-first compute (T144): the seed now ships ingested + normalized + deduped + geo'd + ENRICHED.)*
 
-- [ ] T158 [E] **Enrich the curated + Hemisfèric seed events too (full RU coverage)** (T144-enrich
+- [x] T158 [E] **Enrich the curated + Hemisfèric seed events too (full RU coverage)** (T144-enrich
   follow-up). The local enrich covered the 239 derived events; still un-enriched in the seed: the curated
   `events-feria-julio-2026.json` (43) / `events-fever.json` (2) / `events-logunespa.json` (10) — these are
   exported from their FILES (the live-DB copies WERE enriched but feria is stale-merged so I kept the files);
   and the 104 `api:hemisferic` events (they're series, not plain events, so `enrichCards` skipped them).
   To finish: reset the stale feria duplicates → re-export the curated from the enriched DB; enrich the
   Hemisfèric series (per-series, once) + bake. Then 100% RU coverage across the seed.
+  *(DONE 2026-06-21 — reset 41 stale feria dups → 43 upcoming; re-exported feria(43)/logunespa(10)/fever(2)
+  from the enriched live DB (all title_ru, 0 null dates; fever KEPT — DroneArt, distinct from the 34 derived
+  fever). Enriched the 104 Hemisfèric events via 11 distinct-show `claude -p` calls (e.g. "Oceans: Our Blue
+  Planet" → "Океаны: наша голубая планета", "3,2,1…¡Despegamos!" → "3,2,1… Взлёт!") applied to all
+  occurrences. **Seed is now 100% RU: events.json 343/343 title_ru, all 4 files 0 null dates, 11 Hemisfèric
+  series preserved, 0 id collisions.** Helper `scripts/enrich-hemis-seed.mjs`.)*
