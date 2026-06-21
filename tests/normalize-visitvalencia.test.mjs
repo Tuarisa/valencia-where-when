@@ -144,3 +144,59 @@ test('buildVisitvalenciaEvents: a year in the title is NOT treated as a date', (
 test('buildVisitvalenciaEvents: empty input yields no drafts', () => {
   assert.deepEqual(buildVisitvalenciaEvents([], TODAY), []);
 });
+
+// REAL-DATA REGRESSION (measured 2026-06-21 on the live local DB): the crawled
+// `web:visitvalencia` snapshot is 81 raw rows → 56 event drafts → 0 dated. This
+// reproduces the symptom and pins the HONEST finding: the source link_cards carry
+// ONLY a headline (title == raw_text), no body, no meta, no date — and the slug is
+// descriptive (no -YYYY-MM-DD). So `start_date` is legitimately NULL on EVERY row;
+// fabricating one from a bare year would be wrong (T140 / constitution: a wrong pin
+// is worse than none). The fixture below mirrors the real chrome/event mix.
+test('buildVisitvalenciaEvents: real-shape mix → drops chrome, keeps events, 0 dated', () => {
+  const rows = [
+    // 1 page snapshot (the index itself)
+    {
+      id: 715,
+      source_key: 'web:visitvalencia',
+      title: 'Valencia Events | Events in Valencia | Upcoming Events',
+      raw_text: 'Valencia Events | Events in Valencia | Upcoming Events Skip to main content',
+      raw_json: '{"kind":"page_snapshot","source_page":"https://www.visitvalencia.com/en/events-valencia"}',
+      url: BASE,
+    },
+    // chrome: skip-link anchor, bare index, /shop, /plan-your-trip, /what-to-see, /what-to-do
+    chrome(716, 'Skip to main content', `${BASE}#main-content`),
+    chrome(717, 'How to get to Valencia', 'https://www.visitvalencia.com/en/plan-your-trip-to-valencia/to-get-to-valencia'),
+    chrome(722, 'Albufera natural park', 'https://www.visitvalencia.com/en/what-to-see-valencia/albufera-natural-park'),
+    chrome(726, 'Valencia with kids', 'https://www.visitvalencia.com/en/what-to-do-valencia/valencia-for-children'),
+    chrome(732, 'Hop-on hop-off bus', 'https://www.visitvalencia.com/en/shop/hop-on-hop-off-bus-tour'),
+    // category indices under /events-valencia/ — listing pages, NOT single events
+    chrome(727, 'Concerts and music festivals in Valencia', `${BASE}/music`),
+    chrome(728, 'Festivities and traditions', `${BASE}/festivities`),
+    // real event-detail cards (title == raw_text, bare link_card json, no date)
+    card(741, "Anselm Kiefer's exhibition comes to Valencia", 'anselm-kiefers-exhibition-comes-valencia'),
+    card(745, 'Immersive Exhibition “The Legend of the Titanic” in Valencia', 'immersive-exhibition-legend-titanic-valencia'),
+    card(763, 'Playmobil 2026 Exhibition at the Military History Museum in Valencia', 'playmobil-2026-exhibition-military-history-museum-valencia'),
+    card(794, 'Macromascletà Universal de Benicalap 2026: gunpowder, DJs and open-air party', 'macromascleta-universal-de-benicalap-2026-gunpowder-djs-and-open-air-party'),
+    // borderline "ongoing experience / listicle" cards — these ARE real agenda
+    // entries on the official events page (evergreen), so they are KEPT, not chrome.
+    card(756, 'The Best Spas in Valencia to Disconnect and Recharge', 'best-spas-valencia-disconnect-and-recharge'),
+    card(768, 'Three ways to enjoy live jazz in Valencia', 'three-ways-enjoy-live-jazz-valencia'),
+  ];
+
+  const out = buildVisitvalenciaEvents(rows, TODAY);
+  // 6 real event cards survive (741, 745, 763, 794, 756, 768); the snapshot, the 6
+  // chrome rows and the 2 category indices are all dropped.
+  assert.equal(out.length, 6);
+  const ids = out.map((o) => o.sourceItemId).sort((a, b) => a - b);
+  assert.deepEqual(ids, [741, 745, 756, 763, 768, 794]);
+  // HONEST FINDING: not one survivor carries a parseable date — the data has none.
+  const dated = out.filter((o) => o.draft.start_date !== null);
+  assert.equal(dated.length, 0);
+  // every survivor still carries the city/country/source defaults so it renders.
+  for (const { draft } of out) {
+    assert.equal(draft.city, 'Valencia');
+    assert.equal(draft.country, 'Spain');
+    assert.equal(draft.source, 'web:visitvalencia');
+    assert.equal(draft.start_date, null);
+  }
+});

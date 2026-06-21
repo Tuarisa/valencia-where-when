@@ -15,19 +15,31 @@ import {
 // Saturday 2026-06-20 (matches the real snapshot capture: "hoy a las 22:30" cards).
 const TODAY = new Date(2026, 5, 20); // 2026-06-20, a Saturday
 
-// A snapshot fragment FAITHFUL to the live id=247 raw_text: each real card renders as
-// "<title> <date-expr>\n<venue>\nCheck ticket price on event", plus chrome/badge lines
-// ("Sales end soon", "Save this event: …") and an Online-Events card with a foreign tz.
+// A snapshot fragment FAITHFUL to the live id=247 raw_text: each PHYSICAL Valencia card
+// renders as "<title> <date-expr>\n<venue>\nCheck ticket price on event"; each ONLINE /
+// out-of-town card renders as "<title> <date-expr-with-foreign-tz>\nCheck ticket price on
+// event" (NO venue line). The live snapshot repeats cards 2–3× and carries chrome/badge
+// lines ("After 8pm", "Sales end soon", "Save this event: …"). CRITICAL: the snapshot lists
+// MORE events than the link_cards — "Música coral en directo", "PENYAIR en VALENCIA",
+// "Inside Daidalonic 2026" have NO /e/ link_card but ARE real, dated Valencia events.
 const SNAPSHOT_TEXT = [
   "Los mejores eventos en",
   "Valencia",
   "After 8pm",
   "Explore more events",
+  // physical Valencia cards (venue line precedes the marker)
   "Pub Crawl Valencia by Mad Party Crew hoy a las 22:30 + 1 more",
   "Bear Club - Valencia",
   "Check ticket price on event",
   "Jazz at Loom. Every Sunday jazz Jam session. mañana a las 20:30",
   "LOOM VLC",
+  "Check ticket price on event",
+  // dated Valencia events with NO link_card anchor — these were dropped before the fix
+  "Música coral en directo Sat, Jun 27, 8:30 PM",
+  "Real Parroquia de los Santos Juanes Valencia",
+  "Check ticket price on event",
+  "Inside Daidalonic 2026 Mon, Jun 29, 5:30 PM",
+  "Paraninfo UPV",
   "Check ticket price on event",
   "Jornada PrimeTime Project viernes a las 09:00",
   "UPV - Escuela Técnica Superior de Ingeniería Informática ETSINF",
@@ -38,8 +50,15 @@ const SNAPSHOT_TEXT = [
   "Saturday Language Exchange & Party hoy a las 20:30",
   "C/ del Convent de Sant Francesc, 2",
   "Check ticket price on event",
+  // repeated card (the live page renders each twice) — must de-dupe by title
+  "Pub Crawl Valencia by Mad Party Crew hoy a las 22:30 + 1 more",
+  "Bear Club - Valencia",
+  "Check ticket price on event",
+  // ONLINE / out-of-town cards (foreign tz, NO venue line) — must be dropped
   "Online Events",
   "An Introduction to PDA for Educators miércoles a las 16:00 GMT+1",
+  "Check ticket price on event",
+  "San Diego Career Fair Mon, Jul 27, 9:30 AM PDT",
   "Check ticket price on event",
 ].join("\n");
 
@@ -67,15 +86,16 @@ const ROWS = [
     raw_text: SNAPSHOT_TEXT,
     raw_json: JSON.stringify({ kind: "page_snapshot", meta: { "og:image": "https://cdn.evbstatic.com/logo.png" } }),
   },
-  // real /e/ events
+  // /e/ link_cards that ALSO appear in the snapshot → snapshot card emits, /e/ url attached
   linkCard(254, "Pub Crawl Valencia by Mad Party Crew", "https://www.eventbrite.es/e/entradas-pub-crawl-valencia-by-mad-party-crew-1777986297879?aff=ebdssbcitybrowsenightlife"),
-  // SAME event, different ?aff= → must de-dupe to one
+  // SAME event, different ?aff= → must de-dupe to one canonical url
   linkCard(263, "Pub Crawl Valencia by Mad Party Crew", "https://www.eventbrite.es/e/entradas-pub-crawl-valencia-by-mad-party-crew-1777986297879?aff=ebdssbcitybrowse"),
   linkCard(255, "Jazz at Loom. Every Sunday jazz Jam session.", "https://www.eventbrite.es/e/jazz-at-loom-every-sunday-jazz-jam-session-tickets-1807073859559?aff=ebdssbcitybrowsenightlife"),
   linkCard(259, "Jornada PrimeTime Project", "https://www.eventbrite.es/e/entradas-jornada-primetime-project-1988320110976?aff=ebdssbcitybrowse"),
   linkCard(260, "Fuckup Nights Valencia Vol. XLIV", "https://www.eventbrite.es/e/fuckup-nights-valencia-vol-xliv-tickets-1992117357643?aff=ebdssbcitybrowse"),
-  // a real /e/ event that has NO snapshot date row → still emits, start_date null
   linkCard(264, "Saturday Language Exchange & Party", "https://www.eventbrite.es/e/entradas-saturday-language-exchange-party-799030370347?aff=ebdssbcitybrowse"),
+  // a real /e/ event with NO snapshot card (e.g. snapshot truncated) → still emits, undated
+  linkCard(261, "SUMMER MEETUP | València Nomads Hub", "https://www.eventbrite.es/e/entradas-summer-meetup-valencia-nomads-hub-1991449810993?aff=ebdssbcitybrowse"),
   // chrome / nav / poi — all must be dropped
   linkCard(252, "Things to do in Valencia", "https://www.eventbrite.es/ttd/spain--valencia/"),
   linkCard(253, "Explore more events", "https://www.eventbrite.es/b/spain--valencia/nightlife/"),
@@ -130,48 +150,83 @@ test("parseEventbriteDate resolves hoy/mañana/weekday/absolute", () => {
   assert.equal(parseEventbriteDate("", TODAY), null);
 });
 
-test("buildSnapshotIndex maps title → { dateExpr, venue }", () => {
+test("buildSnapshotIndex maps title → { title, dateExpr, venue, online }", () => {
   const idx = buildSnapshotIndex(SNAPSHOT_TEXT);
   const pub = idx.get("pub crawl valencia by mad party crew");
   assert.ok(pub, "Pub Crawl indexed");
+  assert.equal(pub.title, "Pub Crawl Valencia by Mad Party Crew");
   assert.equal(pub.dateExpr, "hoy a las 22:30"); // "+ 1 more" trimmed
   assert.equal(pub.venue, "Bear Club - Valencia");
+  assert.equal(pub.online, false);
 
   const fuckup = idx.get("fuckup nights valencia vol. xliv");
   assert.ok(fuckup);
   assert.equal(fuckup.dateExpr, "Thu, Jul 2, 7:00 PM");
   assert.equal(fuckup.venue, "ADEIT - Fundación Universidad - Empresa de la Universitat de València");
+  assert.equal(fuckup.online, false);
+
+  // A dated card with NO /e/ link_card is STILL in the snapshot (the bug: these were lost).
+  const coral = idx.get("musica coral en directo");
+  assert.ok(coral, "snapshot-only card 'Música coral en directo' indexed");
+  assert.equal(coral.dateExpr, "Sat, Jun 27, 8:30 PM");
+  assert.equal(coral.venue, "Real Parroquia de los Santos Juanes Valencia");
+
+  // Online cards: no venue line + foreign tz → flagged online.
+  const pda = idx.get("an introduction to pda for educators");
+  assert.ok(pda, "online card indexed (so the caller can drop it)");
+  assert.equal(pda.venue, null);
+  assert.equal(pda.online, true);
+  const sandiego = idx.get("san diego career fair");
+  assert.ok(sandiego);
+  assert.equal(sandiego.online, true);
 });
 
-test("buildEventbriteEvents: date parsed, title correct, junk dropped, dupes collapsed", () => {
+test("buildEventbriteEvents: snapshot-driven — emits snapshot-only events, drops online + chrome", () => {
   const events = buildEventbriteEvents(ROWS, TODAY);
 
-  // 6 distinct real events: Pub Crawl (dupe collapsed), Jazz, Jornada, Fuckup,
-  // Saturday Language Exchange. Wait — that's 5; plus none of the chrome.
+  // The snapshot's PHYSICAL Valencia cards (de-duped) + the link_card-only SUMMER MEETUP.
+  // CRITICAL: Música coral / Inside Daidalonic have NO /e/ anchor but ARE emitted now.
   const titles = events.map((e) => e.draft.title).sort();
   assert.deepEqual(titles, [
     "Fuckup Nights Valencia Vol. XLIV",
+    "Inside Daidalonic 2026",
     "Jazz at Loom. Every Sunday jazz Jam session.",
     "Jornada PrimeTime Project",
+    "Música coral en directo",
     "Pub Crawl Valencia by Mad Party Crew",
+    "SUMMER MEETUP | València Nomads Hub",
     "Saturday Language Exchange & Party",
   ]);
 
-  // No chrome / poi / nav leaked in.
+  // No chrome / poi / nav / ONLINE cards leaked in.
   for (const t of titles) {
     assert.ok(!/things to do|explore more|popular in|cathedral|cookie|conciertos|workshops/i.test(t), `chrome leaked: ${t}`);
+    assert.ok(!/introduction to pda|san diego|career fair/i.test(t), `online card leaked: ${t}`);
   }
 
   const byTitle = Object.fromEntries(events.map((e) => [e.draft.title, e.draft]));
 
-  // Pub Crawl: hoy → 2026-06-20, time 22:30, venue from snapshot, only ONCE.
+  // Pub Crawl: hoy → 2026-06-20, time 22:30, venue from snapshot, ONLY ONCE (deduped).
   const pub = byTitle["Pub Crawl Valencia by Mad Party Crew"];
   assert.equal(pub.start_date, "2026-06-20");
   assert.equal(pub.start_time, "22:30");
   assert.equal(pub.venue_name, "Bear Club - Valencia");
+  assert.ok(/eventbrite\.es\/e\//.test(pub.url), "snapshot card got its /e/ deep link");
   assert.equal(events.filter((e) => e.draft.title === "Pub Crawl Valencia by Mad Party Crew").length, 1);
 
-  // Fuckup: English absolute → 2026-07-02, 19:00.
+  // Música coral: snapshot-only (NO link_card) → emits, DATED, venue, listing-page url.
+  const coral = byTitle["Música coral en directo"];
+  assert.equal(coral.start_date, "2026-06-27");
+  assert.equal(coral.start_time, "20:30");
+  assert.equal(coral.venue_name, "Real Parroquia de los Santos Juanes Valencia");
+  assert.ok(/\/d\/spain--valencia\/events\//.test(coral.url), "no /e/ anchor → listing url");
+
+  // Inside Daidalonic: snapshot-only, English absolute Mon, Jun 29 → 2026-06-29, 17:30.
+  const inside = byTitle["Inside Daidalonic 2026"];
+  assert.equal(inside.start_date, "2026-06-29");
+  assert.equal(inside.start_time, "17:30");
+
+  // Fuckup: English absolute → 2026-07-02, 19:00, with its /e/ link.
   const fk = byTitle["Fuckup Nights Valencia Vol. XLIV"];
   assert.equal(fk.start_date, "2026-07-02");
   assert.equal(fk.start_time, "19:00");
@@ -179,21 +234,21 @@ test("buildEventbriteEvents: date parsed, title correct, junk dropped, dupes col
   // Jornada: weekday → next Friday 2026-06-26.
   assert.equal(byTitle["Jornada PrimeTime Project"].start_date, "2026-06-26");
 
-  // Saturday Language Exchange: no snapshot date row → start_date null, still emits.
-  const sat = byTitle["Saturday Language Exchange & Party"];
-  assert.equal(sat.start_date, "2026-06-20"); // it IS in the snapshot ("hoy"), so dated
-  assert.equal(sat.venue_name, "C/ del Convent de Sant Francesc, 2");
+  // SUMMER MEETUP: link_card with NO snapshot card → still emits, UNDATED fallback.
+  const meetup = byTitle["SUMMER MEETUP | València Nomads Hub"];
+  assert.equal(meetup.start_date, null);
+  assert.equal(meetup.venue_name, null);
+  assert.ok(/eventbrite\.es\/e\//.test(meetup.url), "fallback keeps the /e/ deep link");
 
   // Source / city / country invariants.
   for (const e of events) {
     assert.equal(e.draft.source, "web:eventbrite");
     assert.equal(e.draft.city, "Valencia");
     assert.equal(e.draft.country, "Spain");
-    assert.ok(/eventbrite\.es\/e\//.test(e.draft.url), "url is the /e/ deep link");
   }
 });
 
-test("buildEventbriteEvents: an /e/ event with NO snapshot entry still emits undated", () => {
+test("buildEventbriteEvents: an /e/ event with NO snapshot still emits undated", () => {
   const lone = [
     linkCard(900, "Some Untracked Concert", "https://www.eventbrite.es/e/some-untracked-concert-999?aff=x"),
   ];

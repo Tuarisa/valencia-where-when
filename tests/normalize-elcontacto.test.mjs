@@ -72,6 +72,21 @@ test('the three REAL live chrome rows produce ZERO events', () => {
   assert.deepEqual(out, [], '404 snapshot + mailto + classifieds-nav all dropped');
 });
 
+test('classifieds-board chrome is dropped even with an on-site /valencia/ URL (not URL-only)', () => {
+  // Defense-in-depth: the live "Объявления о продаже" nav row is dropped today by its
+  // off-/valencia/ URL. If the SAME label ever arrived under /valencia/, isElcontactoChrome
+  // must still drop it — the drop must not depend on the URL path alone.
+  const out = buildElcontactoEvents(
+    [
+      row({ id: 401, title: 'Объявления о продаже', url: 'https://elcontacto.ru/valencia/objyavleniya' }),
+      row({ id: 402, title: 'Каталог фирм', url: 'https://elcontacto.ru/valencia/katalog' }),
+      row({ id: 403, title: 'Подать объявление', url: 'https://elcontacto.ru/valencia/podat' }),
+    ],
+    today,
+  );
+  assert.deepEqual(out, [], 'classifieds-board nav labels dropped regardless of URL path');
+});
+
 test('a synthetic REAL listing parses date / title / venue / address / price', () => {
   const out = buildElcontactoEvents(
     [

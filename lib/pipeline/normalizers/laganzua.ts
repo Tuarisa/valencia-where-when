@@ -67,19 +67,34 @@ const DATE_TAIL = new RegExp(
   "iu",
 );
 
-// City names that count as "this is a Valencia-region listing". The page is the
-// Valencia weekend filter, but the flattened highlight blocks are national; we keep
-// only rows whose title names Valencia (city) or a Valencia-province town that the
-// live data carries (Torrent hosts the Bigsound festival). Word-boundary matched so
-// e.g. "Valencia" inside another word isn't a false positive.
-const VALENCIA_CITY = /\b(valencia|val[èe]ncia|torrent|paterna|gandia|sagunto|burjassot|mislata|alboraya)\b/i;
+// "This is a Valencia-region listing" detection. The page is the Valencia weekend
+// filter, but the flattened highlight blocks are NATIONAL ("GRANDES CONCIERTOS":
+// Madrid/Barcelona/Vigo…), so we must keep only Valencia-region rows. Two signals,
+// both deterministic (T140) and both observed in the live title grammar
+// ("<show> en <Town>[, <Province>] <weekday> <DD> de <month> de <YYYY>"):
+//
+//   1. PROVINCE TAIL — a "…, Valencia"/"…, València" suffix names the PROVINCE, so the
+//      town is anywhere in the Valencia province. Live row 506 (Bigsound) reads
+//      "… en Torrent, Valencia …". This is the robust, future-proof signal: it keeps
+//      ANY Valencia-province town (Torrent, Cullera, Xàtiva, Cheste, Gandia…) without
+//      a hand-maintained whitelist — the original 9-town list silently DROPPED every
+//      Valencia-province town it didn't enumerate.
+//   2. CITY NAME — the provincial capital prints WITHOUT a province tail
+//      ("… en València …"), plus a few common comarca capitals, so we still match a
+//      bare city name. Word-boundary matched so "Valencia" inside another word isn't a
+//      false positive.
+//
+// A national row (Madrid, Barcelona, Vigo, Pontevedra, …) matches neither and is dropped.
+const VALENCIA_PROVINCE_TAIL = /,\s*val[èe]ncia\b/i;
+const VALENCIA_CITY = /\b(valencia|val[èe]ncia|torrent|paterna|gandia|sagunto|burjassot|mislata|alboraya|cullera|x[àa]tiva|alzira|ontinyent|requena|cheste|llír[ií]a)\b/i;
 
 // PURE: does a (possibly dated) La Ganzúa title belong to the Valencia region?
-// True when the title names a Valencia-area city. Deterministic keyword test.
+// True when the title carries a ", València/Valencia" PROVINCE tail OR names a
+// Valencia-area city. Deterministic keyword test; never fabricates.
 export function isValenciaTitle(title?: string | null): boolean {
   const t = compact(title);
   if (!t) return false;
-  return VALENCIA_CITY.test(t);
+  return VALENCIA_PROVINCE_TAIL.test(t) || VALENCIA_CITY.test(t);
 }
 
 // PURE: strip the trailing "en <city> … <DD> de <month> de <YYYY>" date tail off a

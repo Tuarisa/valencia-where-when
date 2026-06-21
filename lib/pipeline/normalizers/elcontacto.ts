@@ -19,14 +19,19 @@ import type { RawItem } from "./types";
 // parsing + valenciarusa price/venue/address/junk guard). Already a Valencia-local RU
 // board, so NO Spain pre-filter is needed (unlike worldafisha).
 //
-// REALITY (live local DB, 2026-06): the board URL currently 404s — the three ingested
-// rows are all CHROME (the 404 page snapshot, a `mailto:` link, a `/ispaniya/`
-// classifieds-nav link). We therefore (a) drop the page_snapshot, (b) drop any row
-// whose URL is not a real listing under the board (mailto:, non-/valencia/ nav links),
-// (c) drop the 404 page itself by title/text, and (d) drop nav/legal/email chrome via
-// isJunkCard. On the current live data this yields 0 events — correct: there is nothing
-// real to extract. When the board returns content, the same code extracts events.
-// Deterministic (T140 — JS before LLM); fail-soft + append-only (constitution).
+// REALITY (live local DB, 2026-06): the board URL `/valencia/events` currently 404s — the
+// three ingested rows are ALL CHROME and contain NO real, dated event:
+//   id 244  page_snapshot — title+body literally "404 ошибка. Страница не найдена"
+//   id 245  link_card     — mailto:info@elcontacto.ru (an email link)
+//   id 246  link_card     — https://elcontacto.ru/ispaniya/  "Объявления о продаже"
+//                           (for-sale classifieds nav, country-level /ispaniya/ path)
+// 0 events is therefore the CORRECT output — there is genuinely nothing to extract, and
+// we do NOT fabricate a date. We (a) drop the page_snapshot, (b) drop any row whose URL is
+// not a real listing under the board (mailto:, non-/valencia/ nav links), (c) drop the 404
+// page by title/text, (d) drop generic nav/legal/email chrome via isJunkCard, and (e) drop
+// elcontacto-specific classifieds-board labels via isElcontactoChrome (defense-in-depth, so
+// the drop never depends on the URL path alone). When the board returns real dated listings,
+// the SAME code extracts them. Deterministic (T140 — JS before LLM); fail-soft + append-only.
 
 export const ELCONTACTO_SOURCE_KEY = "web:elcontacto";
 const SOURCE_URL = "https://elcontacto.ru/valencia/events";
@@ -84,6 +89,27 @@ function isErrorPage(title?: string | null, body?: string | null): boolean {
   );
 }
 
+// PURE: elcontacto-specific classifieds-portal chrome that the shared NAV_LABELS list
+// (valenciarusa.isJunkCard) does NOT cover. This is a russophone-in-Spain classifieds
+// site, so its nav links are board labels like "Объявления о продаже" (for-sale ads),
+// "Каталог фирм" (firm catalog), "Подать объявление" (post an ad). The live `/ispaniya/`
+// nav row ("Объявления о продаже") is already dropped by isEventUrl (off-/valencia/ path),
+// but this guard is defense-in-depth: if the SAME label ever arrives with an on-site
+// `/valencia/` URL it is still dropped — so the drop never depends on the URL path alone.
+// Whole-card exact match (after compaction); a real listing carries far more text.
+const ELCONTACTO_NAV_LABELS = [
+  "объявления", "объявления о продаже", "подать объявление",
+  "каталог фирм", "топовые запросы", "карта сайта", "разделы",
+  "недвижимость", "работа", "блог", "помощь",
+];
+function isElcontactoChrome(title?: string | null, body?: string | null): boolean {
+  const t = compact(title) ?? "";
+  const b = compact(body) ?? "";
+  const text = (b.length >= t.length ? b : t).trim().toLowerCase();
+  if (!text) return true;
+  return ELCONTACTO_NAV_LABELS.includes(text);
+}
+
 // PURE: turn pending elcontacto raw rows into event drafts (date/venue/address/price
 // extracted where derivable). The full-page snapshot is dropped (no single event
 // identity); non-listing URLs (mailto:, classifieds nav, off-site) are dropped; the
@@ -110,8 +136,10 @@ export function buildElcontactoEvents(
     if (!title) continue;
 
     // Drop nav / contact / legal / email / bare-header chrome. Deterministic; a real
-    // dated listing is never matched.
+    // dated listing is never matched. Shared guard first, then the elcontacto-specific
+    // classifieds-board labels (defense-in-depth: drop never relies on the URL alone).
     if (isJunkCard(title, item.raw_text, ELCONTACTO_NAME)) continue;
+    if (isElcontactoChrome(title, item.raw_text)) continue;
 
     const haystack = `${title} ${item.raw_text || ""}`;
     // The board text carries the date in RU/ES; prefer a trailing slug date if present.

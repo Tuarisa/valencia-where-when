@@ -35,17 +35,26 @@ test('source key matches sources.json (id 25)', () => {
   assert.equal(RUSSPAIN_SOURCE_KEY, 'web:russpain');
 });
 
-test('REAL shape: the 404 page_snapshot row is dropped', () => {
+test('REAL shape: the 404 page_snapshot row is dropped (even with an embedded date)', () => {
   const today = new Date('2026-06-21T00:00:00Z');
-  // Faithful to live row id 588: a Page Not Found snapshot.
+  // Faithful to live row id 588: the "Page Not Found" reorganisation splash. The body
+  // is the site's nav chrome + the language-edition notice + an "updated June 18, 2026"
+  // timestamp. That embedded date MUST NOT leak an event — the page_snapshot guard
+  // (raw.kind === 'page_snapshot') drops the whole row before any date parsing.
   const rows = [
     {
       id: 588,
       source_key: 'web:russpain',
       title: 'Page Not Found',
-      raw_text: 'Page Not Found / Страница не найдена / Página no encontrada …',
+      raw_text:
+        'Page Not Found / Страница не найдена / Página no encontrada\n' +
+        'RUSSPAIN has been reorganised into separate language editions - RU - EN - ES.\n' +
+        'Русскоязычная версия сайта переехала на отдельный домен RUSSPAIN.RU.\n' +
+        'Continue to RUSSPAIN.COM / Ir a ESPAÑOL.NEWS\n' +
+        'updated June 18, 2026, 9:29 AM\n' +
+        '© 1998 - 2026 RUSSPAIN English Spain News All Rights Reserved',
       raw_json:
-        '{"kind":"page_snapshot","meta":{"title":"Page Not Found","og:image":"https://russpain.com/uploads/media/x.png"}}',
+        '{"kind":"page_snapshot","meta":{"title":"Page Not Found","og:image":"https://russpain.com/uploads/media/9/2026/06/16/x.png"}}',
       url: 'https://russpain.com/afisha/valencia/',
     },
   ];

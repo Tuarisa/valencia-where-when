@@ -158,6 +158,83 @@ test("buildLacotorraEvents: a snapshot-less batch yields nothing", () => {
   assert.equal(buildLacotorraEvents(CHROME_ROWS, REF).length, 0);
 });
 
+// Regression for the "8 raw rows → 56 events looks like an explosion" symptom.
+// Diagnosis (live local DB, web:lacotorra): NOT a bug. The single `page_snapshot`
+// row is a flattened multi-event agenda — on the live data 56 DATE-anchored blocks
+// = 56 distinct, dated events; the other 7 raw rows are chrome link_cards (dropped).
+// This test proves the invariant the symptom is really about: one snapshot yields
+// EXACTLY one event per DATE line, every event is DISTINCT (no title|date dup, no
+// row fan-out) and DATED, and header/category blocks between events don't leak in.
+test("buildLacotorraEvents: multi-block snapshot does NOT explode — 1 event per DATE line, all distinct & dated", () => {
+  // 6 real event blocks. Two structural traps that an exploding parser would trip on:
+  //  - a category/header block ("Предстоящие мероприятия") sitting BETWEEN events,
+  //  - a block whose own city line is followed by another event (no shared lines).
+  const MULTI = [
+    "Мероприятия Валенсии", // page header chrome (no date → not a block)
+    "Все",
+    "Выставка PUPAE в арт-хабе La Cotorra в Валенсии",
+    "Серия работ из строительных материалов о метаморфозах",
+    "29 May 2026, 10:00 - 26 Jun 2026, 20:00",
+    "La Cotorra Galería",
+    "Предстоящие мероприятия", // section header BETWEEN events — must NOT become an event
+    "Выставка про мир «Алисы в Стране чудес» в CaixaForum Валенсии",
+    "Валенсия",
+    "Экспозиция объединяет 255 произведений искусства...",
+    "16 Apr 2026, 12:00 - 12 Oct 2026, 19:00",
+    "CaixaForum Valencia",
+    "Выставка с редкими работами Сальвадора Дали в Мадриде",
+    "Мадрид",
+    "Скульптуры известного художника...",
+    "26 Mar 2026, 12:00 - 31 Dec 2026, 12:00",
+    "Palacio de Gaviria",
+    "Концерт с музыкой из сериала «Бриджертоны» в Мадриде",
+    "Мадрид",
+    "Перенеситесь в Лондон XIX века на один вечер...",
+    "24 Apr 2026, 21:00 - 14 Aug 2026, 21:00",
+    "Ilustre Colegio Oficial de Médicos de Madrid",
+    "Концерт Стинга в Барселоне",
+    "Барселона",
+    "Музыкант выступит...",
+    "7 Jul 2026, 22:00", // single-day → null end
+    "Jardins del Palau de Pedralbes",
+    "Концерт Бруно Марса в Мадриде",
+    "Мадрид",
+    "Один концерт в столице...",
+    "10 Jul 2026, 21:00", // single-day, LAST block (no trailing venue line follows it)
+  ].join("\n");
+
+  const row = { ...SNAPSHOT_ROW, id: 480, raw_text: MULTI };
+  const events = buildLacotorraEvents([row, ...CHROME_ROWS], REF);
+
+  // One event per DATE line, no fan-out: 6 DATE lines → exactly 6 events.
+  const dateLineCount = MULTI.split("\n").filter((l) =>
+    /^\d{1,2}\s+[A-Za-z]{3,}\s+\d{4},\s*\d{1,2}:\d{2}/.test(l.trim()),
+  ).length;
+  assert.equal(dateLineCount, 6);
+  assert.equal(events.length, 6, "exactly one event per DATE line — no explosion");
+
+  // Every event is DATED (the symptom's core: 56 events were all dated).
+  assert.ok(events.every((e) => e.draft.start_date), "every event has a start_date");
+
+  // Every event is DISTINCT — no duplicate title|date key (no row/block fan-out).
+  const keys = events.map((e) => `${e.draft.title.toLowerCase()}|${e.draft.start_date}`);
+  assert.equal(new Set(keys).size, events.length, "all title|date keys distinct");
+
+  // The section-header block must NOT leak in as an event title.
+  const titles = events.map((e) => e.draft.title);
+  assert.ok(
+    !titles.some((t) => /^(Предстоящие мероприятия|Все|Мероприятия Валенсии)$/.test(t)),
+    "no chrome/header block became an event",
+  );
+
+  // The last block (single-day, no trailing venue line) is still emitted, dated,
+  // and end-less — proves the walk-back anchoring handles the final block.
+  const bruno = events.find((e) => e.draft.title.startsWith("Концерт Бруно Марса"));
+  assert.ok(bruno, "final single-day block emitted");
+  assert.equal(bruno.draft.start_date, "2026-07-10");
+  assert.equal(bruno.draft.end_date, null);
+});
+
 test("buildLacotorraEvents: de-dupes identical title+date within a snapshot", () => {
   const dupRow = {
     ...SNAPSHOT_ROW,

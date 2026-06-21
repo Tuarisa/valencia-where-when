@@ -1,5 +1,5 @@
 import { sql } from "../../db";
-import { compact, nowIso } from "../util";
+import { compact } from "../util";
 import { parseEventDate, upsertPlainEvent, type EventInsert } from "./worldafisha";
 import { isJunkCard } from "./valenciarusa";
 import { markRawItem } from "./types";
@@ -24,14 +24,26 @@ import type { RawItem } from "./types";
 //     `/l/`,`/organizer/`,`/help/`,`/support/`,`/ttd/`,`/how-it-works`,`/spectrum/`,
 //     `/directory/`, cookie/nav anchors → all dropped.
 //
-// STRATEGY (T140 — deterministic JS, NO LLM): the `/e/` link_cards are the authoritative
-// list of real events (correct title + canonical URL). The snapshot is a side-table we
-// index by normalized title to look up each event's date + venue. We emit ONE event per
-// distinct `/e/` URL (the live rows duplicate Pub Crawl / Jazz at Loom under different
-// `?aff=` query params — same event id, so we de-dupe on the path-without-query).
-// Undated real events still emit (start_date null) — a wrong date is worse than none
-// (mirrors fever/worldafisha). Fail-soft + append-only: an unparseable row is skipped,
-// every processed raw row is marked normalized, nothing throws (constitution).
+// STRATEGY (T140 — deterministic JS, NO LLM): the page_snapshot is the AUTHORITATIVE set of
+// real, dated Valencia events. The generic web parser only emitted a `/e/` link_card for a
+// SUBSET of the cards (9 anchors → 7 distinct ids on the live rows), but the snapshot lists
+// every card with its title + date-expr + venue. Keying emission off the link_cards
+// therefore DROPPED ~half the real events (e.g. "Música coral en directo", "PENYAIR en
+// VALENCIA", "Inside Daidalonic 2026", "Concierto Coral Internacional" — fully dated, but
+// no anchor). FIX: drive emission from the SNAPSHOT cards; attach the canonical `/e/` URL
+// when a same-title link_card exists, else fall back to the listing URL + the snapshot row.
+//
+// A snapshot card renders as one of two shapes:
+//   • PHYSICAL Valencia card → "<title> <date-expr>\n<venue>\nCheck ticket price on event"
+//     (a venue line precedes the marker). These are the real events we emit.
+//   • ONLINE / out-of-town card → "<title> <date-expr-with-foreign-tz>\nCheck ticket price
+//     on event" — NO venue line, and the time carries a non-local tz ("GMT+1","EDT","PDT",
+//     "CDT","GMT+12"). These are global webinars / US job fairs, NOT Valencia plans → DROP.
+//
+// We de-dupe cards by normalized title (the snapshot repeats each card 2–3×). Undated real
+// events still emit (start_date null) — a wrong date is worse than none (mirrors fever/
+// worldafisha). Fail-soft + append-only: an unparseable row is skipped, every processed raw
+// row is marked normalized, nothing throws (constitution).
 
 export const EVENTBRITE_SOURCE_KEY = "web:eventbrite";
 const SOURCE_URL = "https://www.eventbrite.es/d/spain--valencia/events/";
@@ -160,112 +172,205 @@ function titleKey(title: string): string {
 }
 
 export interface SnapshotEntry {
+  title: string;
   dateExpr: string;
   venue: string | null;
+  online: boolean;
 }
 
-// PURE: index the page_snapshot text by title → { dateExpr, venue }. Each card renders
-// as "<title> <date-expr>\n<venue>\nCheck ticket price on event". We anchor on the
-// "Check ticket price on event" marker (present on EVERY real card), walk back two lines
-// to recover venue and the title+date line, then split the date-expr off the END of that
-// line by the leading date token ("hoy"/"mañana"/weekday/"Mon,"…). The remaining prefix
-// is the title. Keyed by normalized title; first occurrence wins (the page repeats cards).
+// A leading date token marks where the date-expr begins inside a "title <date>" line.
+// ES relative/weekday OR English "Mon," etc. The `(.*?)` before it is the title.
+const DATE_START = new RegExp(
+  "^(.*?)\\s+(" +
+    "hoy\\b|ma[nñ]ana\\b|" +
+    "lunes\\b|martes\\b|mi[eé]rcoles\\b|jueves\\b|viernes\\b|s[aá]bado\\b|domingo\\b|" +
+    "(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),\\s" +
+    ")(.*)$",
+  "i",
+);
+
+// PURE: a non-local timezone suffix on the time marks a card as ONLINE / out-of-town
+// (global webinar, US job fair). The Valencia listing renders local cards with NO tz at
+// all; only the foreign cards carry one. Matches "GMT+1", "GMT+12", "EDT", "PDT", "CDT", …
+const FOREIGN_TZ = /\b(GMT[+-]\d{1,2}|UTC[+-]\d{1,2}|[ECMP][DS]T)\b/;
+
+// PURE: index the page_snapshot by normalized title → { title, dateExpr, venue, online }.
+// Each card renders as "<title> <date-expr>\n<venue>\nCheck ticket price on event" for a
+// PHYSICAL Valencia card, or "<title> <date-expr+tz>\nCheck ticket price on event" (no
+// venue line) for an ONLINE / out-of-town card. We anchor on the "Check ticket price on
+// event" marker (present on EVERY card). The title+date line is i-2 when a venue line
+// sits at i-1, or i-1 when the marker follows the title directly (online). We split the
+// date-expr off the END of the title line by its leading date token; the prefix is the
+// title. Online cards (foreign tz, no venue) are indexed with `online:true` so the caller
+// can drop them. Keyed by normalized title; first occurrence wins (the page repeats cards).
 export function buildSnapshotIndex(snapshotText?: string | null): Map<string, SnapshotEntry> {
   const index = new Map<string, SnapshotEntry>();
   if (!snapshotText) return index;
   const lines = snapshotText.split("\n").map((l) => l.replace(/\s+/g, " ").trim());
 
-  // A leading date token marks where the date-expr begins inside the "title <date>" line.
-  // ES relative/weekday OR English "Mon," etc. The `(.*?)` before it is the title.
-  const DATE_START = new RegExp(
-    "^(.*?)\\s+(" +
-      "hoy\\b|ma[nñ]ana\\b|" +
-      "lunes\\b|martes\\b|mi[eé]rcoles\\b|jueves\\b|viernes\\b|s[aá]bado\\b|domingo\\b|" +
-      "(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),\\s" +
-      ")(.*)$",
-    "i",
-  );
-
   for (let i = 0; i < lines.length; i++) {
     if (lines[i] !== "Check ticket price on event") continue;
-    const venueLine = lines[i - 1] ?? "";
-    const titleDateLine = lines[i - 2] ?? "";
-    if (!titleDateLine) continue;
-    const m = DATE_START.exec(titleDateLine);
+
+    // The title+date line is i-2 (a venue line at i-1) OR i-1 (marker follows title
+    // directly, i.e. an online card with no venue). Prefer i-2 when it parses as a
+    // title+date line; otherwise treat i-1 as the title line (online card).
+    const prev1 = lines[i - 1] ?? "";
+    const prev2 = lines[i - 2] ?? "";
+    let m = prev2 ? DATE_START.exec(prev2) : null;
+    let venue: string | null = compact(prev1);
+    if (!m) {
+      // No title+date at i-2 → online card whose title+date IS at i-1, no venue line.
+      m = prev1 ? DATE_START.exec(prev1) : null;
+      venue = null;
+    }
     if (!m) continue;
+
     const title = compact(m[1]) ?? "";
     if (!title) continue;
     // date-expr = the matched token + the remainder; trim a trailing "+ N more".
-    const dateExpr = compact(`${m[2]}${m[3]}`)?.replace(/\s*\+\s*\d+\s+more\s*$/i, "") ?? "";
-    const venue = compact(venueLine);
+    const rawDateExpr = compact(`${m[2]}${m[3]}`) ?? "";
+    const dateExpr = rawDateExpr.replace(/\s*\+\s*\d+\s+more\s*$/i, "");
+    // ONLINE = no venue line AND a foreign-tz time. Both must hold: a Valencia card
+    // always has a venue line, and never carries a tz suffix.
+    const online = venue === null && FOREIGN_TZ.test(rawDateExpr);
+
     const key = titleKey(title);
-    if (!index.has(key)) index.set(key, { dateExpr, venue });
+    if (!index.has(key)) index.set(key, { title, dateExpr, venue, online });
   }
   return index;
 }
 
-// PURE: turn pending Eventbrite raw rows into event drafts. Keeps ONLY distinct `/e/`
-// link_cards; looks up date + venue in the snapshot index by title. DB-free (offline
-// unit-testable). `today` is injected for deterministic relative-date resolution.
+// PURE: index the `/e/` link_cards by normalized title → canonical URL + the row id that
+// carried it. The snapshot has no anchors, so this is how a snapshot card recovers its
+// deep `/e/` link. De-duped on the path-without-query (the live rows list the same event
+// id twice under different `?aff=` params); first occurrence wins, so a stable row id is
+// attributed to each event. `snapshotId` is the fallback source_item id for cards that
+// have no link_card at all.
+export interface LinkCardRef {
+  url: string;
+  sourceItemId: number;
+}
+
+export function buildLinkCardIndex(rows: RawItem[]): Map<string, LinkCardRef> {
+  const byTitle = new Map<string, LinkCardRef>();
+  const seenUrl = new Set<string>();
+  for (const item of rows) {
+    if (!isEventbriteEventUrl(item.url)) continue; // chrome / poi / nav → not an /e/ event
+    const title = compact(item.title);
+    if (!title) continue;
+    const canonical = eventbriteCanonicalUrl(item.url as string);
+    if (seenUrl.has(canonical)) continue;
+    seenUrl.add(canonical);
+    const key = titleKey(title);
+    if (!byTitle.has(key)) byTitle.set(key, { url: canonical, sourceItemId: item.id });
+  }
+  return byTitle;
+}
+
+// PURE: turn pending Eventbrite raw rows into event drafts. SNAPSHOT-DRIVEN — the snapshot
+// is the authoritative set of real Valencia cards (the link_cards only anchor a subset).
+// We emit ONE event per distinct snapshot card, drop online/out-of-town cards, and attach
+// the canonical `/e/` deep link when a same-title link_card exists (else the listing URL).
+// DB-free (offline unit-testable). `today` is injected for deterministic relative-date
+// resolution.
 export function buildEventbriteEvents(
   rows: RawItem[],
   today: Date = new Date(),
 ): Array<{ draft: EventInsert; sourceItemId: number }> {
-  // Find the snapshot row (the only date/venue source) and build the lookup once.
+  // Find the snapshot row (the authoritative card source) and build the lookup once.
   let snapshot = "";
+  let snapshotId = 0;
+  let snapshotImage: string | null = null;
   for (const item of rows) {
-    if (parseRaw(item).kind === "page_snapshot") {
+    const raw = parseRaw(item);
+    if (raw.kind === "page_snapshot") {
       snapshot = item.raw_text || "";
+      snapshotId = item.id;
+      snapshotImage = raw.meta?.["og:image"] || null;
       break;
     }
   }
-  const index = buildSnapshotIndex(snapshot);
+  const cards = buildSnapshotIndex(snapshot);
+  const links = buildLinkCardIndex(rows);
 
   const out: Array<{ draft: EventInsert; sourceItemId: number }> = [];
-  const seen = new Set<string>();
+  const emitted = new Set<string>();
 
-  for (const item of rows) {
-    const raw = parseRaw(item);
-    if (raw.kind === "page_snapshot") continue; // the index, not an event
-    if (!isEventbriteEventUrl(item.url)) continue; // chrome / poi / nav → drop
+  for (const [key, card] of cards) {
+    if (card.online) continue; // global webinar / out-of-town job fair → drop
+    const title = card.title;
+    // Deterministic chrome guard (shared) — catches a stray nav/badge line that slipped
+    // through the card shape (e.g. "Explore more events").
+    if (isJunkCard(title, title, EVENTBRITE_NAME)) continue;
 
-    const title = compact(item.title);
-    if (!title) continue;
-    // Deterministic chrome guard (shared) — also catches a stray bare-name card.
-    if (isJunkCard(title, item.raw_text, EVENTBRITE_NAME)) continue;
+    const start = parseEventbriteDate(card.dateExpr, today);
+    const start_time = parseEventbriteTime(card.dateExpr);
 
-    // De-dupe the same event listed under different `?aff=` params (same `/e/` path).
-    const canonical = eventbriteCanonicalUrl(item.url as string);
-    if (seen.has(canonical)) continue;
-    seen.add(canonical);
-
-    const hit = index.get(titleKey(title));
-    const start = hit ? parseEventbriteDate(hit.dateExpr, today) : null;
-    const start_time = hit ? parseEventbriteTime(hit.dateExpr) : null;
-    const venue = hit?.venue ?? null;
+    // Attach the canonical /e/ deep link when a same-title link_card exists; otherwise
+    // attribute the event to the snapshot row and link to the listing page.
+    const link = links.get(key);
+    const url = link?.url ?? SOURCE_URL;
+    const sourceItemId = link?.sourceItemId ?? snapshotId;
+    emitted.add(key);
 
     out.push({
-      sourceItemId: item.id,
+      sourceItemId,
       draft: {
         title: title.slice(0, 300),
-        description: compact(item.raw_text)?.slice(0, 2000) ?? null,
         category: "culture",
         language: "es",
         audience: "all",
         start_date: start,
         start_time,
-        venue_name: venue,
+        venue_name: card.venue,
         city: "Valencia",
         country: "Spain",
-        url: item.url ?? SOURCE_URL,
-        image_url: raw.meta?.["og:image"] || null,
+        url,
+        image_url: snapshotImage,
         source: EVENTBRITE_SOURCE_KEY,
-        source_url: item.url ?? SOURCE_URL,
-        raw_excerpt: compact(item.raw_text)?.slice(0, 1000) ?? null,
+        source_url: url,
+        raw_excerpt: title.slice(0, 1000),
+      },
+    });
+  }
+
+  // Second pass: an `/e/` link_card whose title has NO snapshot card still emits, undated
+  // (the snapshot can be truncated or the anchor scraped without a matching listing card).
+  // A wrong date is worse than none (mirrors fever/worldafisha); the canonical /e/ URL +
+  // correct title are still real.
+  for (const [key, ref] of links) {
+    if (emitted.has(key)) continue;
+    const title = compact(rowTitleFor(rows, ref.sourceItemId)) ?? "";
+    if (!title) continue;
+    if (isJunkCard(title, title, EVENTBRITE_NAME)) continue;
+    emitted.add(key);
+    out.push({
+      sourceItemId: ref.sourceItemId,
+      draft: {
+        title: title.slice(0, 300),
+        category: "culture",
+        language: "es",
+        audience: "all",
+        start_date: null,
+        start_time: null,
+        venue_name: null,
+        city: "Valencia",
+        country: "Spain",
+        url: ref.url,
+        image_url: snapshotImage,
+        source: EVENTBRITE_SOURCE_KEY,
+        source_url: ref.url,
+        raw_excerpt: title.slice(0, 1000),
       },
     });
   }
   return out;
+}
+
+// PURE: recover the original title for a link_card source_item id.
+function rowTitleFor(rows: RawItem[], id: number): string | null {
+  for (const r of rows) if (r.id === id) return r.title ?? null;
+  return null;
 }
 
 // Normalizer for Eventbrite. Reads pending raw rows, builds event drafts, upserts each
