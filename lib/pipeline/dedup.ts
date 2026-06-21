@@ -396,10 +396,84 @@ export function mergeGroup(group: DedupEvent[], rankFn: RankFn = sourceWeightRan
   return { survivor: mergedSurvivor, mergedSources, losers };
 }
 
+// ===================== T033 provenance: entity_sources rows =====================
+// Constitution non-negotiable: "dedup keeps a link to every source via
+// `entity_sources`". After a group resolves to ONE survivor, we record one
+// contributor row per member that carries a source_item_id — so the survivor's
+// provenance (every raw `source_items` row that fed it) stays queryable even
+// though the losers are soft-collapsed to status='duplicate'.
+
+// One contributor row destined for the entity_sources table. Pure data — the
+// orchestrator turns each into an idempotent UPSERT (guarded by an FK existence
+// check on source_item_id).
+export interface EntitySourceRow {
+  entity_type: "event";
+  entity_id: number; // survivor events.id
+  source_item_id: number; // member's raw source_items.id
+  source_key: string | null;
+  source_url: string | null;
+  role: "primary" | "duplicate";
+  match_method: string; // 'self' | 'strong' | 'fuzzy'
+  match_score: number | null;
+}
+
+// PURE: build the entity_sources rows for one resolved merge. `survivor` must
+// carry a numeric id; `members` is the FULL contributing group (survivor +
+// losers). Emits ONE row per member that HAS a numeric source_item_id — the
+// survivor as role='primary', every other member as role='duplicate'. Members
+// without a source_item_id (seed-only events) are SKIPPED silently. De-dups on
+// source_item_id (a member appearing twice yields one row). The FK existence
+// guard lives in the orchestrator (this stays DB-free + unit-testable).
+export function entitySourceRows(
+  survivor: DedupEvent,
+  members: DedupEvent[],
+  matchMethod: string,
+): EntitySourceRow[] {
+  const entityId = survivor.id;
+  if (entityId == null) return [];
+  const out: EntitySourceRow[] = [];
+  const seen = new Set<number>();
+  for (const m of members) {
+    const sid = typeof m.source_item_id === "number" ? m.source_item_id : null;
+    if (sid == null || seen.has(sid)) continue;
+    seen.add(sid);
+    const isSurvivor = m.id != null && m.id === entityId;
+    out.push({
+      entity_type: "event",
+      entity_id: entityId,
+      source_item_id: sid,
+      source_key: typeof m.source === "string" && m.source ? m.source : null,
+      source_url: typeof m.source_url === "string" && m.source_url ? m.source_url : null,
+      role: isSurvivor ? "primary" : "duplicate",
+      match_method: isSurvivor ? "self" : matchMethod,
+      match_score: typeof m.match_score === "number" ? m.match_score : null,
+    });
+  }
+  return out;
+}
+
+// Persist one entity_sources row, idempotently + FK-safe. The WHERE EXISTS guard
+// makes the INSERT a no-op when the referenced source_items row is absent
+// (dangling id) — so a seed/offline event whose source_item_id points at nothing
+// never raises an FK violation; it is simply skipped. ON CONFLICT keeps the row
+// idempotent across re-runs and promotes role/method/score if a later pass has a
+// stronger signal.
+async function writeEntitySource(row: EntitySourceRow, ts: string, exec: typeof sql): Promise<void> {
+  await exec`
+    INSERT INTO entity_sources
+      (entity_type, entity_id, source_item_id, source_key, source_url, role, match_method, match_score, created_at)
+    SELECT ${row.entity_type}, ${row.entity_id}, ${row.source_item_id}, ${row.source_key},
+           ${row.source_url}, ${row.role}, ${row.match_method}, ${row.match_score}, ${ts}
+    WHERE EXISTS (SELECT 1 FROM source_items WHERE id = ${row.source_item_id})
+    ON CONFLICT (entity_type, entity_id, source_item_id) DO UPDATE
+      SET role = EXCLUDED.role, match_method = EXCLUDED.match_method, match_score = EXCLUDED.match_score`;
+}
+
 export interface DedupResult {
   groups: number;
   merged: number;
   collapsed: number;
+  provenanceRows: number;
 }
 
 // Async orchestrator. Loads candidate events (joined with their source weight),
@@ -419,6 +493,22 @@ export async function dedup({ exec = sql }: { exec?: typeof sql } = {}): Promise
   const ts = nowIso();
   let merged = 0;
   let collapsed = 0;
+  let provenanceRows = 0;
+
+  // T033: write the survivor's entity_sources provenance for one resolved group.
+  // PURE entitySourceRows() builds the rows (survivor='primary', losers='duplicate',
+  // members without a source_item_id skipped); writeEntitySource() then UPSERTs each
+  // behind an FK-existence guard, so dangling/seed-only ids are skipped silently.
+  const persistProvenance = async (
+    survivor: DedupEvent,
+    members: DedupEvent[],
+    matchMethod: string,
+  ) => {
+    for (const row of entitySourceRows(survivor, members, matchMethod)) {
+      await writeEntitySource(row, ts, exec);
+      provenanceRows++;
+    }
+  };
 
   // T035 strong-match pre-pass: deterministically collapse exact-equal url /
   // (source, external_ref) rows FIRST, then run the fuzzy title/date pass on the
@@ -430,14 +520,18 @@ export async function dedup({ exec = sql }: { exec?: typeof sql } = {}): Promise
       WHERE id = ${loser.id ?? null}`;
     collapsed++;
   }
-  // Persist strong survivors' accumulated metadata_json.sources[] before fuzzy.
+  // Persist strong survivors' accumulated metadata_json.sources[] before fuzzy,
+  // plus the entity_sources provenance for each strong-collapsed survivor (its
+  // own row + one per collapsed loser that carries a source_item_id).
   for (const ev of survivors) {
     if (ev.id == null) continue;
-    if (collapses.some((c) => c.survivorId === ev.id)) {
+    const groupCollapses = collapses.filter((c) => c.survivorId === ev.id);
+    if (groupCollapses.length) {
       await exec`UPDATE events
         SET metadata_json = ${ev.metadata_json ?? null}, last_seen = ${ts}
         WHERE id = ${ev.id}`;
       merged++;
+      await persistProvenance(ev, [ev, ...groupCollapses.map((c) => c.loser)], "strong");
     }
   }
 
@@ -462,9 +556,12 @@ export async function dedup({ exec = sql }: { exec?: typeof sql } = {}): Promise
         WHERE id = ${loser.id ?? null}`;
       collapsed++;
     }
+    // T033 provenance: survivor + every fuzzy-merged loser (each with a
+    // source_item_id) → one entity_sources row apiece, FK-guarded + idempotent.
+    await persistProvenance(survivor, members, "fuzzy");
   }
 
-  return { groups: groups.size, merged, collapsed };
+  return { groups: groups.size, merged, collapsed, provenanceRows };
 }
 
 // Record on a soft-collapsed loser which survivor it merged into. Pure helper.

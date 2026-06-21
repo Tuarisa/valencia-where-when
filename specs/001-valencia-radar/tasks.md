@@ -123,13 +123,16 @@ exist, raw layer still append-only.
   `sources[]` on the survivor; update `dedup.ts` (it currently writes `'merged'`).
   *(done: one-line status fix; verified on the local DB — losers → duplicate+merged_into.
   `merged_into` was already written; loader's `status='upcoming'` filter excludes them.)*
-- [ ] T033 [C] Add the `entity_sources` writes: one row per contributing
+- [x] T033 [C] Add the `entity_sources` writes: one row per contributing
   `source_item_id` (UNIQUE upsert), `role`, `match_method`, `match_score`; survivor id
-  stable. ⚠️ **BLOCKED on seed reality**: the seed loads no `source_items` (only
-  events/places/media/sources), so `entity_sources.source_item_id REFERENCES
-  source_items(id)` can't be satisfied from seed data. Needs a real ingest run (which
-  populates `source_items`) OR a one-time `source_items` export added to the seed. Guard
-  the insert on `source_item_id` present + `EXISTS(source_items)`.
+  stable. *(DONE 2026-06-21 — UNBLOCKED by the live ingest (898 real `source_items`). Pure
+  `entitySourceRows(survivor, members, method)` (survivor `role='primary'/'self'`, losers
+  `'duplicate'`+`'strong'`/`'fuzzy'`; skips members w/o `source_item_id`; DB-free, +4 tests) +
+  idempotent FK-safe `writeEntitySource` (`INSERT … SELECT … WHERE EXISTS(source_items) ON
+  CONFLICT DO UPDATE`) — a dangling/seed-only `source_item_id` is a silent no-op (offline/seed
+  path safe, PROVEN: id 9999999 → no error, no insert). Wired into BOTH merge paths; merge
+  logic + over-merge guards (T035/T141/T156) UNCHANGED. Live DB: entity_sources 0→1, FK holds,
+  idempotent re-run. 301/301, build green.)*
 - [ ] T034 [C] Backfill `entity_sources` for the 90 seed duplicates from
   `merged_into`+`source_item_id`. Note: the 90 rows ALREADY use
   `status='duplicate'`+`merged_into` (no status migration needed). Backfill is BLOCKED

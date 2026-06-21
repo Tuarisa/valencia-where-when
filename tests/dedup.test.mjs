@@ -598,6 +598,93 @@ test('T136: worldafisha ≈ concerten PAIR — same RU-artist tour merges, both 
   assert.equal(survivor.start_date, '2026-10-04');
 });
 
+// ---------- T033 provenance: entitySourceRows (mirror of lib/pipeline/dedup.ts) ----------
+// PURE: one entity_sources row per group member that carries a source_item_id —
+// survivor as role='primary', losers as role='duplicate'; members without a
+// source_item_id are skipped; de-dups on source_item_id. (DB-free; the FK-existence
+// guard + idempotent UPSERT live in the orchestrator and are exercised live.)
+function entitySourceRows(survivor, members, matchMethod) {
+  const entityId = survivor.id;
+  if (entityId == null) return [];
+  const out = [];
+  const seen = new Set();
+  for (const m of members) {
+    const sid = typeof m.source_item_id === 'number' ? m.source_item_id : null;
+    if (sid == null || seen.has(sid)) continue;
+    seen.add(sid);
+    const isSurvivor = m.id != null && m.id === entityId;
+    out.push({
+      entity_type: 'event',
+      entity_id: entityId,
+      source_item_id: sid,
+      source_key: typeof m.source === 'string' && m.source ? m.source : null,
+      source_url: typeof m.source_url === 'string' && m.source_url ? m.source_url : null,
+      role: isSurvivor ? 'primary' : 'duplicate',
+      match_method: isSurvivor ? 'self' : matchMethod,
+      match_score: typeof m.match_score === 'number' ? m.match_score : null,
+    });
+  }
+  return out;
+}
+
+test('T033 entitySourceRows: one row per member-with-source_item_id, correct role', () => {
+  const survivor = { id: 2, source: 'worldafisha', source_url: 'u2', source_item_id: 20 };
+  const losers = [
+    { id: 1, source: 'valenciarusa', source_url: 'u1', source_item_id: 10 },
+    { id: 3, source: 'concerten', source_url: 'u3', source_item_id: 30 },
+  ];
+  const rows = entitySourceRows(survivor, [survivor, ...losers], 'fuzzy');
+  assert.equal(rows.length, 3, 'three members → three rows');
+  const prim = rows.filter((r) => r.role === 'primary');
+  const dup = rows.filter((r) => r.role === 'duplicate');
+  assert.equal(prim.length, 1, 'exactly one primary (the survivor)');
+  assert.equal(dup.length, 2, 'two duplicates (the losers)');
+  // survivor row: role primary, match_method 'self', points at survivor id
+  assert.deepEqual(
+    { entity_id: prim[0].entity_id, source_item_id: prim[0].source_item_id, method: prim[0].match_method },
+    { entity_id: 2, source_item_id: 20, method: 'self' },
+  );
+  // all rows point at the SURVIVOR id, entity_type 'event'
+  assert.ok(rows.every((r) => r.entity_id === 2 && r.entity_type === 'event'));
+  // loser rows carry the passed matchMethod + their own source key/url
+  assert.ok(dup.every((r) => r.match_method === 'fuzzy'));
+  assert.deepEqual(dup.map((r) => r.source_item_id).sort((a, b) => a - b), [10, 30]);
+  assert.deepEqual(dup.map((r) => r.source_key).sort(), ['concerten', 'valenciarusa']);
+});
+
+test('T033 entitySourceRows: members WITHOUT a source_item_id are skipped (seed path)', () => {
+  const survivor = { id: 2, source: 'a', source_item_id: 20 };
+  const members = [
+    survivor,
+    { id: 1, source: 'b' }, // seed event: no source_item_id → skipped
+    { id: 3, source: 'c', source_item_id: null }, // explicit null → skipped
+    { id: 4, source: 'd', source_item_id: 40 }, // has one → kept
+  ];
+  const rows = entitySourceRows(survivor, members, 'fuzzy');
+  assert.equal(rows.length, 2, 'only the two members with a source_item_id emit rows');
+  assert.deepEqual(rows.map((r) => r.source_item_id).sort((a, b) => a - b), [20, 40]);
+});
+
+test('T033 entitySourceRows: survivor without an id → no rows; de-dups on source_item_id', () => {
+  // No survivor id (offline/seed survivor) → cannot key provenance → emit nothing.
+  assert.deepEqual(entitySourceRows({ id: null, source_item_id: 5 }, [{ source_item_id: 5 }], 'strong'), []);
+  // A duplicated source_item_id across members yields ONE row (matches the UNIQUE
+  // constraint + ON CONFLICT idempotency).
+  const survivor = { id: 9, source_item_id: 99 };
+  const rows = entitySourceRows(survivor, [survivor, { id: 8, source_item_id: 99 }], 'strong');
+  assert.equal(rows.length, 1, 'same source_item_id twice → one row (idempotent shape)');
+  assert.equal(rows[0].role, 'primary');
+});
+
+test('T033 entitySourceRows: a survivor that is also its own only member → one primary row', () => {
+  // Strong-collapse survivor whose only contributor is itself (degenerate but legal).
+  const s = { id: 7, source: 'x', source_url: 'ux', source_item_id: 70 };
+  const rows = entitySourceRows(s, [s], 'strong');
+  assert.deepEqual(rows.map((r) => ({ role: r.role, sid: r.source_item_id, m: r.match_method })), [
+    { role: 'primary', sid: 70, m: 'self' },
+  ]);
+});
+
 // ---------- Places dedup primitives (mirror of lib/pipeline/dedup.ts T036/T037) ----------
 function jaroWinkler(a, b) {
   const s1 = a ?? '';
