@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { eventGeoQueries } from "../lib/pipeline/geo.ts";
+import { isCentroid } from "../lib/pipeline/dedup.ts";
 
 // Pure-logic mirror of lib/pipeline/geo.ts `mapsAddressQuery` (T135). The Google-Maps
 // `q=` text leads with the VENUE NAME, which fools Nominatim into the València
@@ -61,4 +63,50 @@ test("mapsAddressQuery: returns null when there is no street segment", () => {
   assert.equal(mapsAddressQuery("HANAZONO Benimaclet"), null);
   assert.equal(mapsAddressQuery(""), null);
   assert.equal(mapsAddressQuery(null), null);
+});
+
+// T161 — event geocoding venue-name fallback. Many derived events carry a clear
+// venue_name (Roig Arena, Plaza de Toros de Valencia, …) but NO address, so the
+// address-only path left them at null lat/lng. `eventGeoQueries` now adds a
+// `<venue_name>, <city||Valencia>, Spain` query; the caller still gates every hit
+// through `isCentroid` so venue names that only resolve to the city centre
+// (e.g. Teatro Olympia) stay null rather than getting a fake pin.
+
+test("eventGeoQueries: venue_name with no address yields a venue-name query", () => {
+  const qs = eventGeoQueries({ venue_name: "Roig Arena", address: null, city: "Valencia" }, null);
+  assert.ok(qs.includes("Roig Arena, Valencia, Spain"), `got ${JSON.stringify(qs)}`);
+});
+
+test("eventGeoQueries: defaults missing city to Valencia", () => {
+  const qs = eventGeoQueries({ venue_name: "Plaza de Toros de Valencia", address: null, city: null }, null);
+  assert.ok(qs.includes("Plaza de Toros de Valencia, Valencia, Spain"), `got ${JSON.stringify(qs)}`);
+});
+
+test("eventGeoQueries: honors a non-default city", () => {
+  const qs = eventGeoQueries({ venue_name: "Discoteca Eclipse", address: null, city: "Gandia" }, null);
+  assert.ok(qs.includes("Discoteca Eclipse, Gandia, Spain"), `got ${JSON.stringify(qs)}`);
+});
+
+test("eventGeoQueries: maps `q=` street address ranks first, deduped, no nulls", () => {
+  const qs = eventGeoQueries(
+    { venue_name: "HANAZONO", address: null, city: "Valencia" },
+    "HANAZONO - Benimaclet, Carrer del Doctor Garcia Brustenga, 3, Benimaclet, 46020 València, Valencia",
+  );
+  assert.equal(qs[0], "Carrer del Doctor Garcia Brustenga 3, 46020 València, Spain");
+  assert.ok(qs.every((q) => typeof q === "string" && q.length > 0));
+  assert.equal(new Set(qs).size, qs.length); // deduped
+});
+
+test("eventGeoQueries: no venue_name and no address → only a bare city query (centroid-guarded)", () => {
+  // joinParts always appends city+Spain, so the list is the lone "<city>, Spain"
+  // query. That resolves to the València centroid, which the caller's isCentroid
+  // guard then rejects — so such an event correctly stays null rather than mispinned.
+  assert.deepEqual(eventGeoQueries({ venue_name: null, address: null, city: "Valencia" }, null), ["Valencia, Spain"]);
+});
+
+test("fallback decision: a real venue coord is kept, a city centroid is rejected", () => {
+  // Roig Arena resolves to a real, distinct pin → kept (not a centroid).
+  assert.equal(isCentroid(39.4493, -0.3573), false);
+  // València generic-centre fallback (Teatro Olympia's venue-name hit) → rejected.
+  assert.equal(isCentroid(39.4697065, -0.3763353), true);
 });

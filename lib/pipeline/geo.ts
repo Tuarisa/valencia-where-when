@@ -156,6 +156,27 @@ export async function resolvePlaceGeo(
   return { lat, lng, geo_source: source, note, mapsQuery: map.query_text };
 }
 
+// PURE: build the prioritized Nominatim query list for an EVENT, deduped, in priority
+// order. The maps `q=` address (when the venue_url carried one) ranks first; then the
+// VENUE-NAME fallback (T161) — many derived events have a clear venue_name (Roig Arena,
+// Plaza de Toros de Valencia, …) but NO address, so without this they never geocode at
+// all. `<venue_name>, <city||Valencia>, Spain` resolves a lot of them to a real pin
+// (the isCentroid guard in the caller rejects the venue-name hits that only land on a
+// city-centre fallback, e.g. Teatro Olympia — better null than a fake pin).
+export function eventGeoQueries(
+  row: { venue_name?: string | null; address?: string | null; city?: string | null },
+  mapsQueryText?: string | null,
+): string[] {
+  const city = row.city || "Valencia";
+  return [
+    mapsAddressQuery(mapsQueryText),
+    normalizeQuery(mapsQueryText),
+    joinParts([row.venue_name, city, "Spain"]),
+    joinParts([row.address, city, "Spain"]),
+    joinParts([row.venue_name, row.address, city, "Spain"]),
+  ].filter((q, i, a) => q && a.indexOf(q) === i) as string[];
+}
+
 export async function geoEnrich(limit = 40, delayMs = 1100): Promise<{ events_updated: number; places_updated: number }> {
   let eventsUpdated = 0, placesUpdated = 0;
 
@@ -170,17 +191,16 @@ export async function geoEnrich(limit = 40, delayMs = 1100): Promise<{ events_up
     let { lat, lng } = map;
     let source = "map_url", note = map.query_text;
     if (lat == null || lng == null) {
-      const queries = [
-        normalizeQuery(map.query_text),
-        joinParts([row.venue_name, row.city || "Valencia", "Spain"]),
-        joinParts([row.address, row.city || "Valencia", "Spain"]),
-        joinParts([row.venue_name, row.address, row.city || "Valencia", "Spain"]),
-      ].filter((q, i, a) => q && a.indexOf(q) === i) as string[];
+      const queries = eventGeoQueries(row, map.query_text);
       for (const q of queries) {
         const r = await geocodeText(q);
-        note = r.display || q; source = "nominatim";
         await sleep(delayMs);
-        if (r.lat != null && r.lng != null) { lat = r.lat; lng = r.lng; break; }
+        // Reject centroid/city-fallback hits — a misleading pin at the city centre is
+        // worse than none (mirrors resolvePlaceGeo). Only accept a real, distinct coord.
+        if (r.lat != null && r.lng != null && !isCentroid(r.lat, r.lng)) {
+          lat = r.lat; lng = r.lng; note = r.display || q; source = "nominatim";
+          break;
+        }
       }
     }
     if (lat != null && lng != null) {
