@@ -883,7 +883,7 @@ exist, raw layer still append-only.
   normalizer/geo should read the city from the URL slug / address, not blanket-default to Valencia. Check
   how widespread (other `-alikante-`/`-barselona-` slugs tagged Valencia) and fix the city assignment.
 
-- [ ] T173 [bake] **Proper seed re-bake preserving curated + Hemisfèric (picks up T168/T169 fixes)** (user
+- [x] T173 [bake] **Proper seed re-bake preserving curated + Hemisfèric (picks up T168/T169 fixes)** (user
   rule: confirm destructive `data/seed/` overwrite first). The T168/T169 dedup + date fixes are live in code
   + the local DB but NOT in `data/seed/events.json` — the T168 agent skipped the export because a naive
   `export-seed --commit` REGRESSES the seed: (a) the live DB has 0 `api:hemisferic` rows (they live in

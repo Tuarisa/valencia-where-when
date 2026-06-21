@@ -42,3 +42,5 @@ data/.cache/
 
 # export-seed.mjs scratch output (T144) — not a deliverable, regenerate from the live DB
 data/seed-export/
+# rebake-seed.mjs scratch output (T173) — not a deliverable, regenerate from the live DB
+data/seed-rebake/
