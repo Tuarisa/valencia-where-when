@@ -295,6 +295,32 @@ valenciarusa 19/19, vidacultural 10/9, concerten 5/3, valenciabonita 5/2 [relati
 45/35). Was ~42 events near-all-null before. NEXT: confirm seed-rebuild scope/overwrite policy with the
 user, then re-normalize→export the clean dated seed (the other ~13 sources still lack normalizers → all
 `ignored`; full T144 bake wants those too).
+**Tick I — PAUSED on session spend-limit (resets ~03:00 Europe/Madrid).** User decision: bake ALL
+sources, DROP date-less events (skip T152). Launched Workflow `w6juuvq0q` to build the 10 remaining
+event normalizers (palau/ticketmaster/songkick/visitvalencia/hoyvalencia/eventbrite/laganzua/lacotorra/
+elcontacto/russpain) against REAL live data; agents do NOT edit `normalize.ts` (main loop wires the
+registry). **PARTIAL**: all 10 `lib/pipeline/normalizers/<src>.ts` + `tests/normalize-<src>.test.mjs`
+are ON DISK (UNTRACKED, uncommitted) but the run hit the session limit — **build:hoyvalencia + build:laganzua
+FAILED** (files exist but may be incomplete/unverified) and **8 verifies did NOT run** (palau/ticketmaster/
+songkick/visitvalencia/eventbrite/lacotorra/elcontacto/russpain built + self-checked but UNVERIFIED).
+Confirmed-good self-checks from the run: palau 63→10 ev/10 dated (8 tests), ticketmaster 65→28/28 (11),
+songkick 58→26/8 (date lives only in a partner row). Full report: the workflow output file.
+**RESUME PLAN (after limit reset):** (1) re-verify the 8 + re-build hoyvalencia/laganzua; (2) `node -c`
+each + run each new test file, fix failures; (3) wire all 10 into `NORMALIZER_REGISTRY` (each exports
+`<NAME>_SOURCE_KEY` + `normalize<Name>`); (4) gate `npm run build` + `npm test`; (5) re-normalize the live
+DB + measure all 16 sources; (6) commit. The 10 untracked files persist on disk meanwhile. (User: "подожди
+1ч 20м и продолжи тики с этим".)
+**RESUMED (limit reset, user OK'd expensive actions).** Triage: all 10 new test files PASS
+(palau 8 / ticketmaster 11 / songkick 8 / visitvalencia 8 / hoyvalencia 16 / eventbrite 8 /
+laganzua 9 / lacotorra 8 / elcontacto 8 / russpain 11) — the "failed" builds were complete.
+Wired all 10 into `NORMALIZER_REGISTRY` (now 17). Gate: clean build green, **289/289** tests.
+**Full real-data measure (16 event sources, read-only): 709 raw → 367 events, 239 dated (65%).**
+GOOD: palau 10/10, ticketmaster 28/28, worldafisha 23/23, valenciarusa 19/19. **QUALITY ISSUES
+to FIX (synthetic tests pass but real data is off) → T154**: visitvalencia 56 events / **0 dated**
+(dates not parsed), lacotorra 8 raw → **56 events** (explosion?), laganzua **1**/47 (over-filter),
+elcontacto 0/3 + russpain 0/4 (RU sites, 0 events), eventbrite 7/61 + songkick 8-dated/26 +
+hoyvalencia 38/76 (check). Adversarial verify never ran (died on the limit) — these need a
+verify+fix pass before the seed bake.
 
 **Non-negotiables** (see constitution v1.1.0): append-only raw `source_items`; dedup
 keeps a link to every source (via `entity_sources`) and never merges on fallback geo

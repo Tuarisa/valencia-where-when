@@ -6,6 +6,16 @@ import { normalizeVidacultural, VIDACULTURAL_SOURCE_KEY } from "./normalizers/vi
 import { normalizeConcerten, CONCERTEN_SOURCE_KEY } from "./normalizers/concerten";
 import { normalizeValenciabonitaTg, VALENCIABONITA_TG_SOURCE_KEY } from "./normalizers/valenciabonita-telegram";
 import { normalizeFever, FEVER_SOURCE_KEY } from "./normalizers/fever";
+import { normalizePalau, PALAU_SOURCE_KEY } from "./normalizers/palau";
+import { normalizeTicketmaster, TICKETMASTER_SOURCE_KEY } from "./normalizers/ticketmaster";
+import { normalizeSongkick, SONGKICK_SOURCE_KEY } from "./normalizers/songkick";
+import { normalizeVisitvalencia, VISITVALENCIA_SOURCE_KEY } from "./normalizers/visitvalencia";
+import { normalizeHoyvalencia, HOYVALENCIA_SOURCE_KEY } from "./normalizers/hoyvalencia";
+import { normalizeEventbrite, EVENTBRITE_SOURCE_KEY } from "./normalizers/eventbrite";
+import { normalizeLaganzua, LAGANZUA_SOURCE_KEY } from "./normalizers/laganzua";
+import { normalizeLacotorra, LACOTORRA_SOURCE_KEY } from "./normalizers/lacotorra";
+import { normalizeElcontacto, ELCONTACTO_SOURCE_KEY } from "./normalizers/elcontacto";
+import { normalizeRusspain, RUSSPAIN_SOURCE_KEY } from "./normalizers/russpain";
 import { markRawItem } from "./normalizers/types";
 
 // Re-export the Hemisfèric path so existing imports keep working.
@@ -27,6 +37,16 @@ export const NORMALIZER_REGISTRY: Map<string, SourceNormalizer> = new Map([
   [CONCERTEN_SOURCE_KEY, normalizeConcerten],
   [VALENCIABONITA_TG_SOURCE_KEY, normalizeValenciabonitaTg],
   [FEVER_SOURCE_KEY, normalizeFever],
+  [PALAU_SOURCE_KEY, normalizePalau],
+  [TICKETMASTER_SOURCE_KEY, normalizeTicketmaster],
+  [SONGKICK_SOURCE_KEY, normalizeSongkick],
+  [VISITVALENCIA_SOURCE_KEY, normalizeVisitvalencia],
+  [HOYVALENCIA_SOURCE_KEY, normalizeHoyvalencia],
+  [EVENTBRITE_SOURCE_KEY, normalizeEventbrite],
+  [LAGANZUA_SOURCE_KEY, normalizeLaganzua],
+  [LACOTORRA_SOURCE_KEY, normalizeLacotorra],
+  [ELCONTACTO_SOURCE_KEY, normalizeElcontacto],
+  [RUSSPAIN_SOURCE_KEY, normalizeRusspain],
 ]);
 
 // Resolve a normalizer for a source key (pure — testable without a DB).
