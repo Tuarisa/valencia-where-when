@@ -820,13 +820,13 @@ exist, raw layer still append-only.
   non-engineer-friendly diagram (sources → ingest → pipeline stages → DB → site/notify) with the local-bake
   vs prod-incremental split and the AI touchpoints marked. *(DELIVERED 2026-06-21 → `ARCHITECTURE.md`.)*
 
-- [ ] T167 [review] **Independent senior-architect code review (fresh eyes)** (user, `backlog:`, 2026-06-21:
+- [x] T167 [review] **Independent senior-architect code review (fresh eyes)** (user, `backlog:`, 2026-06-21:
   "проведи код ревью в отдельном агенте так будто ты никогда не видел код, будет независим и действуй как
   сениор архитектор, приведи примеры структурных улучшений архитектуры"). Run in a SEPARATE agent that
   reviews the actual code (not the design docs) and gives concrete STRUCTURAL improvement examples. *(IN
   PROGRESS — background agent writing `specs/001-valencia-radar/code-review-independent.md`.)*
 
-- [ ] T168 [C] **Dedup gap — visible duplicate cards in the feed** (user, 2026-06-21, with screenshots).
+- [x] T168 [C] **Dedup gap — visible duplicate cards in the feed** (user, 2026-06-21, with screenshots).
   TWO live duplicate pairs the current dedup misses:
   1. **Oxxxymiron, 2026-06-28** — id 25182 `web:worldafisha` ("Oxxxymiron - Oxxxymiron Tour 2026
      «Национальность: нет»") vs id 25209 `web:valenciarusa` ("ИЮН 28 2 сеансов от 69 € Oxxxymiron в
@@ -849,7 +849,7 @@ exist, raw layer still append-only.
      "только в пятницу" → confirm real dates from the Fever page and drop/keep the Sat occurrence
      accordingly; fix the lacotorra 12:00 time.
 
-- [ ] T169 [normalizer] **Eventbrite date off-by-one (weekday/date mismatch)** (user, 2026-06-21,
+- [x] T169 [normalizer] **Eventbrite date off-by-one (weekday/date mismatch)** (user, 2026-06-21,
   `/events/25487`). Event 25487 "Saturday Language Exchange & Party" (`web:eventbrite`) is stored
   `start_date=2026-06-21` which is a **Sunday** — a weekly Saturday event landed one day late. The RENDER is
   correct (`lib/format.ts:14` computes weekday in UTC), so this is a NORMALIZER data bug — likely a timezone
@@ -870,3 +870,26 @@ exist, raw layer still append-only.
   Madrid-headliner kept). MUST land AFTER the in-flight T168 Bug-3 lacotorra fix (same file — serialize, do
   NOT edit concurrently). Then re-normalize lacotorra on the local DB + re-bake the seed. This policy
   generalizes to other all-Spain aggregators (see [[valencia-radar-content-policy]]).
+
+- [ ] T171 [normalizer] **Class-C date-parse bugs in vidacultural / valenciabonita** (found by the T168
+  fix agent's scan, 2026-06-21). `vidacultural` id 25216 (title "Неділя 28 червня" but stored 2026-08-07 —
+  wrong date) and id 25214 (stored year 2027 instead of 2026); `valenciabonita-telegram` id 25230 ("feliz
+  sábado" but stored a Monday). Date-parse bugs in `vidacultural.ts` + `valenciabonita-telegram.ts` (NOT the
+  four T168/T169 normalizers). Build fixtures from the real rows, fix the parsers (UK/RU weekday handling +
+  year inference), add regression tests, re-normalize on the live DB.
+
+- [ ] T172 [geo] **Mis-geo: Alicante events tagged city=Valencia** (found by the T168 fix agent,
+  2026-06-21). Би-2 + Орбакайте source URLs contain `-alikante-` but rows are stored `city='Valencia'`. The
+  normalizer/geo should read the city from the URL slug / address, not blanket-default to Valencia. Check
+  how widespread (other `-alikante-`/`-barselona-` slugs tagged Valencia) and fix the city assignment.
+
+- [ ] T173 [bake] **Proper seed re-bake preserving curated + Hemisfèric (picks up T168/T169 fixes)** (user
+  rule: confirm destructive `data/seed/` overwrite first). The T168/T169 dedup + date fixes are live in code
+  + the local DB but NOT in `data/seed/events.json` — the T168 agent skipped the export because a naive
+  `export-seed --commit` REGRESSES the seed: (a) the live DB has 0 `api:hemisferic` rows (they live in
+  `event_series` after the migration → would drop the 104→11 series cutover, the "Tick L" regression), and
+  (b) would reintroduce ~9 null-date `tg:logunespa` rows. So PROD still ships the pre-fix seed. Need a
+  curated-merge re-bake: corrected derived events from the live DB + the 104 curated `api:hemisferic` +
+  curated feria/fever/logunespa, 0 null dates → confirm the overwrite with the user → re-bake → round-trip
+  verify on a throwaway DB. NOTE: the user's LOCAL site (localhost, reads the live DB) ALREADY shows the
+  fixes; this is only for the prod-shipping seed.
