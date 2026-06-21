@@ -857,7 +857,7 @@ exist, raw layer still append-only.
   ALL `web:eventbrite` events (compare stored `start_date` weekday vs the title/source weekday); if so, fix
   the eventbrite normalizer's date parse (parse in Europe/Madrid, not UTC) and re-bake. Add a test.
 
-- [ ] T170 [normalizer] **lacotorra (all-Spain aggregator) → HYBRID city filter** (user decision via
+- [x] T170 [normalizer] **lacotorra (all-Spain aggregator) → HYBRID city filter** (user decision via
   AskUserQuestion, 2026-06-21). `web:lacotorra` (https://lacotorra.io/events, ENABLED, a goldmine — 56
   events incl. the user-wanted Cirque du Soleil id 25501 + «Алиса в Стране чудес» CaixaForum València id
   25491, BOTH in Valencia ✓) aggregates events across ALL Spain → ~22/56 are Madrid (12) / Barcelona (8) /
