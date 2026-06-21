@@ -83,6 +83,122 @@ const CITY_MAP: Record<string, string> = {
   "Ла-Корунья": "A Coruña",
 };
 
+// ── T170: HYBRID city filter ────────────────────────────────────────────────
+// lacotorra covers ALL of Spain (~34 Valencia / Comunitat Valenciana events + ~22
+// elsewhere: Madrid, Barcelona, Granada, Bilbao, A Coruña, Mérida, Las Palmas…).
+// For a Valencia afisha the user chose a HYBRID policy:
+//   • KEEP every event in the Comunitat Valenciana (provinces València, Alacant/
+//     Alicante, Castelló/Castellón — incl. their towns).
+//   • From OTHER Spanish cities keep ONLY major international headliners
+//     (Linkin Park, BTS, Sting, Bruno Mars, Garbage, Cirque du Soleil, …).
+//   • DROP everything else.
+// All of this is DETERMINISTIC (T140 — JS, no LLM). The signal: lacotorra bakes the
+// city into the RU title as a trailing "…в <Городе>" (and sometimes in a separate
+// city line / geocoded location_notes). The stored `city` column is UNRELIABLE here
+// (it defaults to "Valencia" when no city line is present, so many real Madrid/
+// Granada/Mérida events sit under city='Valencia') — so we read all three signals.
+
+// RU + Latin stems for Comunitat Valenciana places (province cities & well-known
+// towns). Matched as case-insensitive substrings against title + city + location_notes.
+// "comunitat/comunidad valenciana" is the geocoder's region label (location_notes).
+const CV_STEMS: string[] = [
+  // region label (appears in geocoded location_notes)
+  "comunitat valenciana", "comunidad valenciana", "comunitat valencià",
+  // Valencia city/province (RU + Latin) — "валенс"/"valenc" covers Валенсия/Валенсии/
+  // València/Valencia. NOTE: do NOT add a bare "valencia" that could match Catalan
+  // place names; "valenc" is specific enough here.
+  "валенс", "valenc",
+  // Alicante / Alacant province (RU + Latin)
+  "аликанте", "alicante", "alacant",
+  // Castellón / Castelló province (RU + Latin)
+  "кастельон", "кастельоне", "castellón", "castelló", "castellon",
+  // CV towns / comarcas that lacotorra prints WITHOUT the region word
+  "адемус", "адемусе", "ademús", "ademuz",         // Ademús (Valencia prov.)
+  "сагунто", "sagunto", "sagunt",                  // Sagunto
+  "гандия", "gandia", "gandía",                    // Gandía
+  "эльче", "elche", "elx",                         // Elche (Alicante)
+  "бенидорм", "benidorm",                          // Benidorm (Alicante)
+  "хатива", "xàtiva", "xativa", "játiva",          // Xàtiva
+  "честе", "cheste",                               // Cheste (circuit)
+  "рекена", "requena", "утьель", "utiel",          // Requena-Utiel
+  "кальпе", "calpe", "calp",                       // Calpe
+  "хавеа", "xàbia", "javea", "jávea",              // Xàbia / Jávea
+  "дения", "denia", "dénia",                       // Dénia
+  "saler", "салер",                                // El Saler (Valencia)
+  "bobal", "бобаль",                               // Tierra Bobal Fest (Valencia prov.)
+];
+
+// Cities/regions OUTSIDE the Comunitat Valenciana that lacotorra prints. A title that
+// names one of these (and NOT a CV place) is non-Valencia — keep only if a headliner.
+// Used to make isValenciaRegion robust against a CV default-city false positive: even
+// if city='Valencia' (the default), a title saying "в Мадриде" is NOT Valencia.
+const NON_CV_STEMS: string[] = [
+  "мадрид", "madrid",
+  "барселон", "barcelona", "barcelon", "catalunya", "cataluña",
+  "гранад", "granada",
+  "бильбао", "bilbao", "bbk",
+  "ла-корун", "корунь", "coruña", "coruna",
+  "мерид", "mérida", "merida",
+  "лас-пальмас", "пальмас", "palmas", "canaria",
+  "севиль", "sevilla", "seville",
+  "малаг", "málaga", "malaga",
+  "сарагос", "zaragoza", "пуэрто",
+];
+
+function hasStem(haystack: string, stems: string[]): boolean {
+  return stems.some((s) => haystack.includes(s));
+}
+
+// PURE: is this event inside the Comunitat Valenciana? Reads the RU/Latin title plus
+// the (unreliable) city and the geocoded location_notes when present. Logic:
+//   • a CV stem present AND no competing non-CV stem  → Valencia region (true)
+//   • a CV stem AND a non-CV stem (rare cross-region title) → fall to the non-CV side
+//   • no city signal at all (default city, generic title) → treat as Valencia (the
+//     source's home region; lacotorra's location-less posts are local notices)
+// This deliberately favours the explicit "в <Городе>" in the TITLE over the stored
+// city, because lacotorra defaults the city column to "Valencia".
+export function isValenciaRegion(
+  city?: string | null,
+  locationNotes?: string | null,
+  title?: string | null,
+): boolean {
+  const hay = `${title ?? ""} ${city ?? ""} ${locationNotes ?? ""}`.toLowerCase();
+  const cv = hasStem(hay, CV_STEMS);
+  const nonCv = hasStem(hay, NON_CV_STEMS);
+  if (cv && !nonCv) return true;
+  if (nonCv) return false; // names another region (with or without a stray CV word)
+  // No location signal anywhere: default to the source's home region (Valencia).
+  return true;
+}
+
+// Curated allowlist of MAJOR international headliners (lowercased substrings). When a
+// non-Valencia event names one of these acts we KEEP it (the user wants the big tours
+// even when they play Madrid/Barcelona). Conservative by design — when unsure, DROP.
+// Includes the user-named examples + clearly-international touring acts seen in the
+// live lacotorra data (Cirque du Soleil show, BTS, Linkin Park, Sting, Bruno Mars,
+// Garbage). Matched as substrings against the RU/Latin title.
+const HEADLINER_ALLOWLIST: string[] = [
+  "linkin park",
+  "линкин парк",
+  "bts",                 // RU title prints the latin "BTS"
+  "sting",
+  "стинг",
+  "bruno mars",
+  "бруно марс",
+  "garbage",
+  "cirque du soleil",
+  "сирк дю солей",
+  "cirque",
+  "цирк дю солей",
+];
+
+// PURE: does the title name a curated international headliner?
+export function isHeadliner(title?: string | null): boolean {
+  const t = (title ?? "").toLowerCase();
+  if (!t) return false;
+  return HEADLINER_ALLOWLIST.some((name) => t.includes(name));
+}
+
 function pad(n: number): string {
   return String(n).padStart(2, "0");
 }
@@ -205,6 +321,22 @@ export function buildLacotorraEvents(
       const city = cityToken
         ? CITY_MAP[cityToken] ?? "Valencia"
         : "Valencia";
+
+      // T170 HYBRID city filter (deterministic, T140). lacotorra is all-Spain; this is
+      // a Valencia afisha. KEEP everything in the Comunitat Valenciana; from OTHER
+      // Spanish cities keep ONLY curated international headliners; DROP the rest.
+      // EXCLUSION APPROACH: we simply do NOT emit (don't push) the dropped events.
+      // `upsertPlainEvent` hard-codes status='upcoming' and can't carry a 'filtered'
+      // status, so skipping the upsert is the cleanest way to keep the feed clean —
+      // and it's idempotent: a re-run never creates the dropped rows. The raw
+      // source_item is STILL marked processed (the markRawItem loop in
+      // normalizeLacotorra walks `rows`, not the emitted drafts), so the append-only
+      // raw layer is untouched (constitution I). Existing dropped rows already in the
+      // DB from an earlier (pre-filter) normalize are reconciled out-of-band to
+      // status='filtered' once (live-DB cleanup), then never re-created here.
+      if (!isValenciaRegion(city, null, title) && !isHeadliner(title)) {
+        continue;
+      }
 
       // Price/free hint from title+description (most are free-admission notes).
       const haystack = `${title} ${description ?? ""}`;

@@ -6,6 +6,8 @@ import {
   parseLacotorraDate,
   buildLacotorraEvents,
   normalizeLacotorra,
+  isValenciaRegion,
+  isHeadliner,
 } from "../lib/pipeline/normalizers/lacotorra.ts";
 
 // Fixtures faithful to the REAL shape observed on the live local DB (source_items
@@ -32,10 +34,12 @@ const SNAPSHOT_TEXT = [
   "Посетителей ждет театрализованное погружение в жизнь художницы...",
   "9 Jun 2026, 10:00 - 5 Aug 2026, 12:00",
   "Ateneo Mercantil de Valencia",
-  // Madrid block — WITH city line
-  "Выставка с редкими работами Сальвадора Дали в Мадриде",
+  // Madrid block — WITH city line. A HEADLINER (BTS) so it survives the T170 hybrid
+  // city filter (a non-headliner Madrid event would be dropped); still exercises the
+  // RU-city-line → CITY_MAP=Madrid path and the multi-day date parse.
+  "Концерт группы BTS в Мадриде",
   "Мадрид",
-  "Скульптуры известного художника хранились в частных коллекциях десятки лет...",
+  "Группа выступит в рамках мирового тура десятки лет...",
   "26 Mar 2026, 12:00 - 31 Dec 2026, 12:00",
   "Palacio de Gaviria",
   // Barcelona single-day block
@@ -148,12 +152,12 @@ test("buildLacotorraEvents: parses snapshot blocks, drops chrome", () => {
   assert.equal(frida.venue_name, "Ateneo Mercantil de Valencia");
   assert.equal(frida.city, "Valencia");
 
-  // Madrid block: city mapped from the RU city line.
-  const dali = byTitle["Выставка с редкими работами Сальвадора Дали в Мадриде"];
-  assert.ok(dali, "Dali event present");
-  assert.equal(dali.city, "Madrid");
-  assert.equal(dali.start_date, "2026-03-26");
-  assert.equal(dali.venue_name, "Palacio de Gaviria");
+  // Madrid block (a headliner — survives T170): city mapped from the RU city line.
+  const bts = byTitle["Концерт группы BTS в Мадриде"];
+  assert.ok(bts, "Madrid headliner (BTS) event present");
+  assert.equal(bts.city, "Madrid");
+  assert.equal(bts.start_date, "2026-03-26");
+  assert.equal(bts.venue_name, "Palacio de Gaviria");
 
   // Barcelona single-day block: end null, city mapped.
   const sting = byTitle["Концерт Стинга в Барселоне"];
@@ -178,6 +182,10 @@ test("buildLacotorraEvents: multi-block snapshot does NOT explode — 1 event pe
   // 6 real event blocks. Two structural traps that an exploding parser would trip on:
   //  - a category/header block ("Предстоящие мероприятия") sitting BETWEEN events,
   //  - a block whose own city line is followed by another event (no shared lines).
+  // The non-Valencia blocks here are HEADLINERS (Linkin Park / Garbage / Sting / Bruno
+  // Mars) so all 6 survive the T170 hybrid filter — keeping this test focused on the
+  // PARSING invariant (1 event per DATE line, no fan-out), not the city policy (which
+  // has its own tests). A non-headliner Madrid block would be (correctly) dropped.
   const MULTI = [
     "Мероприятия Валенсии", // page header chrome (no date → not a block)
     "Все",
@@ -191,12 +199,12 @@ test("buildLacotorraEvents: multi-block snapshot does NOT explode — 1 event pe
     "Экспозиция объединяет 255 произведений искусства...",
     "16 Apr 2026, 12:00 - 12 Oct 2026, 19:00",
     "CaixaForum Valencia",
-    "Выставка с редкими работами Сальвадора Дали в Мадриде",
+    "Концерты Linkin Park в Мадриде",
     "Мадрид",
-    "Скульптуры известного художника...",
+    "Группа выступит в рамках мирового тура...",
     "26 Mar 2026, 12:00 - 31 Dec 2026, 12:00",
     "Palacio de Gaviria",
-    "Концерт с музыкой из сериала «Бриджертоны» в Мадриде",
+    "Концерт Garbage в Мадриде",
     "Мадрид",
     "Перенеситесь в Лондон XIX века на один вечер...",
     "24 Apr 2026, 21:00 - 14 Aug 2026, 21:00",
@@ -264,6 +272,77 @@ test("buildLacotorraEvents: de-dupes identical title+date within a snapshot", ()
   };
   const events = buildLacotorraEvents([dupRow], REF);
   assert.equal(events.length, 1);
+});
+
+// ── T170: HYBRID city filter ─────────────────────────────────────────────────
+// KEEP every Comunitat Valenciana event; from OTHER Spanish cities keep ONLY curated
+// international headliners; DROP the rest. Deterministic (T140 — JS, no LLM).
+
+test("isValenciaRegion: keeps Comunitat Valenciana (city in title), incl. Alicante province", () => {
+  assert.equal(isValenciaRegion("Valencia", null, "Выставка о Фриде Кало в Валенсии"), true);
+  // Alicante is a CV province — kept even though it's not the city of València.
+  assert.equal(isValenciaRegion("Alicante", null, "Концерт Pablo Alborán в Аликанте"), true);
+  // Ademús (Valencia province town) printed without the region word.
+  assert.equal(isValenciaRegion("Valencia", null, "Фестиваль цветения лаванды в Адемусе"), true);
+  // Geocoded location_notes region label is enough on its own.
+  assert.equal(isValenciaRegion(null, "Comarca de València, Comunitat Valenciana, España", null), true);
+});
+
+test("isValenciaRegion: drops other Spanish cities even when the city column defaults to Valencia", () => {
+  // The stored city column is unreliable (defaults to 'Valencia'); the title's
+  // "в Мадриде"/"в Гранаде" must win → NOT Valencia region.
+  assert.equal(isValenciaRegion("Madrid", null, "Выставка Сальвадора Дали в Мадриде"), false);
+  assert.equal(isValenciaRegion("Valencia", null, "Концерт Pablo Alborán в Гранаде"), false);
+  assert.equal(isValenciaRegion("Valencia", null, "Концерт Pablo Alborán в Мериде"), false);
+  assert.equal(isValenciaRegion("Barcelona", null, "Фестиваль Grec в Барселоне"), false);
+});
+
+test("isHeadliner: matches curated international acts, not generic events", () => {
+  assert.equal(isHeadliner("Концерты Linkin Park в Мадриде"), true);
+  assert.equal(isHeadliner("Концерт группы BTS в Мадриде"), true);
+  assert.equal(isHeadliner("Концерт Стинга в Барселоне"), true); // "стинг"
+  assert.equal(isHeadliner("Концерт Бруно Марса в Мадриде"), true);
+  assert.equal(isHeadliner("Концерт Garbage в Ла-Корунье"), true);
+  assert.equal(isHeadliner("Шоу Cirque du Soleil в Валенсии"), true);
+  assert.equal(isHeadliner("Río Babel 2026 в Мадриде"), false);
+  assert.equal(isHeadliner("Выставка Сальвадора Дали в Мадриде"), false);
+});
+
+test("buildLacotorraEvents (T170): Valencia kept, small Madrid dropped, Madrid headliner kept", () => {
+  const SNAP = [
+    // Valencia event → KEEP
+    "Выставка о Фриде Кало в Валенсии",
+    "Валенсия",
+    "Театрализованное погружение в жизнь художницы...",
+    "9 Jun 2026, 10:00 - 5 Aug 2026, 12:00",
+    "Ateneo Mercantil de Valencia",
+    // small Madrid event (not a headliner) → DROP
+    "Выставка с редкими работами Сальвадора Дали в Мадриде",
+    "Мадрид",
+    "Скульптуры известного художника...",
+    "26 Mar 2026, 12:00 - 31 Dec 2026, 12:00",
+    "Palacio de Gaviria",
+    // Madrid HEADLINER (Linkin Park) → KEEP despite being in Madrid
+    "Концерты Linkin Park в Мадриде",
+    "Мадрид",
+    "Группа выступит в рамках мирового тура...",
+    "29 Jun 2026, 21:00",
+    "Estadio Metropolitano",
+  ].join("\n");
+
+  const row = { ...SNAPSHOT_ROW, id: 700, raw_text: SNAP };
+  const events = buildLacotorraEvents([row], REF);
+  const titles = events.map((e) => e.draft.title);
+
+  // Exactly 2 emitted: the Valencia event + the Madrid headliner; the small Madrid
+  // event is excluded (not upserted → never reaches the feed).
+  assert.equal(events.length, 2);
+  assert.ok(titles.includes("Выставка о Фриде Кало в Валенсии"), "Valencia event kept");
+  assert.ok(titles.some((t) => t.startsWith("Концерты Linkin Park")), "Madrid headliner kept");
+  assert.ok(
+    !titles.some((t) => t.includes("Сальвадора Дали")),
+    "small Madrid event dropped (excluded from feed)",
+  );
 });
 
 test("normalizeLacotorra: idempotent over injected exec, marks every row normalized", async () => {
