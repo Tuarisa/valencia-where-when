@@ -695,3 +695,18 @@ exist, raw layer still append-only.
   By source: lacotorra 50/56, fever 33/34, ticketmaster 22/22, eventbrite 14/14, palau 10/10, vidacultural
   9/9, songkick 8/8; the 84 null are venues that only resolve to the València centroid → kept null per the
   `isCentroid` guard (better null than a fake pin, T135). The map now renders ~155 dated events + places.)*
+
+- [x] T144-enrich **Local enrich pass — RU translations baked into the seed** (T144 stage). *(DONE
+  2026-06-21 — `claude -p` (haiku, key-free) enrich on the live DB: attempted 303 / **enriched 303 / 0
+  errors**. Re-exported `data/seed/events.json` (343) with RU: **239/239 derived events have `title_ru`
+  (100%)**, 214 `description_ru`; the LLM also cleans noisy titles (e.g. "Hola amig@s. Os traemos…" →
+  "Фестиваль Июля 2026"). Engine + quality verified on a 2-event probe first. This closes the heavy
+  local-first compute (T144): the seed now ships ingested + normalized + deduped + geo'd + ENRICHED.)*
+
+- [ ] T158 [E] **Enrich the curated + Hemisfèric seed events too (full RU coverage)** (T144-enrich
+  follow-up). The local enrich covered the 239 derived events; still un-enriched in the seed: the curated
+  `events-feria-julio-2026.json` (43) / `events-fever.json` (2) / `events-logunespa.json` (10) — these are
+  exported from their FILES (the live-DB copies WERE enriched but feria is stale-merged so I kept the files);
+  and the 104 `api:hemisferic` events (they're series, not plain events, so `enrichCards` skipped them).
+  To finish: reset the stale feria duplicates → re-export the curated from the enriched DB; enrich the
+  Hemisfèric series (per-series, once) + bake. Then 100% RU coverage across the seed.
