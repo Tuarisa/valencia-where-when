@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS sources (
     key          TEXT UNIQUE NOT NULL,
     name         TEXT NOT NULL,
     type         TEXT NOT NULL,          -- telegram | web | ticketing | api
-    url          TEXT NOT NULL,
+    url          TEXT,                   -- nullable: curated pseudo-sources (e.g. curated:recommendations) have no crawl URL
     lang         TEXT,
     enabled      INTEGER NOT NULL DEFAULT 1,
     weight       TEXT,                   -- gold | good | mine | off

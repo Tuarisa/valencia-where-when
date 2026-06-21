@@ -926,3 +926,13 @@ exist, raw layer still append-only.
   (`--exposition` accent + the bar style), the relevant normalizers (capture `end_date`). Relates to the
   recurring model (`event_series`) but is SIMPLER (one continuous span, no discrete occurrences) and to the
   design pass [[T163]]. Likely its own multi-step effort; keep the deterministic-from-DB render.
+
+- [x] T176 [I] **SHIP-BLOCKER: fresh `db:setup` fails — `sources.url` NOT NULL vs curated null url**
+  (found by the T173 re-bake agent, 2026-06-21). A clean/prod `db:setup` (DEPLOY.md Phase 1) crashed because
+  `data/seed/sources.json` `curated:recommendations` has `url: null` (it's a curated, `enabled=0` pseudo-source
+  with no crawl URL — T159 pattern) but `db/schema.sql` declared `sources.url TEXT NOT NULL`. The persistent
+  local `main` DB predated T159 so it never hit this; ONLY a fresh DB (= every prod deploy) did. FIX: relaxed
+  `sources.url` to nullable in `db/schema.sql` (curated sources legitimately have no URL; `CREATE TABLE IF NOT
+  EXISTS` means the live `main` table is unaffected — fresh setups only). VERIFIED on a throwaway DB: fresh
+  `db:setup` now exit 0, 0 errors, `curated:recommendations` loads with null url, 352 events / 0 null dates /
+  11 series. Unblocks prod deploy.
