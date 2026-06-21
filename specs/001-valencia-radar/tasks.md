@@ -763,3 +763,21 @@ exist, raw layer still append-only.
   recovering prices needs a FULL re-bake (re-normalize from `source_items.raw_text` → which re-creates events
   → loses enrichment unless re-enriched, ~50 min `claude -p`). Marginal value (prices on ~telegram events) vs
   heavy cost → DEFERRED. Do it only as part of a future full local-first re-bake, not standalone.)*
+
+- [ ] T162 [E/I] **Authorize the Claude agent (enrich engine) in PROD** (user, `backlog:`, 2026-06-21).
+  The enrich engine is `claude -p` (Claude subscription / OAuth CLI) — it does NOT exist on Vercel
+  serverless (no CLI binary, no interactive login). Decide how prod enriches NEW cards. Options:
+  1. **No prod enrich (simplest, default).** The seed is PRE-ENRICHED; prod runs incremental ingest only
+     (`runPipeline()` passes no `enrichClient`). New cards stay un-enriched until a periodic OFF-prod pass
+     (run `claude -p` enrich locally against a copy / re-bake → re-deploy the seed, or push enriched rows to
+     the prod DB). Zero prod secret. `/api/health` shows "enrich stalled (info)" — info-only, never fails.
+  2. **SDK path on prod.** Use `@anthropic-ai/sdk` + an **`ANTHROPIC_API_KEY`** (API key ≠ subscription) as a
+     Vercel env var; build a SDK-based `EnrichClient` (enrich.ts is engine-agnostic — `createSdkEnrichClient`)
+     and inject it in the enrich cron/route. Works on serverless; costs API tokens (haiku translation / sonnet
+     grounded per T139). Enables live prod enrich of new cards.
+  3. **Off-prod worker.** A small always-on box / scheduled CI (GitHub Actions) job runs `claude -p` enrich
+     against the prod Neon DB (or regenerates seed deltas). Keeps the subscription, no API-key cost, needs a host.
+  RECOMMENDATION: ship with **(1)** for launch (pre-enriched seed + incremental); add **(2)** (SDK + API key)
+  when live prod enrich is wanted. Either way the local `claude -p` flow stays for the heavy bake. Decide +
+  (if (2)) build `createSdkEnrichClient` + wire `ANTHROPIC_API_KEY` + the enrich cron (T055, was deferred on
+  the Workflow SDK — can run as a plain route instead).
