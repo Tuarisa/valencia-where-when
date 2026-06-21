@@ -111,7 +111,7 @@ a { color: inherit; }
 /* First prototype: calendar full-width on top, map stacked below it (was a 2-col row). */
 .top-row { display: grid; grid-template-columns: 1fr; gap: 18px; align-items: start; }
 .panel { padding: 22px; }
-.panel-head { display: flex; justify-content: space-between; gap: 16px; align-items: end; margin-bottom: 18px; }
+.panel-head { display: flex; justify-content: space-between; gap: 16px; align-items: flex-end; margin-bottom: 18px; }
 .panel h2 { margin: 0; font-size: clamp(1.6rem, 3vw, 2.1rem); }
 
 .feed-list, .places-list { display: grid; gap: 14px; }

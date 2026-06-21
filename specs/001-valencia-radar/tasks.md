@@ -894,7 +894,7 @@ exist, raw layer still append-only.
   verify on a throwaway DB. NOTE: the user's LOCAL site (localhost, reads the live DB) ALREADY shows the
   fixes; this is only for the prod-shipping seed.
 
-- [ ] T174 [F] **CSS autoprefixer warning in dev-server logs** (user, `backlog:`, 2026-06-21: "фиксани
+- [x] T174 [F] **CSS autoprefixer warning in dev-server logs** (user, `backlog:`, 2026-06-21: "фиксани
   потом что это за хрень в логах"). `app/globals.css` (~line 111:73) uses a bare `end` value
   (`justify-content: end` / `align-items: end` / `align-self: end`) → autoprefixer warns "end value has
   mixed support, consider using flex-end instead". Cosmetic only (dev-server log noise, no render impact).
