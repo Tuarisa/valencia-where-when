@@ -41,7 +41,10 @@ export function parsePrice(text?: string | null): { price: string | null; isFree
   if (/бесплатн|вход свободн|вход бесплатн|gratis|gratuit|entrada libre|free entry|free admission|\bfree\b/.test(lower)) {
     return { price: "Free", isFree: 1 };
   }
-  const m = /(?:от\s*)?(\d{1,4})(?:[.,]\d{1,2})?\s*(?:€|евро|eur|euros?)\b|(?:€|eur)\s*(\d{1,4})/i.exec(t);
+  // NOTE: the trailing word-boundary must guard ONLY the ASCII forms (eur/euros): a
+  // `\b` after `€` or Cyrillic «евро» never matches (neither is an ASCII word char),
+  // which silently dropped every "€10" / "10 евро" price. Anchor `\b` to `eurs?` alone.
+  const m = /(?:от\s*)?(\d{1,4})(?:[.,]\d{1,2})?\s*(?:€|евро|euros?\b|eur\b)|(?:€|eur\b)\s*(\d{1,4})/i.exec(t);
   if (m) {
     const amount = m[1] ?? m[2];
     if (amount) return { price: `${amount} €`, isFree: 0 };

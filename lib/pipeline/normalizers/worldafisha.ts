@@ -115,28 +115,30 @@ export function parseEventDate(text?: string | null, today: Date = new Date()): 
   const iso = /(\d{4})-(\d{2})-(\d{2})/.exec(t);
   if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
 
-  // numeric DD.MM.YYYY / DD/MM/YYYY / DD-MM-YYYY (also DD.MM / DD-MM with no year)
-  const num = /\b(\d{1,2})[.\/-](\d{1,2})(?:[.\/-](\d{2,4}))?\b/.exec(t);
-  if (num) {
-    const day = Number(num[1]);
-    const month = Number(num[2]);
-    let year = num[3] ? Number(num[3]) : 0;
-    if (year && year < 100) year += 2000;
-    if (day >= 1 && day <= 31 && month >= 1 && month <= 12) {
-      if (!year) year = inferYear(month, day, today);
-      return `${year}-${pad(month)}-${pad(day)}`;
-    }
-  }
-
-  // Collect day-first and month-first named candidates, then return whichever
-  // appears FIRST in the text (so "первый plausible date" holds across forms).
+  // Collect every candidate (numeric + day-first + month-first), then return whichever
+  // appears FIRST in the text (so "первый plausible date" holds across forms). The
+  // numeric branch participates in the SAME lowest-index competition rather than
+  // short-circuiting — otherwise a stray "D-D" range mid-body (e.g. a duration like
+  // "1,5-2 часа") would beat a real named-month date at the very start of the post.
   let best: { index: number; iso: string } | null = null;
-  const consider = (index: number, month: number, day: number, year4?: string) => {
+  const consider = (index: number, month: number, day: number, year4?: string | number) => {
     if (!month || day < 1 || day > 31) return;
     const year = year4 ? Number(year4) : inferYear(month, day, today);
     const candidate = { index, iso: `${year}-${pad(month)}-${pad(day)}` };
     if (!best || candidate.index < best.index) best = candidate;
   };
+
+  // numeric DD.MM.YYYY / DD/MM/YYYY / DD-MM-YYYY (also DD.MM / DD-MM with no year).
+  // Not preceded by a "<digit>," decimal so a duration like "1,5-2 часа" isn't read as
+  // a "5-2" date.
+  const num = /(?<![\d.,])\b(\d{1,2})[.\/-](\d{1,2})(?:[.\/-](\d{2,4}))?\b/.exec(t);
+  if (num) {
+    const day = Number(num[1]);
+    const month = Number(num[2]);
+    let year = num[3] ? Number(num[3]) : 0;
+    if (year && year < 100) year += 2000;
+    if (month >= 1 && month <= 12) consider(num.index, month, day, year || undefined);
+  }
 
   // day-first: "<day> <monthName> [<year>]" (RU/UK/ES, optional "de")
   const dayFirst =

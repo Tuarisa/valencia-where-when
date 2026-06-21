@@ -28,7 +28,7 @@ export interface SiteEvent {
   occurrence_count: number; // sessions in the series (0 for ordinary events)
   series_id: number | null; // event_series.id this row belongs to (card or occurrence)
   calendar_only: boolean; // an occurrence row: shown on the calendar, hidden from the feed
-  feature: string | null; // special-event kind for color coding: feria | festival | hemisferic | null
+  feature: string | null; // special-event kind for color coding: feria | festival | hemisferic | excursion | null
   start_date: string | null;
   end_date: string | null;
   start_time: string | null;
@@ -104,9 +104,12 @@ export function featureKind(row: EventRow): string | null {
   const src = row.source || "";
   if (src === "api:hemisferic") return "hemisferic";
   if (src === "web:feriadejuliovlc") return "feria";
+  const cat = (row.category || "").toLowerCase();
+  // Guided excursions / day-tours (T142, tg:rutatuta_vlc) get their own accent so they
+  // stand out from the generic-event feed.
+  if (src === "tg:rutatuta_vlc" || cat === "excursion") return "excursion";
   const tags = loadTags(row.tags_json);
   if (tags.includes("feria-de-julio")) return "feria";
-  const cat = (row.category || "").toLowerCase();
   if (cat === "festival" || cat === "fireworks") return "festival";
   if (tags.includes("festival") || tags.includes("featured")) return "festival";
   return null;

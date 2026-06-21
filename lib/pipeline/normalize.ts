@@ -4,6 +4,7 @@ import { normalizeWorldafisha, WORLDAFISHA_SOURCE_KEY } from "./normalizers/worl
 import { normalizeValenciarusa, VALENCIARUSA_SOURCE_KEY } from "./normalizers/valenciarusa";
 import { normalizeVidacultural, VIDACULTURAL_SOURCE_KEY } from "./normalizers/vidacultural";
 import { normalizeConcerten, CONCERTEN_SOURCE_KEY } from "./normalizers/concerten";
+import { normalizeRutatuta, RUTATUTA_SOURCE_KEY } from "./normalizers/rutatuta";
 import { normalizeValenciabonitaTg, VALENCIABONITA_TG_SOURCE_KEY } from "./normalizers/valenciabonita-telegram";
 import { normalizeFever, FEVER_SOURCE_KEY } from "./normalizers/fever";
 import { normalizePalau, PALAU_SOURCE_KEY } from "./normalizers/palau";
@@ -35,6 +36,7 @@ export const NORMALIZER_REGISTRY: Map<string, SourceNormalizer> = new Map([
   [VALENCIARUSA_SOURCE_KEY, normalizeValenciarusa],
   [VIDACULTURAL_SOURCE_KEY, normalizeVidacultural],
   [CONCERTEN_SOURCE_KEY, normalizeConcerten],
+  [RUTATUTA_SOURCE_KEY, normalizeRutatuta],
   [VALENCIABONITA_TG_SOURCE_KEY, normalizeValenciabonitaTg],
   [FEVER_SOURCE_KEY, normalizeFever],
   [PALAU_SOURCE_KEY, normalizePalau],

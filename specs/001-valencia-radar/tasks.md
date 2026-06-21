@@ -424,12 +424,20 @@ exist, raw layer still append-only.
   (no teardown). `source_runs` populated (21 ok) → /api/health should now pass (T143 likely auto-closes).
   Quality findings → **T145–T148**.)*
 
-- [ ] T142 [F] **rutatuta_vlc excursions → distinct colour** (user, `backlog:`). Posts from
+- [x] T142 [F] **rutatuta_vlc excursions → distinct colour** (user, `backlog:`). Posts from
   `tg:rutatuta_vlc` are guided EXCURSIONS — they differ from "бездушные общие мероприятия", so give them
   their own visual accent in the feed/calendar (the way feria/festival got a gold accent in **T133**).
   Extend T133's `featureKind` (feria|festival|hemisferic|null) with an `excursion` kind derived from the
   `tg:rutatuta_vlc` source / tags, plus a distinct accent colour + legend entry. Needs the rutatuta_vlc
   normalizer (place/event mining — relates to T064); pairs well with **T141** (real data to verify it).
+  *(DONE 2026-06-21 — turned out to be DATED EVENTS, not places. (A) `lib/pipeline/normalizers/rutatuta.ts`
+  (mirror vidacultural/concerten; `category='excursion'`, Valencia/RU, parseEventDate handles "17 июня") +
+  registered; 17 source_items → 6 excursions w/ dates+prices; 7 tests. (B) `featureKind`→`'excursion'` for
+  `tg:rutatuta_vlc`/`category='excursion'` + teal accent `--excursion:#0f8a7e` on feed cards + calendar +
+  legend entry "экскурсии". **BONUS: 2 shared-helper bugs fixed** — `parsePrice` trailing-`\b` dropped EVERY
+  `€10`/`25 евро` price for ALL telegram normalizers; `parseEventDate` numeric branch read a duration
+  "1,5-2 часа" as a date. Both regression-free, 316/316. NOTE: these fixes improve prices/dates across all
+  normalizers → a seed re-bake (T160) would capture the now-parsed prices/dates on existing events.)*
 
 - [ ] T143 [I] **`/api/health` + `npm run smoke` ergonomics on a seed-only DB** (found by the T102
   E2E run). `pipelineWarnings()` HARD-fails (`ok=false` → 503) when there is "no successful pipeline
@@ -742,3 +750,10 @@ exist, raw layer still append-only.
   (The personal-recs "source" is a curated input pattern — define how such ad-hoc places are added without
   a crawler; could be a small `data/seed/places-recommendations.json` + a `source` row, or a simple add-place
   helper. Pairs with the place-mining / map surface work.)
+
+- [ ] T160 [E] **Re-bake the seed to capture the parsePrice/parseEventDate fixes** (T142 follow-up).
+  T142 fixed two shared helpers (`parsePrice` trailing-`\b` dropped all `€10`/`25 евро` prices; `parseEventDate`
+  numeric branch misread durations as dates) that the already-baked 239 derived seed events were normalized
+  WITHOUT. A re-bake (reset source_items → normalize→dedup→score→tag→geo→enrich → re-export) would add the
+  now-parsed prices + fix the few mis-parsed numeric dates. Optional polish; the seed is already correct on
+  dates/RU — this just enriches prices. Low priority.

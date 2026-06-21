@@ -259,6 +259,7 @@ function Calendar({
         <span className="legend-dot legend-event" /> события
         <span className="legend-dot legend-hemis" /> Hemisfèric
         <span className="legend-dot legend-feria" /> фестивали / спец
+        <span className="legend-dot legend-excursion" /> экскурсии
       </p>
       <div className="calendar-grid">
         {cells || <div className="day-cell">Пока нет датированных событий.</div>}
