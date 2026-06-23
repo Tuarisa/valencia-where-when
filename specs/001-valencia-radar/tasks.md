@@ -516,6 +516,14 @@ exist, raw layer still append-only.
   NOT a global TLS weakening. Live re-ingest: 4/4 sources OK http 200 → **113 source_items**
   (actividades 38 / agenda 24 / exposiciones 21 / museu 30); `source_runs` all `ok`. 6 focused
   `needsInsecureTls` tests (no network). NB: no cac normalizer yet → these normalize to `ignored` (→ T177).
+  **HARDENED (user decision, 2026-06-23):** replaced the `rejectUnauthorized:false` bypass with the missing
+  intermediate CA BUNDLED in-repo (`certs/cac-es-intermediate.pem`, `PerfectSSL`, valid → 2034) and added to
+  the trust list (`ca: [...tls.rootCertificates, intermediate]`); renamed `INSECURE_TLS_HOSTS`→`EXTRA_CA_HOSTS`
+  / `needsInsecureTls`→`needsExtraCa`. TLS verification now stays FULLY ON (`rejectUnauthorized:true`, default —
+  `false` gone everywhere). VERIFIED functionally: a bare `fetch` still fails `UNABLE_TO_VERIFY_LEAF_SIGNATURE`,
+  the patched `fetchText` returns 200 (253KB/545KB) — proving the bundled CA (not a disabled check) is what
+  works. cert force-tracked past the `*.pem` ignore via a `!certs/*.pem` exception (it's a public CA, needed at
+  runtime). build 0, tests 389/389.
 
 - [ ] T149 [D/F] **Hemisfèric display — duplicates + "10 films/day" look wrong** (user, `backlog:`).
   Re-verify the Hemisfèric series/occurrences render: the user sees apparent DUPLICATES and "как будто

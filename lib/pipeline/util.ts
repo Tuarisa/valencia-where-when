@@ -1,24 +1,35 @@
 import crypto from "crypto";
 import https from "node:https";
 import http from "node:http";
+import tls from "node:tls";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
 
 export const USER_AGENT =
   "Mozilla/5.0 (compatible; ValenciaRadarIngest/1.0; +https://valencia-where-when.vercel.app)";
 
-// TLS workaround allowlist (T148). Some public read-only sources serve an INCOMPLETE
-// certificate chain (a missing intermediate CA). `curl` tolerates this via the system
-// CA bundle, but Node's global `fetch` (undici) rejects it with
-// UNABLE_TO_VERIFY_LEAF_SIGNATURE. For these specific hosts ONLY we fall back to a
-// built-in `https` GET with rejectUnauthorized:false — a chain-completeness workaround,
-// NOT a blanket TLS-off: the host's identity is still the one we asked for, we just
-// don't enforce the (broken) chain on a host we already trust to scrape publicly.
-// Hosts are matched exactly or as a parent suffix (cac.es matches www.cac.es too).
-// Keep this list as SMALL as possible; do NOT add a host to "make a flaky fetch work".
-const INSECURE_TLS_HOSTS = new Set<string>(["cac.es"]);
+// Extra-CA allowlist (T148, hardened). Some public read-only sources serve an
+// INCOMPLETE certificate chain (the server omits a valid intermediate CA). Browsers
+// and `curl` complete the chain themselves; Node's global `fetch` (undici) does NOT
+// and rejects the handshake with UNABLE_TO_VERIFY_LEAF_SIGNATURE. For these hosts
+// ONLY we route through a built-in `https` GET that ADDS the missing intermediate to
+// the trust store — TLS verification stays FULLY ON (rejectUnauthorized:true). This is
+// NOT an insecure bypass: the leaf is still validated up to a real public root; we just
+// supply the intermediate the server forgot to send. Hosts are matched exactly or as a
+// parent suffix (cac.es matches www.cac.es too). Keep this list as SMALL as possible.
+const EXTRA_CA_HOSTS = new Set<string>(["cac.es"]);
 
-// PURE: does this URL target a known chain-broken host that needs the insecure-TLS
-// fallback? Only https hosts qualify; http and any non-allowlisted host return false.
-export function needsInsecureTls(url: string): boolean {
+// Bundled intermediate CAs these hosts omit, read ONCE at module load. See the file's
+// header comment for chain/expiry. Combined with Node's built-in roots into a single
+// trust list so the leaf validates up to a real public root.
+const EXTRA_CA_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "certs");
+const EXTRA_CA_PEMS: string[] = [readFileSync(path.join(EXTRA_CA_DIR, "cac-es-intermediate.pem"), "utf-8")];
+const EXTRA_CA_TRUST: string[] = [...tls.rootCertificates, ...EXTRA_CA_PEMS];
+
+// PURE: does this URL target a host whose chain we complete with a bundled intermediate?
+// Only https hosts qualify; http and any non-allowlisted host return false.
+export function needsExtraCa(url: string): boolean {
   let host: string;
   let protocol: string;
   try {
@@ -29,9 +40,9 @@ export function needsInsecureTls(url: string): boolean {
     return false;
   }
   if (protocol !== "https:") return false;
-  if (INSECURE_TLS_HOSTS.has(host)) return true;
+  if (EXTRA_CA_HOSTS.has(host)) return true;
   // Subdomain match: www.cac.es is covered by cac.es, but evilcac.es is NOT.
-  for (const allowed of INSECURE_TLS_HOSTS) {
+  for (const allowed of EXTRA_CA_HOSTS) {
     if (host.endsWith(`.${allowed}`)) return true;
   }
   return false;
@@ -44,11 +55,13 @@ interface RawResponse {
   lastModified: string | null;
 }
 
-// Built-in-http GET used ONLY for `needsInsecureTls` hosts (T148). Mirrors the bits of
-// `fetch` the ingest path relies on: follows redirects, returns body + etag/last-modified,
-// honours a timeout (AbortSignal-equivalent via req.destroy). rejectUnauthorized:false is
-// the deliberate per-host chain-completeness workaround — applied here and NOWHERE else.
-function insecureGet(
+// Built-in-https GET used ONLY for `needsExtraCa` hosts (T148, hardened). Mirrors the
+// bits of `fetch` the ingest path relies on: follows redirects, returns body +
+// etag/last-modified, honours a timeout (AbortSignal-equivalent via req.destroy). The
+// trust store is Node's built-in roots PLUS the bundled intermediate the host omits, so
+// TLS verification stays FULLY ON (rejectUnauthorized:true — the default, never false):
+// we complete the chain instead of disabling the check.
+function extraCaGet(
   url: string,
   headers: Record<string, string>,
   timeoutMs: number,
@@ -75,8 +88,9 @@ function insecureGet(
         path: `${u.pathname}${u.search}`,
         method: "GET",
         headers,
-        // Per-host incomplete-chain workaround. Plain http requests ignore this.
-        rejectUnauthorized: false,
+        // Complete the chain with the bundled intermediate (https only); verification
+        // stays ON. rejectUnauthorized is left at its secure default (true).
+        ...(isHttp ? {} : { ca: EXTRA_CA_TRUST }),
       },
       (res) => {
         const status = res.statusCode || 0;
@@ -90,7 +104,7 @@ function insecureGet(
             reject(err);
             return;
           }
-          resolve(insecureGet(next, headers, timeoutMs, depth + 1));
+          resolve(extraCaGet(next, headers, timeoutMs, depth + 1));
           return;
         }
         let body = "";
@@ -250,10 +264,10 @@ export async function fetchText(
   timeoutMs = 30000,
 ): Promise<{ status: number; body: string; etag: string | null; lastModified: string | null; notModified: boolean }> {
   // Chain-broken hosts (T148, e.g. cac.es) bypass undici's `fetch` for a built-in
-  // `https` GET with the per-host insecure-TLS workaround; conditional-GET, UA and
-  // timeout are preserved identically.
-  if (needsInsecureTls(url)) {
-    const res = await insecureGet(url, { "User-Agent": USER_AGENT, ...conditionalHeaders(cond) }, timeoutMs);
+  // `https` GET that supplies the missing intermediate CA (verification stays ON);
+  // conditional-GET, UA and timeout are preserved identically.
+  if (needsExtraCa(url)) {
+    const res = await extraCaGet(url, { "User-Agent": USER_AGENT, ...conditionalHeaders(cond) }, timeoutMs);
     const notModified = res.status === 304;
     return {
       status: res.status,
@@ -290,9 +304,9 @@ export async function fetchJson(
   cond?: ConditionalGet,
   timeoutMs = 30000,
 ): Promise<{ status: number; data: any; etag: string | null; lastModified: string | null; notModified: boolean }> {
-  // Same per-host TLS workaround as fetchText (T148) for chain-broken hosts.
-  if (needsInsecureTls(url)) {
-    const res = await insecureGet(url, { "User-Agent": USER_AGENT, ...headers, ...conditionalHeaders(cond) }, timeoutMs);
+  // Same bundled-intermediate path as fetchText (T148) for chain-broken hosts.
+  if (needsExtraCa(url)) {
+    const res = await extraCaGet(url, { "User-Agent": USER_AGENT, ...headers, ...conditionalHeaders(cond) }, timeoutMs);
     const notModified = res.status === 304;
     return {
       status: res.status,

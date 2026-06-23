@@ -14,6 +14,8 @@ next-env.d.ts
 # misc
 .DS_Store
 *.pem
+# exception: bundled PUBLIC intermediate CA needed at runtime (T148, cac.es chain completion — not a secret)
+!certs/*.pem
 
 # debug
 npm-debug.log*
