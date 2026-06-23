@@ -978,15 +978,24 @@ exist, raw layer still append-only.
   `db:setup` now exit 0, 0 errors, `curated:recommendations` loads with null url, 352 events / 0 null dates /
   11 series. Unblocks prod deploy.
 
-- [ ] T177 [A] **build a cac.es normalizer** (exposiciones → expositions, agenda/actividades → events).
-  Unblocked by T148 (the 4 `web:cac_*` sources now ingest: 113 `source_items` live — actividades 38 /
-  agenda 24 / exposiciones 21 / museu 30 — currently normalizing to `ignored` for lack of a normalizer).
-  Build `lib/pipeline/normalizers/cac.ts` (+ register in `NORMALIZER_REGISTRY`): route `web:cac_exposiciones`
-  (and likely `web:cac_museu`) → the standing/long-running **exposition** category (cross-ref the new T175
-  exposition feature: continuous start/end span, `is_exposition`), and `web:cac_agenda`/`web:cac_actividades`
-  → dated **events**. cac.es is the Ciudad de las Artes y las Ciencias (a flagship Valencia venue), so this
-  is high-value content. Deterministic parse first (T140); inspect the real `source_items` HTML/links for
-  date + title structure before writing rules.
+- [x] T177 [A] **build a cac.es normalizer** (exposiciones → expositions, agenda/actividades → events). DONE.
+  `lib/pipeline/normalizers/cac.ts` (+ registered in `NORMALIZER_REGISTRY` for all 4 keys via
+  `CAC_SOURCE_KEYS`/`cacNormalizerFor`). **Structure found (lacotorra pattern):** each source has ONE
+  `page_snapshot` row carrying the WHOLE flattened listing as fixed-shape card blocks
+  (`<TITLE>` → `[Temporal]` → `[: DD/MM/YYYY]` `[– DD/MM/YYYY]` | `<DD Mon YYYY>` → `Recinto:` → `<VENUE>`
+  → `<DESC>` → footer) + N bare-title `link_card` rows (date lives on the un-crawled detail page → dropped).
+  Parse the snapshot, drop the link_cards. Deterministic ES/CA date parse (T140): numeric `DD/MM/YYYY`,
+  leading-colon exhibition start + dash end span, ES abbreviated `DD Mon YYYY`, and the title-embedded
+  "A PARTIR DEL N DE <MES>" form (via shared `parseEventDate`). **Routing:** `web:cac_exposiciones` is a
+  pure exhibitions page → blanket `category='выставка'` (matches `lib/queries` EXPO_TEXT_RE → T175
+  `is_exposition`) + ALWAYS keeps `end_date` span; `web:cac_museu` is MIXED → exhibition only via a per-block
+  signal (Temporal/Permanente keyword, exposición title, or a genuine ≥4-day span — so single-day museu
+  conferences stay `culture`); `web:cac_agenda`/`web:cac_actividades` → dated `culture` events. Dateless
+  blocks marked processed but NOT emitted (never invent a date). **Live (main DB): 113 raw → 25 events,
+  25/25 dated (0 null), 8 expositions with a multi-day span** (Park Eun Sun 2026-03-26→10-12, Metamorfosis
+  2025-04-10→2027-01-15, ¡BAILAR! 2026-07-02→2028-01-10, …); idempotent (re-run = 0 created, all updated).
+  Gate: build green, 407/407 tests (13 new in `tests/normalize-cac.test.mjs`). NOTE: a future seed re-bake
+  (T173) will ship these cac events into `data/seed/*.json` (this task did NOT overwrite the seed).
 
 - [ ] T178 [F] **Category vocabulary dedup — collapse near-duplicate filter chips** (found by the T163
   design agent, 2026-06-23). The new category-filter chip bar (T163) shows near-duplicate chips because the

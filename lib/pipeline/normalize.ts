@@ -17,6 +17,7 @@ import { normalizeLaganzua, LAGANZUA_SOURCE_KEY } from "./normalizers/laganzua";
 import { normalizeLacotorra, LACOTORRA_SOURCE_KEY } from "./normalizers/lacotorra";
 import { normalizeElcontacto, ELCONTACTO_SOURCE_KEY } from "./normalizers/elcontacto";
 import { normalizeRusspain, RUSSPAIN_SOURCE_KEY } from "./normalizers/russpain";
+import { CAC_SOURCE_KEYS, cacNormalizerFor } from "./normalizers/cac";
 import { markRawItem } from "./normalizers/types";
 
 // Re-export the Hemisfèric path so existing imports keep working.
@@ -49,6 +50,12 @@ export const NORMALIZER_REGISTRY: Map<string, SourceNormalizer> = new Map([
   [LACOTORRA_SOURCE_KEY, normalizeLacotorra],
   [ELCONTACTO_SOURCE_KEY, normalizeElcontacto],
   [RUSSPAIN_SOURCE_KEY, normalizeRusspain],
+  // T177 — Ciutat de les Arts i les Ciències (cac.es): four listing-page sources, each
+  // bound to the same per-source cac normalizer (exposiciones/museu → exhibitions,
+  // agenda/actividades → dated events).
+  ...CAC_SOURCE_KEYS.map(
+    (key) => [key, cacNormalizerFor(key)] as [string, SourceNormalizer],
+  ),
 ]);
 
 // Resolve a normalizer for a source key (pure — testable without a DB).
