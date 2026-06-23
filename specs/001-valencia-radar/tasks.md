@@ -1049,3 +1049,32 @@ exist, raw layer still append-only.
   collapse them because the full titles differ slightly (one carries the "A PARTIR DEL…" suffix). Fix: normalize
   the title before the dedupe key (strip a trailing "A PARTIR DEL …" phrase) OR prefer the span-bearing variant
   when a same-start title-prefix duplicate exists. One duplicate card; cosmetic.
+
+### Independent code-review findings (senior-architect agent, 2026-06-21 → `code-review-independent.md`)
+Structural improvements the fresh-eyes review surfaced. Recorded as tasks; tackled by value/risk.
+
+- [x] T181 [G] **F5: digest route never marked SERIES notified (latent SC-002 bug)** (code review, fixed
+  2026-06-23). `buildDigest` builds recurring series into `payload.series`, and `markSeriesNotified` exists,
+  but `app/api/cron/digest/route.ts` only called `markEventsNotified`/`markPlacesNotified` — so on a REAL
+  transport every weekly digest would repeat each series card (SC-002 "no repeats" violated for series; hidden
+  only because the default sender is dry-run). FIX: import + call `markSeriesNotified(payload.series…)` in the
+  `send.delivered` branch (+ `series`/`markedSeries` in the response). Added `tests/notify-mark.test.mjs` (3
+  tests — the marking layer had NO direct coverage before). build 0, tests 426/426.
+
+- [ ] T182 [H] **F3: `export-seed.mjs` hardcodes a 44-column SELECT (silent seed drift)** (code review). The
+  exporter lists columns by hand while `seed.mjs` is schema-agnostic, so the next additive `ALTER TABLE` will
+  silently DROP the new column from the baked seed with no error → prod ships stale-shaped data. Fix: derive
+  the column list from `information_schema.columns` (or `SELECT *` + map) so export tracks the schema. Medium
+  effort, prevents a real footgun. (Also affects `rebake-seed.mjs` — align both.)
+
+- [ ] T183 [H] **F1/F2: normalizer god-module + copy-pasted orchestrator** (code review). `worldafisha.ts` is
+  a SOURCE normalizer but 15 siblings import shared helpers (`parseEventDate`, `upsertPlainEvent`,
+  `EventInsert`) FROM it, and `fever.ts` forked a 2nd copy of the events `INSERT…ON CONFLICT` SQL; the
+  `normalizeX` orchestrator body is copy-pasted ~17×. Fix: extract `normalizers/shared/{dates,persist,fields,
+  raw}.ts` + a `runPlainNormalizer` HOF; re-point the 17 normalizers. Larger refactor (touches every
+  normalizer) — schedule deliberately, gate hard. High maintainability payoff, higher risk.
+
+- [ ] T184 [perf] **F4: N+1 writes over Neon HTTP, no transactions** (code review). `scoreAll`/`tagAll`/
+  `markEventsNotified` etc. issue 2×N round-trips over Neon's per-statement HTTP driver with no transaction —
+  latency + atomicity risk, worst on the `maxDuration=300` refresh route. Fix: batch the writes (single
+  multi-row UPDATE/INSERT per stage) and/or wrap in a transaction. Perf + correctness; moderate effort.

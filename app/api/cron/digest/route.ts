@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { buildDigest, sendDigest, markEventsNotified, markPlacesNotified } from "@/lib/pipeline/notify";
+import { buildDigest, sendDigest, markEventsNotified, markPlacesNotified, markSeriesNotified } from "@/lib/pipeline/notify";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -41,15 +41,20 @@ export async function POST(req: NextRequest) {
     const send = await sendDigest(payload);
     let markedEvents = 0;
     let markedPlaces = 0;
+    let markedSeries = 0;
     if (send.delivered) {
       markedEvents = await markEventsNotified(payload.events.map((e) => e.id), { channel: send.transport });
       markedPlaces = await markPlacesNotified(payload.places.map((p) => p.id), { channel: send.transport });
+      // Series are one card per run keyed on series_id (SC-002) — they were built into the
+      // digest (payload.series) but never marked, so a real transport would repeat them
+      // every week. Mark them too (F5, code-review finding).
+      markedSeries = await markSeriesNotified(payload.series.map((s) => s.id), { channel: send.transport });
     }
     return NextResponse.json({
       ok: true, mode,
-      selected: payload.events.length, places: payload.places.length,
+      selected: payload.events.length, places: payload.places.length, series: payload.series.length,
       delivered: send.delivered, transport: send.transport,
-      markedEvents, markedPlaces,
+      markedEvents, markedPlaces, markedSeries,
     });
   } catch (err: any) {
     return NextResponse.json({ ok: false, error: String(err?.message || err) }, { status: 500 });
