@@ -1005,7 +1005,7 @@ exist, raw layer still append-only.
   Home.tsx) for display, and ideally normalize `category` at the normalizer layer too so the data itself is
   clean. Small data-normalization pass; low risk.
 
-- [~] T179 [C/A] **Feed leaks PAST events + cac promo junk** (found verifying T177, 2026-06-23). TWO issues
+- [x] T179 [C/A] **Feed leaks PAST events + cac promo junk** (found verifying T177, 2026-06-23). TWO issues
   (#1 DONE, #2 pending):
   1. **General past-event leak (higher value).** The feed query in `lib/queries.ts` (the `getSiteEvents`/series
      UNION, ~lines 265 & 354) filters ONLY `WHERE status='upcoming' OR status IS NULL` with **NO date filter**,

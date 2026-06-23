@@ -299,6 +299,16 @@ export function splitCacBlocks(rawText?: string | null): CacBlock[] {
   return blocks;
 }
 
+// PURE: cac lists SHOP PROMOS (gift vouchers, anniversary "golden ticket" campaigns) in
+// the same grid as real exhibitions/events — e.g. "REGALA UNA EXPERIENCIA ÚNICA ESTAS
+// NAVIDADES", "GOLDEN TICKETS – 25º ANIVERSARIO". These are not cultural programming, so we
+// drop them (T179 #2) rather than mislabel them as exhibitions.
+const PROMO_RE =
+  /\bregala\b|tarjeta\s+regalo|vale\s+regalo|cheque\s+regalo|\bgift\b|golden\s+ticket|\bvoucher\b/i;
+export function isCacPromo(title?: string | null): boolean {
+  return PROMO_RE.test(title ?? "");
+}
+
 // PURE: turn the cac snapshot rows into event/exhibition drafts. DB-free; offline-testable.
 export function buildCacEvents(
   rows: RawItem[],
@@ -321,6 +331,7 @@ export function buildCacEvents(
       let { title } = block;
       title = compact(title) ?? "";
       if (title.length < 4) continue;
+      if (isCacPromo(title)) continue; // shop promo (gift voucher / golden ticket), not real programming
 
       // Determine start date: a block date wins; else a date embedded in the title.
       const start = block.start ?? dateFromTitle(title, today);

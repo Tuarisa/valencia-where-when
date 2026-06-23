@@ -8,6 +8,7 @@ import {
   looksLikeCacTitle,
   splitCacBlocks,
   buildCacEvents,
+  isCacPromo,
   normalizeCacSource,
   cacNormalizerFor,
 } from "../lib/pipeline/normalizers/cac.ts";
@@ -198,6 +199,43 @@ test("looksLikeCacTitle: upper-case titles yes, chrome/description/date no", () 
     looksLikeCacTitle("Primera planta.- Una exposición interactiva, festiva e inclusiva."),
     false,
   );
+});
+
+test("isCacPromo: gift-voucher / golden-ticket promos are dropped, real titles kept (T179)", () => {
+  // shop promos cac lists among real exhibitions
+  assert.equal(isCacPromo("🎁 REGALA UNA EXPERIENCIA ÚNICA ESTAS NAVIDADES"), true);
+  assert.equal(isCacPromo("GOLDEN TICKETS – 25º ANIVERSARIO DEL MUSEU DE LES CIÈNCIES"), true);
+  assert.equal(isCacPromo("TARJETA REGALO HEMISFÈRIC"), true);
+  // real exhibitions / events must NOT be flagged
+  assert.equal(isCacPromo("PARK EUN SUN. GENOMA Y ESTRUCTURA ESCULTÓRICA"), false);
+  assert.equal(isCacPromo("METAMORFOSIS. EL PODER DE LA TRANSFORMACIÓN"), false);
+  assert.equal(isCacPromo("¡BAILAR! EL ARTE DE MOVERSE"), false);
+});
+
+test("buildCacEvents: promo rows are not emitted", () => {
+  const rows = [
+    {
+      id: 901,
+      source_key: "web:cac_exposiciones",
+      raw_text: [
+        "🎁 REGALA UNA EXPERIENCIA ÚNICA ESTAS NAVIDADES",
+        ": 18/12/2024",
+        "– 07/01/2025",
+        "Recinto:",
+        "Hemisfèric",
+        "PARK EUN SUN. GENOMA Y ESTRUCTURA ESCULTÓRICA",
+        ": 26/03/2026",
+        "– 12/10/2026",
+        "Recinto:",
+        "Museu",
+      ].join("\n"),
+      raw_json: JSON.stringify({ kind: "page_snapshot" }),
+      url: "https://cac.es/exposiciones/",
+    },
+  ];
+  const titles = buildCacEvents(rows, REF).map((d) => d.draft.title);
+  assert.ok(!titles.some((t) => /regala/i.test(t)), "promo dropped");
+  assert.ok(titles.some((t) => t.startsWith("PARK EUN SUN")), "real exhibition kept");
 });
 
 test("splitCacBlocks: anchors blocks on titles, captures dates + venue, skips chrome", () => {
