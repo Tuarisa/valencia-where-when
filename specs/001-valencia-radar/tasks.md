@@ -525,11 +525,16 @@ exist, raw layer still append-only.
   works. cert force-tracked past the `*.pem` ignore via a `!certs/*.pem` exception (it's a public CA, needed at
   runtime). build 0, tests 389/389.
 
-- [ ] T149 [D/F] **Hemisfèric display — duplicates + "10 films/day" look wrong** (user, `backlog:`).
-  Re-verify the Hemisfèric series/occurrences render: the user sees apparent DUPLICATES and "как будто
-  кожен день по 10 фільмів" which shouldn't be. Check `event_occurrences` per series (should be 104 occ /
-  11 series), the feed (ONE card per series), calendar bucketing (`.day-hemis`), and whether a re-ingest/
-  re-normalize created duplicate series/occurrences. Likely an occurrence-explosion or a series-dedup gap.
+- [x] T149 [D/F] **Hemisfèric display — duplicates + "10 films/day" look wrong → VERIFIED CORRECT, not a
+  bug** (user, `backlog:`). Re-verified on the live DB + a render-smoke (2026-06-23): **11 series / 126
+  occurrences / 0 duplicate occurrences** (no same-series+date+time row twice; the feed shows ONE card per
+  series via `is_series`). The "≈10 films/day" is REAL — the Hemisfèric IMAX dome genuinely runs ~9 showings
+  a day (11:00–20:00) of DIFFERENT films (on 2026-06-24 each of the 9 slots held exactly 1 distinct film), so
+  the data is right, not duplicated. The calendar already COLLAPSES each day's showings into ONE expandable
+  `<details class="day-hemis"><summary>Hemisfèric · N сеансов</summary>` (render-smoke: 11 day-hemis blocks
+  for the days with showings, the 99 session links nested INSIDE them — not 9 loose rows per day). So both the
+  "duplicates" and the "cluttered look" concerns are already handled by the series model + day-hemis collapse.
+  No code change needed; closing as verified.
 
 - [x] T150 [A] **worldafisha: recover date from the event URL slug + drop /persons/ non-events** (T141
   finding). worldafisha `source_items` carry only the title in `raw_text` (no date) → 79/80 null-dated.
