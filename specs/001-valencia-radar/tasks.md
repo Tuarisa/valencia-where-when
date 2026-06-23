@@ -987,3 +987,11 @@ exist, raw layer still append-only.
   → dated **events**. cac.es is the Ciudad de las Artes y las Ciencias (a flagship Valencia venue), so this
   is high-value content. Deterministic parse first (T140); inspect the real `source_items` HTML/links for
   date + title structure before writing rules.
+
+- [ ] T178 [F] **Category vocabulary dedup — collapse near-duplicate filter chips** (found by the T163
+  design agent, 2026-06-23). The new category-filter chip bar (T163) shows near-duplicate chips because the
+  `events.category` vocabulary mixes EN/RU and singular/plural: concert/concerts, концерт/концерты, etc. Add
+  a deterministic (T140) category-canonicalization map (lowercase + EN→RU or a canonical key + singular) so
+  the filter shows ONE chip per real category. Apply in `buildCategories()` / `CATEGORY_RU` (lib/queries.ts +
+  Home.tsx) for display, and ideally normalize `category` at the normalizer layer too so the data itself is
+  clean. Small data-normalization pass; low risk.
