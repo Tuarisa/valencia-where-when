@@ -1061,11 +1061,20 @@ Structural improvements the fresh-eyes review surfaced. Recorded as tasks; tackl
   `send.delivered` branch (+ `series`/`markedSeries` in the response). Added `tests/notify-mark.test.mjs` (3
   tests — the marking layer had NO direct coverage before). build 0, tests 426/426.
 
-- [ ] T182 [H] **F3: `export-seed.mjs` hardcodes a 44-column SELECT (silent seed drift)** (code review). The
+- [x] T182 [H] **F3: `export-seed.mjs` hardcodes a 44-column SELECT (silent seed drift)** (code review). The
   exporter lists columns by hand while `seed.mjs` is schema-agnostic, so the next additive `ALTER TABLE` will
   silently DROP the new column from the baked seed with no error → prod ships stale-shaped data. Fix: derive
   the column list from `information_schema.columns` (or `SELECT *` + map) so export tracks the schema. Medium
   effort, prevents a real footgun. (Also affects `rebake-seed.mjs` — align both.)
+  DONE: new `scripts/_seed-schema.mjs` — `fetchTableColumns`/`resolveExportColumns` query
+  `information_schema.columns ORDER BY ordinal_position`, then subtract a documented `EXPORT_EXCLUDES` map
+  (sources: the 10 cadence/etag/fail-count runtime cols that `seed.mjs::seedCadence` re-seeds — must NOT
+  ship). Both `export-seed.mjs` + `rebake-seed.mjs` resolve columns off the live schema now (no hardcoded
+  lists); rebake merge semantics (104 api:hemisferic verbatim, id>=25000 floor, 0-null guard, scratch vs
+  `--commit`) unchanged. Per-table column counts logged on export (sources 10 / events 44 / places 37 /
+  media 13). VERIFIED: exported keys == live schema cols (events 44/44, places 37/37, no missing/extra);
+  drift proof on a throwaway DB — `ALTER TABLE events ADD COLUMN` made export auto-emit 45 cols + the value
+  round-tripped; round-trip load of the scratch export = 353 events. 7 new pure tests; 432/432, build green.
 
 - [ ] T183 [H] **F1/F2: normalizer god-module + copy-pasted orchestrator** (code review). `worldafisha.ts` is
   a SOURCE normalizer but 15 siblings import shared helpers (`parseEventDate`, `upsertPlainEvent`,

@@ -37,6 +37,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, isAbsolute } from "node:path";
 import { sql } from "../lib/db.ts";
+import { resolveExportColumns, shape } from "./_seed-schema.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(__dirname, "..");
@@ -61,28 +62,14 @@ const { out } = parseArgs(process.argv.slice(2));
 const outDir = isAbsolute(out) ? out : join(repoRoot, out);
 const clobbersSeed = outDir === join(repoRoot, "data", "seed");
 
-// Column set MUST mirror scripts/export-seed.mjs events.json contract so the row
-// shape matches what scripts/seed.mjs loads.
-const EVENT_COLS = [
-  "id", "dedup_hash", "title", "description", "category", "language",
-  "audience", "start_date", "end_date", "start_time", "end_time",
-  "timezone", "venue_name", "district", "address", "city", "country",
-  "lat", "lng", "geo_source", "location_notes", "price", "is_free", "url",
-  "venue_url", "image_url", "external_ref", "source", "source_url",
-  "raw_excerpt", "source_item_id", "tags_json", "metadata_json", "title_ru",
-  "description_ru", "links_json", "enrichment_json", "enriched_at",
-  "status", "score", "first_seen", "last_seen", "notified", "notified_at",
-];
+// SCHEMA-DRIVEN columns (T182, F3): the events column list is resolved off the
+// LIVE schema (same source as scripts/export-seed.mjs), so an additive ALTER
+// TABLE can't silently drop a new column from the re-baked seed. events has no
+// excludes, so this is the full schema set, in ordinal order.
 
 // Floor for "derived" ids; curated low-id rows (feria/logunespa/DroneArt) live in
 // separate files and must NOT be duplicated into events.json.
 const DERIVED_ID_FLOOR = 25000;
-
-function shape(row, cols) {
-  const o = {};
-  for (const c of cols) o[c] = row[c] === undefined ? null : row[c];
-  return o;
-}
 
 async function run() {
   mkdirSync(outDir, { recursive: true });
@@ -90,7 +77,11 @@ async function run() {
     console.warn("⚠ --commit/--out data/seed — this OVERWRITES the curated seed events.json.");
   }
 
-  // (1) DERIVED events from the live DB. READ-ONLY. ORDER BY id → stable diffs.
+  // Resolve the events column list from the live schema (drift-proof).
+  const EVENT_COLS = await resolveExportColumns(sql, "events");
+  console.log(`  events: ${EVENT_COLS.length} columns (schema-driven)`);
+
+  // (1) DERIVED events from the live DB. READ-ONLY. ORDER BY id -> stable diffs.
   const colList = EVENT_COLS.map((c) => `"${c}"`).join(", ");
   const derived = await sql(
     `SELECT ${colList} FROM events
