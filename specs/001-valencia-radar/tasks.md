@@ -1026,4 +1026,13 @@ exist, raw layer still append-only.
      promo / anniversary-ticket rows as exhibitions: "🎁 REGALA UNA EXPERIENCIA ÚNICA ESTAS NAVIDADES" (Christmas
      gift voucher), "GOLDEN TICKETS – 25º ANIVERSARIO". Add a junk/promo guard to `cac.ts` (drop REGALA/GIFT/
      GOLDEN TICKET/voucher-style titles) so they don't pollute the exposition feed. Re-normalize cac on the live
-     DB. Small, low risk.
+     DB. Small, low risk. *(DONE 2026-06-23 — pure `isCacPromo` guard in cac.ts; live re-normalize removed the 2
+     promo rows, 0 remain; +2 tests; 409/409.)*
+
+- [ ] T180 [A] **cac «¡BAILAR!» emitted twice (title-date vs colon-date variant)** (spotted during T179,
+  2026-06-23, LOW priority). The cac exposiciones snapshot yields "¡BAILAR! EL ARTE DE MOVERSE" as TWO rows
+  with the same start (2026-07-02) — one with `end_date` null (date parsed from the title "A PARTIR DEL 2 DE
+  JULIO") and one with the colon/dash span (→2028-01-10). `buildCacEvents`'s `dedupeKey = title|start` doesn't
+  collapse them because the full titles differ slightly (one carries the "A PARTIR DEL…" suffix). Fix: normalize
+  the title before the dedupe key (strip a trailing "A PARTIR DEL …" phrase) OR prefer the span-bearing variant
+  when a same-start title-prefix duplicate exists. One duplicate card; cosmetic.
