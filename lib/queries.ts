@@ -8,6 +8,7 @@ import {
   loadTags,
   pageSlug,
 } from "./format";
+import { canonicalCategory } from "./categories";
 
 export const VALENCIA_CENTER = { lat: 39.4699, lng: -0.3763 };
 
@@ -123,8 +124,11 @@ export function buildTagCloud(
     .map(([tag, count]) => ({ tag, count }));
 }
 
-// Distinct event categories present in the feed, with counts (T163). Drives the
-// category-chip filter bar. Deterministic order: count desc, then name.
+// Distinct event categories present in the feed, with counts (T163/T178). Groups the
+// feed events by their CANONICAL category key (canonicalCategory collapses EN/RU +
+// singular/plural + casing variants), SUMs counts, and returns ONE entry per real
+// category — so the chip bar is deduped server-side. Deterministic order: count desc,
+// then key.
 const CATEGORY_LIMIT = 14;
 export function buildCategories(
   events: SiteEvent[],
@@ -132,7 +136,7 @@ export function buildCategories(
 ): { category: string; count: number }[] {
   const counts = new Map<string, number>();
   for (const e of events) {
-    const c = (e.category || "").trim().toLowerCase();
+    const c = canonicalCategory(e.category);
     if (!c) continue;
     counts.set(c, (counts.get(c) || 0) + 1);
   }

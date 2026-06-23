@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { SitePayload, SiteEvent, SitePlace } from "@/lib/queries";
 import { humanizeTag } from "@/lib/format";
+import { canonicalCategory, categoryLabelRu } from "@/lib/categories";
 
 const MONTH_NAMES = [
   "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
@@ -18,36 +19,9 @@ function pluralSeans(n: number): string {
   return "сеансов";
 }
 
-// RU labels for the category-filter chips (T163). Categories come from the DB in
-// English/Spanish; this maps the common ones to a friendly Russian label. Unknown
-// categories fall back to a capitalized raw value (still filterable, just not localized).
-const CATEGORY_RU: Record<string, string> = {
-  concert: "концерты",
-  music: "музыка",
-  exhibition: "выставки",
-  culture: "культура",
-  excursion: "экскурсии",
-  festival: "фестивали",
-  fireworks: "фейерверки",
-  theatre: "театр",
-  theater: "театр",
-  cinema: "кино",
-  film: "кино",
-  family: "семейные",
-  kids: "детям",
-  sport: "спорт",
-  food: "еда",
-  party: "вечеринки",
-  education: "образование",
-  market: "ярмарки",
-  show: "шоу",
-  other: "другое",
-};
-
-function humanizeCategory(cat: string): string {
-  const key = cat.trim().toLowerCase();
-  return CATEGORY_RU[key] || (key ? key[0].toUpperCase() + key.slice(1) : cat);
-}
+// Category-filter chip labels (T163/T178) now come from the shared, DB-free
+// lib/categories.ts: canonicalCategory() collapses EN/RU + singular/plural + casing
+// to ONE canonical RU key, categoryLabelRu() renders the display label.
 
 // Initial feed batch + per-load increment for the lazy feed (T163).
 const FEED_BATCH = 30;
@@ -97,8 +71,10 @@ export default function Home({ payload }: { payload: SitePayload }) {
 
   const s = search.trim().toLowerCase();
   const matchesTag = (tags: string[]) => tag === "" || tags.includes(tag);
+  // An event matches the selected category iff its CANONICAL key equals the selected
+  // canonical key (the chip values are canonical keys from buildCategories) (T178).
   const matchesCategory = (cat: string | null) =>
-    category === "all" || (cat || "").trim().toLowerCase() === category;
+    category === "all" || canonicalCategory(cat) === category;
 
   // The FEED shows ordinary events + ONE card per series; calendar-only occurrence
   // rows (sub-area D, T043) are bucketed onto the calendar, never listed as feed cards.
@@ -184,7 +160,7 @@ export default function Home({ payload }: { payload: SitePayload }) {
           </div>
           {filterActive && (
             <div className="filter-summary">
-              {category !== "all" && <span>категория: <strong>{humanizeCategory(category)}</strong></span>}
+              {category !== "all" && <span>категория: <strong>{categoryLabelRu(category)}</strong></span>}
               {tag !== "" && <span>тег: <strong>{humanizeTag(tag)}</strong></span>}
               {s !== "" && <span>поиск: <strong>{search.trim()}</strong></span>}
               <button className="filter-clear" onClick={clearFilters}>сбросить фильтры ✕</button>
@@ -305,7 +281,7 @@ function CategoryFilter({
           className={`category-chip${active === category ? " is-active" : ""}`}
           onClick={() => onSelect(active === category ? "all" : category)}
         >
-          {humanizeCategory(category)}
+          {categoryLabelRu(category)}
           <span className="cat-count">{count}</span>
         </button>
       ))}

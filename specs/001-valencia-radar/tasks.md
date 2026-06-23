@@ -997,13 +997,21 @@ exist, raw layer still append-only.
   Gate: build green, 407/407 tests (13 new in `tests/normalize-cac.test.mjs`). NOTE: a future seed re-bake
   (T173) will ship these cac events into `data/seed/*.json` (this task did NOT overwrite the seed).
 
-- [ ] T178 [F] **Category vocabulary dedup — collapse near-duplicate filter chips** (found by the T163
-  design agent, 2026-06-23). The new category-filter chip bar (T163) shows near-duplicate chips because the
-  `events.category` vocabulary mixes EN/RU and singular/plural: concert/concerts, концерт/концерты, etc. Add
-  a deterministic (T140) category-canonicalization map (lowercase + EN→RU or a canonical key + singular) so
-  the filter shows ONE chip per real category. Apply in `buildCategories()` / `CATEGORY_RU` (lib/queries.ts +
-  Home.tsx) for display, and ideally normalize `category` at the normalizer layer too so the data itself is
-  clean. Small data-normalization pass; low risk.
+- [x] T178 [F] **Category vocabulary dedup — collapse near-duplicate filter chips** (found by the T163
+  design agent, 2026-06-23). The new category-filter chip bar (T163) showed ~41 near-duplicate chips because
+  the `events.category` vocabulary mixes EN/RU and singular/plural: concert/concerts, концерт/концерты, etc.
+  DONE (deterministic, T140 — no LLM): new SHARED DB-FREE module `lib/categories.ts` exports pure
+  `canonicalCategory(raw)` (lowercase+trim → synonym/plural map → canonical RU key; unknown → lowercased raw)
+  + `categoryLabelRu(key)` (capitalize). `buildCategories()` (lib/queries.ts) now groups the feed by the
+  CANONICAL key + SUMs counts → ONE deduped entry per real category. `app/Home.tsx` imports both helpers
+  (old local `CATEGORY_RU`/`humanizeCategory` removed), the chip shows `categoryLabelRu(category)`, and the
+  feed filter matches on `canonicalCategory(event.category) === selectedKey` (the «все категории» reset +
+  AND-with-tag-filter intact). EDGE BUCKETS (documented in lib/categories.ts): music+concert → концерт;
+  Балет → театр; праздник/fireworks/gastronomy → фестиваль. Mapping is display-layer only (normalizers/seed
+  untouched). VERIFIED: build green, +18 tests (`tests/categories.test.mjs`, 423 total), and a `next start`
+  render-smoke on the live local DB shows the chip bar collapsed **~41 → 9 deduped RU chips** (Концерт 99 /
+  Культура 58 / Развлечения 16 / Театр 10 / Фестиваль 10 / Выставка 8 / Кино 5 / Лекция 1 / Стендап 1), no
+  EN/plural/case dups leaking, `/` + `/places` 200.
 
 - [x] T179 [C/A] **Feed leaks PAST events + cac promo junk** (found verifying T177, 2026-06-23). TWO issues
   (#1 DONE, #2 pending):
