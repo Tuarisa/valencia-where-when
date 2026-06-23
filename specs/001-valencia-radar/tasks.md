@@ -1004,3 +1004,26 @@ exist, raw layer still append-only.
   the filter shows ONE chip per real category. Apply in `buildCategories()` / `CATEGORY_RU` (lib/queries.ts +
   Home.tsx) for display, and ideally normalize `category` at the normalizer layer too so the data itself is
   clean. Small data-normalization pass; low risk.
+
+- [~] T179 [C/A] **Feed leaks PAST events + cac promo junk** (found verifying T177, 2026-06-23). TWO issues
+  (#1 DONE, #2 pending):
+  1. **General past-event leak (higher value).** The feed query in `lib/queries.ts` (the `getSiteEvents`/series
+     UNION, ~lines 265 & 354) filters ONLY `WHERE status='upcoming' OR status IS NULL` with **NO date filter**,
+     so any past-dated row that still has `status='upcoming'` shows in the feed. The CALENDAR already hides past
+     months (line ~449 `m >= todayMonth`), confirming the intent is future-focused — but the FEED LIST does not.
+     Latent until now because most normalizers yield future dates; cac.es (T177) exposed it (its snapshot carries
+     stale 2024/2025 events, e.g. GOLDEN TICKETS ended 2025-06-01, THE CHALLENGE 2025-10-23). FIX: filter the feed
+     to events that haven't ENDED — `COALESCE(end_date, start_date) >= CURRENT_DATE` (so a multi-day exhibition
+     still on today stays, e.g. METAMORFOSIS →2027; a single-day past event drops). Apply to both the events and
+     series feed queries; keep the calendar/series behavior. Verify no future events are wrongly dropped + re-check
+     the feed count. (Deterministic; affects ALL sources, not just cac.)
+     *(DONE 2026-06-23 — `getEvents` + `getSeriesEvents` in `lib/queries.ts` now filter `(start_date IS NULL OR
+     COALESCE(end_date,start_date) >= to_char(CURRENT_DATE,'YYYY-MM-DD'))` — text compare since dates are TEXT.
+     Render-smoke verified: 79 past events (incl. GOLDEN TICKETS/THE CHALLENGE) GONE from the feed, all 11
+     Hemisfèric series + ongoing exhibitions (METAMORFOSIS/Алиса/Кифер/Frida) KEPT, null-date rows kept. build 0,
+     407/407.)*
+  2. **cac promo/gift junk mis-classified as выставка** (T177 follow-up). The cac normalizer emitted gift-card /
+     promo / anniversary-ticket rows as exhibitions: "🎁 REGALA UNA EXPERIENCIA ÚNICA ESTAS NAVIDADES" (Christmas
+     gift voucher), "GOLDEN TICKETS – 25º ANIVERSARIO". Add a junk/promo guard to `cac.ts` (drop REGALA/GIFT/
+     GOLDEN TICKET/voucher-style titles) so they don't pollute the exposition feed. Re-normalize cac on the live
+     DB. Small, low risk.

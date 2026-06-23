@@ -260,9 +260,16 @@ export function toSitePlace(row: PlaceRow): SitePlace {
 }
 
 export async function getEvents(): Promise<SiteEvent[]> {
+  // Feed = upcoming-status events that haven't ENDED yet (T179). Dates are stored as
+  // 'YYYY-MM-DD' TEXT, so compare lexically against today's date string (ISO sorts
+  // correctly as text). A multi-day event still on today stays (COALESCE prefers
+  // end_date); a single-day past event drops. Null-date rows are kept (unknown ≠ past).
+  // Mirrors the calendar's future-only view (it already hides past months).
   const rows = (await sql`
     SELECT * FROM events
-    WHERE status = 'upcoming' OR status IS NULL
+    WHERE (status = 'upcoming' OR status IS NULL)
+      AND (start_date IS NULL
+           OR COALESCE(end_date, start_date) >= to_char(CURRENT_DATE, 'YYYY-MM-DD'))
     ORDER BY score DESC NULLS LAST, start_date, title
   `) as EventRow[];
   return rows.map(toSiteEvent);
@@ -351,7 +358,9 @@ export function seriesToSiteEvents(
 export async function getSeriesEvents(): Promise<SiteEvent[]> {
   const series = (await sql`
     SELECT * FROM event_series
-    WHERE status = 'upcoming' OR status IS NULL
+    WHERE (status = 'upcoming' OR status IS NULL)
+      AND (start_date IS NULL
+           OR COALESCE(end_date, start_date) >= to_char(CURRENT_DATE, 'YYYY-MM-DD'))
     ORDER BY score DESC NULLS LAST, start_date, title
   `) as EventRow[];
   if (series.length === 0) return [];
