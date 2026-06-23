@@ -586,10 +586,16 @@ exist, raw layer still append-only.
   category; gold `--feria` accent for feria/festival on feed cards + calendar day-events
   + legend entry; Hemisfèric stays purple. Extensible per-kind. featureKind verified:
   web:feriadejuliovlc→feria, fireworks→festival, ordinary→null. 33/33, build green.)*
-- [ ] T134 [F] **Design polish via design MCP** (user, `backlog:`). Tidy the whole UI
+- [x] T134 [F] **Design polish via design MCP** (user, `backlog:`). Tidy the whole UI
   design using the available design MCP (Vercel `import-claude-design-from-url` /
   `deploy_to_vercel`, or Figma) — proper visual design beyond the first-prototype CSS.
   Out of scope for the minimal CSS pass; do a dedicated design iteration.
+  *(DONE via T163 — the dalnoboi.org-derived palette + tag cloud + lazy feed + category
+  filter ARE the dedicated design iteration. WebFetch was network-blocked so the palette
+  was extracted by curling dalnoboi.org's Nuxt CSS bundles directly — mint-teal #85ceba /
+  deep-teal #00a296 accent on slate-ink #43484f over light-grey, vs the old warm
+  terracotta/cream. Implemented by hand in app/globals.css + Home.tsx, NOT the MCP — the
+  reliable path for this Next.js codebase. Further MCP/Figma polish remains optional.)*
 - [~] T135 [F] **Informative map popups** (user, `backlog:`). Map markers are currently
   uninformative (often the raw maps-link as the name). Each popup needs a HUMAN-READABLE
   title + a short "why-go" tagline (e.g. "бассейн в парке", "лучшие бургеры") so it's
@@ -796,7 +802,7 @@ exist, raw layer still append-only.
   (if (2)) build `createSdkEnrichClient` + wire `ANTHROPIC_API_KEY` + the enrich cron (T055, was deferred on
   the Workflow SDK — can run as a plain route instead).
 
-- [ ] T163 [F] **Design pass — dalnoboi.org as the base (use Claude Design MCP)** (user, `backlog:`,
+- [x] T163 [F] **Design pass — dalnoboi.org as the base (use Claude Design MCP)** (user, `backlog:`,
   2026-06-21; the concrete brief for T134). Requirements:
   - **Colour scheme + visual base from http://dalnoboi.org/** — "это наш дизайн и сайт" (the user's own
     site) → take its palette/look as the base for Valencia Radar's UI.
@@ -810,6 +816,27 @@ exist, raw layer still append-only.
     Figma) to derive the design, then implement in `app/` (Home.tsx + globals.css), preserving the existing
     data/render layer (queries.ts, the featureKind accents incl. the new `--excursion`, the map/calendar).
   Substantial visual iteration — likely its own multi-step effort. Keep the deterministic-from-DB render.
+  *(DONE 2026-06-23, all 4 asks shipped. **(1) Palette** — WebFetch was network-blocked, so the dalnoboi.org
+  palette was extracted by curling its Nuxt CSS bundles: signature mint-teal `#85ceba` (links/hover), deep
+  teal `#00a296`/`#007772` (buttons/active), slate ink `#43484f`, muted `#5d5e61`, light-grey/white grounds,
+  Roboto type. Applied to `app/globals.css` `:root` (`--accent #00a296`, `--accent-strong/-2 #007772`,
+  `--mint #85ceba`, `--ink #43484f`, `--bg #f4f5f5`, cooler body gradient); per-feature accents retuned to
+  harmonize (`--hemis` slate-violet #5f6caf, `--feria` muted gold #c98a2b, `--excursion` teal #00a296,
+  `--exposition` steel #3c7d9c) — calendar bars/badges/legend + expo spanning-bars + day-hemis all keep
+  working; map circle markers recoloured to #00a296. **(2) Tag cloud** — `buildTagCloud()` in `lib/queries.ts`
+  (events∪places, weighted by count, top 36, deterministic) → `payload.tag_cloud`; `<TagCloud>` client
+  subcomponent sizes each chip by relative frequency (0.82→1.5rem, weight 500→850), click toggles the feed
+  filter. Sentinel for "no tag" is `""` not `"all"` — a real data tag is literally "all" (73 fever/ticketmaster
+  events), which collided. **(3) Lazy feed** — `<LazyFeed>` renders an initial 30 and grows by 30 via an
+  IntersectionObserver sentinel (400px rootMargin) + a «показать ещё (N)» button; resets on filter change;
+  calendar+map keep the full list. **(4) Categories** — `buildCategories()` → `payload.categories`;
+  `<CategoryFilter>` chip bar with RU labels (`CATEGORY_RU`) + «все категории» reset; combines with the tag
+  filter as AND; a filter-summary row with «сбросить фильтры». Gate: clean `npm run build` green, **394/394**
+  tests (+5 new in `tests/tag-cloud.test.mjs`). Render-smoke (`next start` :3939 vs live local DB): `/` 200
+  +890KB, `/places` 200 (65 cards), new palette vars in compiled CSS, 36 tag chips (0 active default), 14
+  category chips + reset, 30-card initial batch + «показать ещё», 124 expo-bars + map + calendar + day-hemis
+  intact, clean server log. **Follow-ups left**: the category vocabulary has EN/RU + singular/plural dupes
+  (concert/concerts, концерт/концерты) — a data-normalization pass would dedupe the chips; not in scope here.)*
 
 - [x] T164 [docs] **Token-cost estimate ($) for `claude -p`/API enrich + AI-less-prod option** (user,
   `backlog:`, 2026-06-21). Estimate the monthly $ spend if prod enriches WITH an API key, and flesh out the

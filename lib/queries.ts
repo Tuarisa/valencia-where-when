@@ -93,9 +93,53 @@ export interface SitePayload {
   };
   months: string[];
   top_tags: string[];
+  // Frequency-weighted tag cloud (T163): every distinct tag across feed-visible events
+  // (+ places), with its occurrence count, sorted most-frequent first and capped. The
+  // feed sidebar renders these sized by `count` and clicking one filters the feed.
+  tag_cloud: { tag: string; count: number }[];
+  // Distinct event categories present in the feed, with counts (T163) — drives the
+  // category-chip filter bar. Sorted by count desc, then name, capped.
+  categories: { category: string; count: number }[];
   map_center: { lat: number; lng: number };
   events: SiteEvent[];
   places: SitePlace[];
+}
+
+// Frequency-weighted tag cloud (T163). Aggregates tags across the feed-visible events
+// and places, weights each by its total occurrence count, and returns the top `limit`
+// sorted most-frequent first (ties broken alphabetically for deterministic SSR).
+const TAG_CLOUD_LIMIT = 36;
+export function buildTagCloud(
+  events: SiteEvent[],
+  places: SitePlace[],
+  limit = TAG_CLOUD_LIMIT,
+): { tag: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const e of events) for (const t of e.tags) counts.set(t, (counts.get(t) || 0) + 1);
+  for (const p of places) for (const t of p.tags) counts.set(t, (counts.get(t) || 0) + 1);
+  return Array.from(counts.entries())
+    .sort((a, b) => (b[1] - a[1]) || a[0].localeCompare(b[0]))
+    .slice(0, limit)
+    .map(([tag, count]) => ({ tag, count }));
+}
+
+// Distinct event categories present in the feed, with counts (T163). Drives the
+// category-chip filter bar. Deterministic order: count desc, then name.
+const CATEGORY_LIMIT = 14;
+export function buildCategories(
+  events: SiteEvent[],
+  limit = CATEGORY_LIMIT,
+): { category: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const e of events) {
+    const c = (e.category || "").trim().toLowerCase();
+    if (!c) continue;
+    counts.set(c, (counts.get(c) || 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .sort((a, b) => (b[1] - a[1]) || a[0].localeCompare(b[0]))
+    .slice(0, limit)
+    .map(([category, count]) => ({ category, count }));
 }
 
 function displayTitle(row: EventRow): string {
@@ -431,6 +475,8 @@ export async function buildPayload(): Promise<SitePayload> {
     },
     months,
     top_tags: topTags,
+    tag_cloud: buildTagCloud(feedEvents, places),
+    categories: buildCategories(feedEvents),
     map_center: VALENCIA_CENTER,
     events,
     places,

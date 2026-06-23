@@ -18,6 +18,40 @@ function pluralSeans(n: number): string {
   return "сеансов";
 }
 
+// RU labels for the category-filter chips (T163). Categories come from the DB in
+// English/Spanish; this maps the common ones to a friendly Russian label. Unknown
+// categories fall back to a capitalized raw value (still filterable, just not localized).
+const CATEGORY_RU: Record<string, string> = {
+  concert: "концерты",
+  music: "музыка",
+  exhibition: "выставки",
+  culture: "культура",
+  excursion: "экскурсии",
+  festival: "фестивали",
+  fireworks: "фейерверки",
+  theatre: "театр",
+  theater: "театр",
+  cinema: "кино",
+  film: "кино",
+  family: "семейные",
+  kids: "детям",
+  sport: "спорт",
+  food: "еда",
+  party: "вечеринки",
+  education: "образование",
+  market: "ярмарки",
+  show: "шоу",
+  other: "другое",
+};
+
+function humanizeCategory(cat: string): string {
+  const key = cat.trim().toLowerCase();
+  return CATEGORY_RU[key] || (key ? key[0].toUpperCase() + key.slice(1) : cat);
+}
+
+// Initial feed batch + per-load increment for the lazy feed (T163).
+const FEED_BATCH = 30;
+
 function matchesSearch(item: { title?: string; name?: string; description?: string | null; excerpt?: string; location_label?: string; tags: string[] }, search: string): boolean {
   if (!search) return true;
   const hay = [
@@ -52,24 +86,42 @@ function eventPopupHtml(e: SiteEvent): string {
 
 export default function Home({ payload }: { payload: SitePayload }) {
   const [search, setSearch] = useState("");
-  const [tag, setTag] = useState("all");
+  // "" = no tag filter. NOT "all" — a real data tag is literally named "all" (fever/
+  // ticketmaster), which would collide with the sentinel. loadTags() drops falsy tags,
+  // so "" can never be a real tag.
+  const [tag, setTag] = useState("");
+  const [category, setCategory] = useState("all");
   const [monthIndex, setMonthIndex] = useState(() =>
     Math.max(0, payload.months.indexOf(payload.default_month || "")),
   );
 
   const s = search.trim().toLowerCase();
-  const matchesTag = (tags: string[]) => tag === "all" || tags.includes(tag);
+  const matchesTag = (tags: string[]) => tag === "" || tags.includes(tag);
+  const matchesCategory = (cat: string | null) =>
+    category === "all" || (cat || "").trim().toLowerCase() === category;
 
   // The FEED shows ordinary events + ONE card per series; calendar-only occurrence
   // rows (sub-area D, T043) are bucketed onto the calendar, never listed as feed cards.
+  // Tag-cloud + category-chip filters combine as AND (T163).
   const filteredEvents = useMemo(
-    () => payload.events.filter((e) => !e.calendar_only && matchesSearch(e, s) && matchesTag(e.tags)),
-    [payload.events, s, tag],
+    () =>
+      payload.events.filter(
+        (e) =>
+          !e.calendar_only &&
+          matchesSearch(e, s) &&
+          matchesTag(e.tags) &&
+          matchesCategory(e.category),
+      ),
+    [payload.events, s, tag, category],
   );
+  // Places are filtered by search + tag only (they have no event category).
   const filteredPlaces = useMemo(
     () => payload.places.filter((p) => matchesSearch(p, s) && matchesTag(p.tags)),
     [payload.places, s, tag],
   );
+
+  const filterActive = tag !== "" || category !== "all" || s !== "";
+  const clearFilters = () => { setTag(""); setCategory("all"); setSearch(""); };
 
   return (
     <div className="page-shell">
@@ -98,16 +150,17 @@ export default function Home({ payload }: { payload: SitePayload }) {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <div className="tag-strip">
-          {["all", ...payload.top_tags].map((t) => (
-            <button
-              key={t}
-              className={`tag-button ${t === tag ? "is-active" : ""}`}
-              onClick={() => setTag(t)}
-            >
-              {t === "all" ? "всё" : humanizeTag(t)}
-            </button>
-          ))}
+        <div className="facet">
+          <p className="eyebrow">категории</p>
+          <CategoryFilter
+            categories={payload.categories}
+            active={category}
+            onSelect={setCategory}
+          />
+        </div>
+        <div className="facet">
+          <p className="eyebrow">облако тегов</p>
+          <TagCloud tags={payload.tag_cloud} active={tag} onSelect={setTag} />
         </div>
       </section>
 
@@ -129,11 +182,15 @@ export default function Home({ payload }: { payload: SitePayload }) {
             </div>
             <p className="panel-note">{filteredEvents.length} шт. под текущий фильтр</p>
           </div>
-          <div className="feed-list">
-            {filteredEvents.map((item) => (
-              <FeedCard key={item.id} item={item} today={payload.today} />
-            ))}
-          </div>
+          {filterActive && (
+            <div className="filter-summary">
+              {category !== "all" && <span>категория: <strong>{humanizeCategory(category)}</strong></span>}
+              {tag !== "" && <span>тег: <strong>{humanizeTag(tag)}</strong></span>}
+              {s !== "" && <span>поиск: <strong>{search.trim()}</strong></span>}
+              <button className="filter-clear" onClick={clearFilters}>сбросить фильтры ✕</button>
+            </div>
+          )}
+          <LazyFeed events={filteredEvents} today={payload.today} />
         </section>
       </main>
     </div>
@@ -177,6 +234,141 @@ function FeedCard({ item, today }: { item: SiteEvent; today: string }) {
         </div>
       </div>
     </article>
+  );
+}
+
+// Tag cloud (T163): frequency-weighted tag chips. Font-size + weight scale with each
+// tag's relative frequency (most-frequent = biggest/boldest). Clicking a chip toggles
+// the feed filter to that tag; clicking the active chip clears it back to "all".
+function TagCloud({
+  tags,
+  active,
+  onSelect,
+}: {
+  tags: { tag: string; count: number }[];
+  active: string;
+  onSelect: (t: string) => void;
+}) {
+  if (tags.length === 0) return null;
+  const counts = tags.map((t) => t.count);
+  const min = Math.min(...counts);
+  const max = Math.max(...counts);
+  const sizeFor = (count: number) => {
+    // Map count → [0.82rem, 1.5rem] linearly (flat 1.05rem when all counts are equal).
+    if (max === min) return 1.05;
+    const t = (count - min) / (max - min);
+    return 0.82 + t * (1.5 - 0.82);
+  };
+  return (
+    <div className="tag-cloud">
+      {tags.map(({ tag, count }) => {
+        const isActive = active === tag;
+        return (
+          <button
+            key={tag}
+            className={`tag-cloud-chip${isActive ? " is-active" : ""}`}
+            style={{ fontSize: `${sizeFor(count).toFixed(2)}rem`, fontWeight: 500 + Math.round(((count - min) / Math.max(1, max - min)) * 350) }}
+            onClick={() => onSelect(isActive ? "" : tag)}
+            title={`${humanizeTag(tag)} · ${count}`}
+          >
+            {humanizeTag(tag)}
+            <span className="tag-count">{count}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// Category filter bar (T163): one chip per distinct event category + an "все категории"
+// reset. Clicking a category toggles the feed filter; combines with the tag cloud (AND).
+function CategoryFilter({
+  categories,
+  active,
+  onSelect,
+}: {
+  categories: { category: string; count: number }[];
+  active: string;
+  onSelect: (c: string) => void;
+}) {
+  return (
+    <div className="category-bar">
+      <button
+        className={`category-chip${active === "all" ? " is-active" : ""}`}
+        onClick={() => onSelect("all")}
+      >
+        все категории
+      </button>
+      {categories.map(({ category, count }) => (
+        <button
+          key={category}
+          className={`category-chip${active === category ? " is-active" : ""}`}
+          onClick={() => onSelect(active === category ? "all" : category)}
+        >
+          {humanizeCategory(category)}
+          <span className="cat-count">{count}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// Lazy feed (T163): renders an initial FEED_BATCH cards and grows by FEED_BATCH each
+// time an IntersectionObserver sentinel scrolls into view (or the "показать ещё" button
+// is clicked). Pure presentation over the already-fetched, already-filtered list — no
+// new API. The visible count resets whenever the filtered list changes (new filter).
+function LazyFeed({ events, today }: { events: SiteEvent[]; today: string }) {
+  const [visible, setVisible] = useState(FEED_BATCH);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  // Reset the window when the filtered list identity changes (filter/search applied).
+  useEffect(() => {
+    setVisible(FEED_BATCH);
+  }, [events]);
+
+  const hasMore = visible < events.length;
+
+  useEffect(() => {
+    if (!hasMore) return;
+    const el = sentinelRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setVisible((v) => Math.min(v + FEED_BATCH, events.length));
+        }
+      },
+      { rootMargin: "400px 0px" },
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [hasMore, events.length]);
+
+  if (events.length === 0) {
+    return <p className="panel-note">Под текущий фильтр событий нет.</p>;
+  }
+
+  return (
+    <>
+      <div className="feed-list">
+        {events.slice(0, visible).map((item) => (
+          <FeedCard key={item.id} item={item} today={today} />
+        ))}
+      </div>
+      {hasMore && (
+        <>
+          <div ref={sentinelRef} className="feed-more-sentinel" aria-hidden />
+          <div className="feed-more">
+            <button
+              className="button"
+              onClick={() => setVisible((v) => Math.min(v + FEED_BATCH, events.length))}
+            >
+              показать ещё ({events.length - visible})
+            </button>
+          </div>
+        </>
+      )}
+    </>
   );
 }
 
@@ -460,7 +652,7 @@ function MapPanel({
       for (const e of events) {
         if (e.lat == null || e.lng == null) continue;
         L.circleMarker([e.lat, e.lng], {
-          radius: 7, color: "#d65a31", fillColor: "#d65a31", fillOpacity: 0.9,
+          radius: 7, color: "#00a296", fillColor: "#00a296", fillOpacity: 0.9,
         }).addTo(map).bindPopup(eventPopupHtml(e));
       }
     });

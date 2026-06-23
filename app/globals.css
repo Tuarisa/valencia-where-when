@@ -1,36 +1,46 @@
+/* Palette derived from dalnoboi.org (T163) — the user's own community site. Its
+   signature is mint-teal (#85ceba) on a clean light-grey/white ground with dark-slate
+   ink (#43484f) and darker header blocks (#2b2f35). We adopt that: a deeper teal
+   (#00a296) as the primary accent for buttons/active states (it has the contrast a
+   button needs over white), the mint (#85ceba) as the soft/link accent, slate ink, and
+   pale-mint + light-grey backgrounds. The per-feature accents are retuned to cooler,
+   teal-harmonized hues so the calendar bars/badges sit inside this palette. */
 :root {
-  --bg: #f4efe4;
-  --paper: rgba(255, 251, 244, 0.86);
-  --ink: #1f1d1a;
-  --muted: #665f57;
-  --line: rgba(44, 35, 25, 0.12);
-  --accent: #d65a31;
-  --accent-2: #1f6c5b;
-  --hemis: #6741d9;
-  --hemis-soft: rgba(103, 65, 217, 0.13);
-  --hemis-line: rgba(103, 65, 217, 0.32);
-  --feria: #b8860b;
-  --feria-soft: rgba(184, 134, 11, 0.14);
-  --feria-line: rgba(184, 134, 11, 0.34);
-  --excursion: #0f8a7e;
-  --excursion-soft: rgba(15, 138, 126, 0.13);
-  --excursion-line: rgba(15, 138, 126, 0.34);
-  --exposition: #2f6fb0;
-  --exposition-soft: rgba(47, 111, 176, 0.14);
-  --exposition-line: rgba(47, 111, 176, 0.34);
-  --shadow: 0 24px 60px rgba(70, 42, 16, 0.12);
-  --radius: 24px;
+  --bg: #f4f5f5;
+  --paper: rgba(255, 255, 255, 0.92);
+  --ink: #43484f;
+  --muted: #5d5e61;
+  --line: rgba(67, 72, 79, 0.12);
+  --accent: #00a296;
+  --accent-strong: #007772;
+  --accent-2: #007772;
+  --mint: #85ceba;
+  --mint-soft: #e0f1f0;
+  --hemis: #5f6caf;
+  --hemis-soft: rgba(95, 108, 175, 0.12);
+  --hemis-line: rgba(95, 108, 175, 0.30);
+  --feria: #c98a2b;
+  --feria-soft: rgba(201, 138, 43, 0.13);
+  --feria-line: rgba(201, 138, 43, 0.32);
+  --excursion: #00a296;
+  --excursion-soft: rgba(0, 162, 150, 0.12);
+  --excursion-line: rgba(0, 162, 150, 0.32);
+  --exposition: #3c7d9c;
+  --exposition-soft: rgba(60, 125, 156, 0.13);
+  --exposition-line: rgba(60, 125, 156, 0.32);
+  --shadow: 0 20px 48px rgba(43, 47, 53, 0.10);
+  --radius: 20px;
 }
 
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
 body {
-  font-family: "Manrope", sans-serif;
+  font-family: "Manrope", "Roboto", sans-serif;
   color: var(--ink);
   background:
-    radial-gradient(circle at top left, rgba(214, 90, 49, 0.18), transparent 28%),
-    radial-gradient(circle at 85% 20%, rgba(31, 108, 91, 0.16), transparent 24%),
-    linear-gradient(180deg, #f8f3ea 0%, #efe8d8 100%);
+    radial-gradient(circle at top left, rgba(133, 206, 186, 0.22), transparent 30%),
+    radial-gradient(circle at 86% 18%, rgba(0, 162, 150, 0.12), transparent 26%),
+    linear-gradient(180deg, #fbfdfc 0%, #eef1f1 100%);
   min-height: 100vh;
 }
 a { color: inherit; }
@@ -129,12 +139,12 @@ a { color: inherit; }
   aspect-ratio: 4 / 3;
   object-fit: cover;
   border-radius: 16px;
-  background: #e8dfd0;
+  background: #e3eceb;
 }
 .card-visual.placeholder {
   aspect-ratio: 4 / 3;
   border-radius: 16px;
-  background: linear-gradient(135deg, rgba(214, 90, 49, 0.26), rgba(31, 108, 91, 0.26)), #efe7da;
+  background: linear-gradient(135deg, rgba(133, 206, 186, 0.34), rgba(0, 119, 114, 0.22)), #eaf3f1;
 }
 .feed-card.is-hemis { background: var(--hemis-soft); border-color: var(--hemis-line); }
 .feed-card.is-hemis .card-body h3 { color: var(--hemis); }
@@ -158,7 +168,7 @@ a { color: inherit; }
 
 .legend { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: -6px 0 14px; font-size: 0.82rem; color: var(--muted); }
 .legend-dot { width: 12px; height: 12px; border-radius: 4px; display: inline-block; }
-.legend-dot.legend-event { background: rgba(214, 90, 49, 0.55); }
+.legend-dot.legend-event { background: var(--accent); }
 .legend-dot.legend-hemis { background: var(--hemis); }
 .legend-dot.legend-feria { background: var(--feria); }
 .legend-dot.legend-excursion { background: var(--excursion); }
@@ -174,7 +184,7 @@ a { color: inherit; }
 .day-num { font-weight: 800; margin-bottom: 6px; font-size: 0.95rem; }
 .day-event {
   display: block; margin-bottom: 5px; padding: 5px 7px; border-radius: 9px;
-  background: rgba(214, 90, 49, 0.12); border-left: 3px solid var(--accent);
+  background: rgba(0, 162, 150, 0.10); border-left: 3px solid var(--accent);
   color: var(--ink); font-size: 0.78rem; line-height: 1.25; text-decoration: none;
 }
 .day-event .ev-time { font-weight: 800; color: var(--accent); margin-right: 4px; }
@@ -221,7 +231,7 @@ a { color: inherit; }
 .expo-bar:not(.is-bar-start) { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left-width: 1px; }
 .expo-bar:not(.is-bar-end) { border-top-right-radius: 0; border-bottom-right-radius: 0; }
 .expo-bar-label { overflow: hidden; text-overflow: ellipsis; }
-.expo-bar:hover { background: rgba(47, 111, 176, 0.22); }
+.expo-bar:hover { background: rgba(60, 125, 156, 0.22); }
 
 .feed-card.feature-exposition { background: var(--exposition-soft); border-color: var(--exposition-line); }
 .feed-card.feature-exposition .card-body h3 { color: var(--exposition); }
@@ -243,8 +253,8 @@ a { color: inherit; }
 
 .detail-shell {
   background:
-    radial-gradient(circle at top left, rgba(214, 90, 49, 0.12), transparent 28%),
-    linear-gradient(180deg, #f7f1e7 0%, #efe8d8 100%);
+    radial-gradient(circle at top left, rgba(133, 206, 186, 0.18), transparent 28%),
+    linear-gradient(180deg, #fbfdfc 0%, #eef1f1 100%);
 }
 .detail-card { padding: 28px; }
 .detail-page { max-width: 920px; }
@@ -260,6 +270,72 @@ a { color: inherit; }
 .series-schedule ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
 .series-schedule li { background: var(--hemis-soft); border: 1px solid var(--hemis-line); border-radius: 14px; padding: 8px 12px; }
 .series-schedule li strong { color: var(--hemis); }
+
+/* Tag cloud (T163): frequency-weighted tag chips. Each chip's font-size + weight scales
+   with how often the tag appears; the active one is filled with the accent. Rendered in
+   a sidebar/strip above the feed; clicking filters the feed client-side. */
+.tag-cloud {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+  margin-top: 4px;
+}
+.tag-cloud-chip {
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.7);
+  border-radius: 999px;
+  padding: 5px 11px;
+  cursor: pointer;
+  color: var(--ink);
+  line-height: 1.1;
+  transition: 140ms ease;
+}
+.tag-cloud-chip:hover { border-color: var(--accent); color: var(--accent-strong); }
+.tag-cloud-chip.is-active {
+  background: var(--accent); color: #fff; border-color: var(--accent);
+}
+.tag-cloud-chip .tag-count { opacity: 0.55; font-size: 0.7em; margin-left: 5px; }
+
+/* Category filter bar (T163): one chip per distinct event category, plus an "все
+   категории" reset. Combines with the tag-cloud filter as an AND. */
+.category-bar { display: flex; flex-wrap: wrap; gap: 8px; }
+.category-chip {
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.72);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 0.86rem;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--ink);
+  transition: 140ms ease;
+}
+.category-chip:hover { border-color: var(--mint); }
+.category-chip.is-active {
+  background: var(--accent-strong); color: #fff; border-color: var(--accent-strong);
+}
+.category-chip .cat-count { opacity: 0.6; font-weight: 500; margin-left: 5px; }
+
+/* Active-filter summary + clear, shown above the feed when a filter is on. */
+.filter-summary {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  font-size: 0.85rem; color: var(--muted); margin-bottom: 14px;
+}
+.filter-clear {
+  border: 1px solid var(--line); background: rgba(255, 255, 255, 0.72);
+  border-radius: 999px; padding: 5px 12px; font: inherit; font-size: 0.82rem;
+  cursor: pointer; color: var(--accent-strong);
+}
+.filter-clear:hover { border-color: var(--accent); }
+
+/* Lazy feed "показать ещё" (T163): the feed renders an initial batch and grows on
+   scroll (IntersectionObserver sentinel) or by clicking this button. */
+.feed-more { display: flex; justify-content: center; margin-top: 18px; }
+.feed-more-sentinel { height: 1px; }
+.feed-more .button {
+  padding: 12px 22px; font-weight: 700;
+}
 
 @media (max-width: 1000px) { .top-row { grid-template-columns: 1fr; } }
 @media (max-width: 820px) {
