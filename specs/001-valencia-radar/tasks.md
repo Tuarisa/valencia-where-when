@@ -1042,13 +1042,29 @@ exist, raw layer still append-only.
      DB. Small, low risk. *(DONE 2026-06-23 — pure `isCacPromo` guard in cac.ts; live re-normalize removed the 2
      promo rows, 0 remain; +2 tests; 409/409.)*
 
-- [ ] T180 [A] **cac «¡BAILAR!» emitted twice (title-date vs colon-date variant)** (spotted during T179,
-  2026-06-23, LOW priority). The cac exposiciones snapshot yields "¡BAILAR! EL ARTE DE MOVERSE" as TWO rows
-  with the same start (2026-07-02) — one with `end_date` null (date parsed from the title "A PARTIR DEL 2 DE
-  JULIO") and one with the colon/dash span (→2028-01-10). `buildCacEvents`'s `dedupeKey = title|start` doesn't
-  collapse them because the full titles differ slightly (one carries the "A PARTIR DEL…" suffix). Fix: normalize
-  the title before the dedupe key (strip a trailing "A PARTIR DEL …" phrase) OR prefer the span-bearing variant
-  when a same-start title-prefix duplicate exists. One duplicate card; cosmetic.
+- [x] T180 [A] **cac «¡BAILAR!» emitted twice → COLLAPSED by the dedup stage** (spotted during T179,
+  resolved 2026-06-23). ROOT CAUSE was NOT a cac-internal `dedupeKey` gap (the two rows have IDENTICAL title +
+  start, so the per-call `seen` would catch them) — it's a CROSS-SOURCE dup: «¡BAILAR!» appears in THREE cac
+  sub-pages (agenda/museu/exposiciones), and I'd been running the cac normalizers DIRECTLY on the live DB
+  WITHOUT the `dedup()` stage. Running `dedup()` collapses it correctly: 25797 (exposiciones) → `status='duplicate'`,
+  25796 (agenda) → `upcoming`; **0 same-title+date cac pairs with >1 source remain upcoming**. No code change —
+  the existing dedup (cross-source, same title+date, ≥2 sources) handles it; a future T173 seed re-bake (which
+  runs dedup) ships the collapsed version. Surfaced a deeper nuance → **T185**.
+
+- [ ] T185 [C] **Dedup merge should GAP-FILL richer scalar fields from losers (e.g. `end_date`)** (found
+  resolving T180, 2026-06-23). When dedup collapses «¡BAILAR!», the SURVIVOR is the agenda variant (`end_date`
+  null) while the loser (exposiciones) carried the real span (→2028-01-10) — so the exhibition LOSES its
+  multi-day span and won't render as a T175 spanning bar (it stays a single-day выставка card). Two coupled
+  gaps: (1) `mergeGroup` (`lib/pipeline/dedup.ts`) chooses a survivor by `sourceWeightRank` and accumulates
+  `metadata.sources[]` but does NOT inherit scalar fields from losers; (2) the `dedup()` orchestrator only
+  writes back the survivor's `metadata_json` (+status/last_seen) — NOT `end_date` — at all THREE merge sites
+  (strong pre-pass, fuzzy `mergeGroup`, tier-variant). FIX: in `mergeGroup`, gap-fill the survivor's NULL
+  scalar fields (at least `end_date`; consider `lat`/`lng`/`price`/`image_url`/`description`) from any loser
+  that has them (never overwrite a non-null survivor value); and add `end_date` (+ any chosen fields) to the
+  survivor UPDATE at all three persist sites. Add tests (a merge where survivor.end_date is null + a loser has
+  it → survivor inherits it; non-null survivor unchanged). Bounded but touches all merge paths → gate hard;
+  it's a dedup-semantics change so do it deliberately. Medium value (exhibitions keep their span through
+  cross-source merges), moderate risk.
 
 ### Independent code-review findings (senior-architect agent, 2026-06-21 → `code-review-independent.md`)
 Structural improvements the fresh-eyes review surfaced. Recorded as tasks; tackled by value/risk.
