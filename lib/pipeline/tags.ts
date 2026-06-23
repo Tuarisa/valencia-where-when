@@ -77,14 +77,35 @@ export function inferPlaceTags(row: any): string[] {
 
 export async function tagAll(): Promise<{ events: number; places: number }> {
   const events = (await sql`SELECT * FROM events`) as any[];
-  for (const e of events) {
-    const tags = JSON.stringify(inferEventTags(e));
-    await sql`UPDATE events SET tags_json = ${tags} WHERE id = ${e.id}`;
+  if (events.length > 0) {
+    // Batch: one UPDATE joins against parallel id[]/tags_json[] arrays instead of N
+    // per-row UPDATEs (one Neon HTTP round-trip per statement — F4/T184). Tags are
+    // still computed per-row in JS; only the WRITE collapses to O(1).
+    const ids: number[] = [];
+    const tags: string[] = [];
+    for (const e of events) {
+      ids.push(e.id);
+      tags.push(JSON.stringify(inferEventTags(e)));
+    }
+    await sql`
+      UPDATE events AS e SET tags_json = v.tags_json
+      FROM unnest(${ids}::int[], ${tags}::text[]) AS v(id, tags_json)
+      WHERE e.id = v.id
+    `;
   }
   const places = (await sql`SELECT * FROM places`) as any[];
-  for (const p of places) {
-    const tags = JSON.stringify(inferPlaceTags(p));
-    await sql`UPDATE places SET tags_json = ${tags} WHERE id = ${p.id}`;
+  if (places.length > 0) {
+    const ids: number[] = [];
+    const tags: string[] = [];
+    for (const p of places) {
+      ids.push(p.id);
+      tags.push(JSON.stringify(inferPlaceTags(p)));
+    }
+    await sql`
+      UPDATE places AS p SET tags_json = v.tags_json
+      FROM unnest(${ids}::int[], ${tags}::text[]) AS v(id, tags_json)
+      WHERE p.id = v.id
+    `;
   }
   return { events: events.length, places: places.length };
 }

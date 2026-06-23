@@ -1083,7 +1083,18 @@ Structural improvements the fresh-eyes review surfaced. Recorded as tasks; tackl
   raw}.ts` + a `runPlainNormalizer` HOF; re-point the 17 normalizers. Larger refactor (touches every
   normalizer) — schedule deliberately, gate hard. High maintainability payoff, higher risk.
 
-- [ ] T184 [perf] **F4: N+1 writes over Neon HTTP, no transactions** (code review). `scoreAll`/`tagAll`/
+- [x] T184 [perf] **F4: N+1 writes over Neon HTTP, no transactions** (code review). `scoreAll`/`tagAll`/
   `markEventsNotified` etc. issue 2×N round-trips over Neon's per-statement HTTP driver with no transaction —
   latency + atomicity risk, worst on the `maxDuration=300` refresh route. Fix: batch the writes (single
   multi-row UPDATE/INSERT per stage) and/or wrap in a transaction. Perf + correctness; moderate effort.
+  DONE: each write stage now issues O(1) statements via the Neon tagged-template's array params.
+  `scoreAll`: 274 per-row UPDATEs → **1** (`UPDATE events e SET score=v.score FROM unnest($ids::int[],
+  $scores::int[]) v(id,score) WHERE e.id=v.id`). `tagAll`: 418 (353 events + 65 places) → **2** (same
+  unnest-join, `text[]` for tags_json). `markEventsNotified`/`markPlacesNotified`/`markSeriesNotified`:
+  2N → **2 each** (one bulk `UPDATE … WHERE id = ANY($ids)` + one bulk `INSERT … SELECT * FROM
+  unnest($ids,$stamps,$channels)`). The unnest-join is used for per-row distinct values (score/tags);
+  `= ANY($ids)` for the same-value flag update. Empty input → no statement, returns 0. Injectable `exec`
+  preserved. Live-verified idempotent on `main` (after1===after2). `tests/notify-mark.test.mjs` updated
+  to assert the batched shape (1 UPDATE + 1 INSERT per call, all ids in one array param). Build green,
+  432/432 tests. Chose array-param unnest over `sql.query()` (absent in neon 0.10.4) — fully
+  parameterized, no string interpolation.

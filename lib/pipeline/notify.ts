@@ -310,28 +310,34 @@ export async function markEventsNotified(
   ids: number[],
   { exec = sql, channel = "digest" }: { exec?: typeof sql; channel?: string } = {},
 ): Promise<number> {
+  if (ids.length === 0) return 0;
   const ts = nowIso();
-  let n = 0;
-  for (const id of ids) {
-    await exec`UPDATE events SET notified = 1, notified_at = ${ts} WHERE id = ${id}`;
-    await exec`INSERT INTO notifications (event_id, sent_at, channel) VALUES (${id}, ${ts}, ${channel})`;
-    n++;
-  }
-  return n;
+  // Batch (F4/T184): ONE UPDATE over id = ANY($ids) + ONE multi-row INSERT via
+  // parallel-array unnest, instead of 2N per-row round-trips (Neon = 1 HTTP/stmt).
+  const chans = ids.map(() => channel);
+  const stamps = ids.map(() => ts);
+  await exec`UPDATE events SET notified = 1, notified_at = ${ts} WHERE id = ANY(${ids})`;
+  await exec`
+    INSERT INTO notifications (event_id, sent_at, channel)
+    SELECT * FROM unnest(${ids}::int[], ${stamps}::text[], ${chans}::text[])
+  `;
+  return ids.length;
 }
 
 export async function markPlacesNotified(
   ids: number[],
   { exec = sql, channel = "digest" }: { exec?: typeof sql; channel?: string } = {},
 ): Promise<number> {
+  if (ids.length === 0) return 0;
   const ts = nowIso();
-  let n = 0;
-  for (const id of ids) {
-    await exec`UPDATE places SET notified = 1, notified_at = ${ts} WHERE id = ${id}`;
-    await exec`INSERT INTO notifications (place_id, sent_at, channel) VALUES (${id}, ${ts}, ${channel})`;
-    n++;
-  }
-  return n;
+  const chans = ids.map(() => channel);
+  const stamps = ids.map(() => ts);
+  await exec`UPDATE places SET notified = 1, notified_at = ${ts} WHERE id = ANY(${ids})`;
+  await exec`
+    INSERT INTO notifications (place_id, sent_at, channel)
+    SELECT * FROM unnest(${ids}::int[], ${stamps}::text[], ${chans}::text[])
+  `;
+  return ids.length;
 }
 
 // Mark recurring SERIES as notified + log a notifications row each via series_id, so a
@@ -341,12 +347,14 @@ export async function markSeriesNotified(
   ids: number[],
   { exec = sql, channel = "digest" }: { exec?: typeof sql; channel?: string } = {},
 ): Promise<number> {
+  if (ids.length === 0) return 0;
   const ts = nowIso();
-  let n = 0;
-  for (const id of ids) {
-    await exec`UPDATE event_series SET notified = 1, notified_at = ${ts} WHERE id = ${id}`;
-    await exec`INSERT INTO notifications (series_id, sent_at, channel) VALUES (${id}, ${ts}, ${channel})`;
-    n++;
-  }
-  return n;
+  const chans = ids.map(() => channel);
+  const stamps = ids.map(() => ts);
+  await exec`UPDATE event_series SET notified = 1, notified_at = ${ts} WHERE id = ANY(${ids})`;
+  await exec`
+    INSERT INTO notifications (series_id, sent_at, channel)
+    SELECT * FROM unnest(${ids}::int[], ${stamps}::text[], ${chans}::text[])
+  `;
+  return ids.length;
 }

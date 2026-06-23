@@ -82,9 +82,20 @@ export async function scoreAll(): Promise<{ scored: number }> {
   const sources = (await sql`SELECT key, weight FROM sources`) as any[];
   const weightByKey = new Map(sources.map((s) => [s.key, s.weight]));
   const events = (await sql`SELECT * FROM events WHERE status = 'upcoming' OR status IS NULL`) as any[];
+  if (events.length === 0) return { scored: 0 };
+  // Batch the writes: one UPDATE joins against a parallel-array unnest instead of
+  // N per-row UPDATEs (Neon does one HTTP round-trip per statement — F4/T184). The
+  // per-row score is still computed in JS; only the WRITE collapses to O(1).
+  const ids: number[] = [];
+  const scores: number[] = [];
   for (const e of events) {
-    const score = scoreEvent(e, weightByKey.get(e.source));
-    await sql`UPDATE events SET score = ${score} WHERE id = ${e.id}`;
+    ids.push(e.id);
+    scores.push(scoreEvent(e, weightByKey.get(e.source)));
   }
+  await sql`
+    UPDATE events AS e SET score = v.score
+    FROM unnest(${ids}::int[], ${scores}::int[]) AS v(id, score)
+    WHERE e.id = v.id
+  `;
   return { scored: events.length };
 }
