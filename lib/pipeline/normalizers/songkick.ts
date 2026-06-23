@@ -1,8 +1,7 @@
 import { sql } from "../../db";
-import { compact, nowIso } from "../util";
-import { upsertPlainEvent, type EventInsert } from "./worldafisha";
+import { compact } from "../util";
+import { runPlainNormalizer, type EventInsert } from "./shared";
 import { isJunkCard } from "./valenciarusa";
-import { markRawItem } from "./types";
 import type { RawItem } from "./types";
 
 // T112-family — songkick.com Valencia metro feed (web/ticketing source, key
@@ -214,36 +213,14 @@ export function buildSongkickEvents(
 // upserts each idempotently (shared upsertPlainEvent), then marks EVERY processed
 // raw row normalized append-only — including the snapshot, chrome, and the date
 // rows that were folded into their title row (never deletes raw rows —
-// constitution I). `exec` is injectable for tests.
+// constitution I). Delegates the canonical orchestration to `runPlainNormalizer`
+// (T183 F2). `exec` is injectable for tests.
 export async function normalizeSongkick(
   { exec = sql }: { exec?: typeof sql } = {},
 ): Promise<{ created: number; updated: number; processed: number }> {
-  const rows = (await exec`
-    SELECT * FROM source_items
-    WHERE source_key = ${SONGKICK_SOURCE_KEY}
-      AND (normalized_status IS NULL OR normalized_status = 'pending'
-           OR normalized_at IS NULL OR normalized_at < last_seen)
-  `) as unknown as RawItem[];
-
-  const drafts = buildSongkickEvents(rows);
-  let created = 0;
-  let updated = 0;
-
-  for (const { draft, sourceItemId } of drafts) {
-    try {
-      const res = await upsertPlainEvent(draft, sourceItemId, exec);
-      if (res.inserted) created++;
-      else updated++;
-    } catch {
-      // fail-soft: skip the bad draft, keep processing the batch
-    }
-  }
-
-  // Append-only bookkeeping: mark every raw row we read as normalized (incl. dropped
-  // chrome and the date rows folded into their title row).
-  for (const item of rows) {
-    await markRawItem(item.id, "normalized", null, exec);
-  }
-
-  return { created, updated, processed: rows.length };
+  return runPlainNormalizer({
+    sourceKey: SONGKICK_SOURCE_KEY,
+    build: buildSongkickEvents,
+    exec,
+  });
 }

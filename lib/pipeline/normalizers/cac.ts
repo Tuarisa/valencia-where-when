@@ -1,11 +1,10 @@
 import { sql } from "../../db";
-import { compact, nowIso } from "../util";
-import { markRawItem } from "./types";
+import { compact } from "../util";
 import {
   parseEventDate,
-  upsertPlainEvent,
+  runPlainNormalizer,
   type EventInsert,
-} from "./worldafisha";
+} from "./shared";
 import { parsePrice } from "./valenciarusa";
 import type { RawItem } from "./types";
 
@@ -397,32 +396,7 @@ export async function normalizeCacSource(
   sourceKey: string,
   { exec = sql }: { exec?: typeof sql } = {},
 ): Promise<{ created: number; updated: number; processed: number }> {
-  const rows = (await exec`
-    SELECT * FROM source_items
-    WHERE source_key = ${sourceKey}
-      AND (normalized_status IS NULL OR normalized_status = 'pending'
-           OR normalized_at IS NULL OR normalized_at < last_seen)
-  `) as unknown as RawItem[];
-
-  const drafts = buildCacEvents(rows);
-  let created = 0;
-  let updated = 0;
-
-  for (const { draft, sourceItemId } of drafts) {
-    try {
-      const res = await upsertPlainEvent(draft, sourceItemId, exec);
-      if (res.inserted) created++;
-      else updated++;
-    } catch {
-      // fail-soft: skip the bad draft, keep processing the batch
-    }
-  }
-
-  for (const item of rows) {
-    await markRawItem(item.id, "normalized", null, exec);
-  }
-
-  return { created, updated, processed: rows.length };
+  return runPlainNormalizer({ sourceKey, build: buildCacEvents, exec });
 }
 
 // A registry-shaped normalizer (no-arg) bound to a single cac source key.

@@ -1,11 +1,10 @@
 import { sql } from "../../db";
-import { compact, nowIso } from "../util";
-import { markRawItem } from "./types";
+import { compact } from "../util";
 import {
   parseEventDate,
-  upsertPlainEvent,
+  runPlainNormalizer,
   type EventInsert,
-} from "./worldafisha";
+} from "./shared";
 import { parsePrice, isJunkCard } from "./valenciarusa";
 import type { RawItem } from "./types";
 
@@ -376,36 +375,14 @@ export function buildLacotorraEvents(
 // Normalizer for lacotorra. Reads pending raw rows, parses the snapshot into event
 // drafts, upserts each idempotently (shared `upsertPlainEvent`), then marks EVERY
 // processed raw row normalized append-only — including the dropped link_card chrome
-// rows (constitution I: raw layer is append-only; never deletes). `exec` injectable.
+// rows (constitution I: raw layer is append-only; never deletes). Delegates the
+// canonical orchestration to `runPlainNormalizer` (T183 F2). `exec` injectable.
 export async function normalizeLacotorra(
   { exec = sql }: { exec?: typeof sql } = {},
 ): Promise<{ created: number; updated: number; processed: number }> {
-  const rows = (await exec`
-    SELECT * FROM source_items
-    WHERE source_key = ${LACOTORRA_SOURCE_KEY}
-      AND (normalized_status IS NULL OR normalized_status = 'pending'
-           OR normalized_at IS NULL OR normalized_at < last_seen)
-  `) as unknown as RawItem[];
-
-  const drafts = buildLacotorraEvents(rows);
-  let created = 0;
-  let updated = 0;
-
-  for (const { draft, sourceItemId } of drafts) {
-    try {
-      const res = await upsertPlainEvent(draft, sourceItemId, exec);
-      if (res.inserted) created++;
-      else updated++;
-    } catch {
-      // fail-soft: skip the bad draft, keep processing the batch
-    }
-  }
-
-  // Mark every processed raw row normalized (events came from the snapshot; the
-  // link_card chrome rows are dropped but still recorded as processed).
-  for (const item of rows) {
-    await markRawItem(item.id, "normalized", null, exec);
-  }
-
-  return { created, updated, processed: rows.length };
+  return runPlainNormalizer({
+    sourceKey: LACOTORRA_SOURCE_KEY,
+    build: buildLacotorraEvents,
+    exec,
+  });
 }

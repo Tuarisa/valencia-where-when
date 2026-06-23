@@ -1,6 +1,6 @@
 import { sql } from "../../db";
 import { compact, nowIso } from "../util";
-import { parseEventDate, upsertPlainEvent, deriveCityFor, type EventInsert } from "./worldafisha";
+import { parseEventDate, upsertPlainEvent, deriveCityFor, type EventInsert } from "./shared";
 import type { RawItem } from "./types";
 
 // T111 — valenciarusa.es (web source, key `web:valenciarusa`, id 7). The most

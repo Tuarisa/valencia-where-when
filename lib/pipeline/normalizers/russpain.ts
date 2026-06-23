@@ -5,7 +5,7 @@ import {
   dateFromUrl,
   upsertPlainEvent,
   type EventInsert,
-} from "./worldafisha";
+} from "./shared";
 import { parsePrice, parseVenue, parseAddress, isJunkCard } from "./valenciarusa";
 import type { RawItem } from "./types";
 

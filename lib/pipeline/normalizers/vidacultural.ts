@@ -1,6 +1,6 @@
 import { sql } from "../../db";
 import { compact, nowIso } from "../util";
-import { parseEventDate, upsertPlainEvent, type EventInsert } from "./worldafisha";
+import { parseEventDate, upsertPlainEvent, type EventInsert } from "./shared";
 import { parsePrice, parseVenue, parseAddress, isJunkCard } from "./valenciarusa";
 import type { RawItem } from "./types";
 

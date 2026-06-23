@@ -1,8 +1,7 @@
 import { sql } from "../../db";
-import { compact, nowIso } from "../util";
-import { upsertPlainEvent, type EventInsert } from "./worldafisha";
+import { compact } from "../util";
+import { runPlainNormalizer, type EventInsert } from "./shared";
 import { isJunkCard } from "./valenciarusa";
-import { markRawItem } from "./types";
 import type { RawItem } from "./types";
 
 // T112-style — hoyvalencia.app (web source, key `web:hoyvalencia`, id 11). The
@@ -334,36 +333,14 @@ export function buildHoyvalenciaEvents(
 // Normalizer for hoyvalencia. Reads pending raw rows, builds event drafts, upserts
 // each idempotently (shared `upsertPlainEvent`), then marks EVERY processed raw row
 // normalized — including the dropped ones — append-only (never deletes raw rows —
-// constitution I). `exec` is injectable for tests.
+// constitution I). Delegates the canonical orchestration to `runPlainNormalizer`
+// (T183 F2). `exec` is injectable for tests.
 export async function normalizeHoyvalencia(
   { exec = sql }: { exec?: typeof sql } = {},
 ): Promise<{ created: number; updated: number; processed: number }> {
-  const rows = (await exec`
-    SELECT * FROM source_items
-    WHERE source_key = ${HOYVALENCIA_SOURCE_KEY}
-      AND (normalized_status IS NULL OR normalized_status = 'pending'
-           OR normalized_at IS NULL OR normalized_at < last_seen)
-  `) as unknown as RawItem[];
-
-  const drafts = buildHoyvalenciaEvents(rows);
-  let created = 0;
-  let updated = 0;
-
-  for (const { draft, sourceItemId } of drafts) {
-    try {
-      const res = await upsertPlainEvent(draft, sourceItemId, exec);
-      if (res.inserted) created++;
-      else updated++;
-    } catch {
-      // fail-soft: skip the bad draft, keep processing the batch
-    }
-  }
-
-  // Mark EVERY processed raw row normalized (incl. dropped nav/chrome/snapshot rows),
-  // append-only — so the dispatcher doesn't re-offer them next run.
-  for (const item of rows) {
-    await markRawItem(item.id, "normalized", null, exec);
-  }
-
-  return { created, updated, processed: rows.length };
+  return runPlainNormalizer({
+    sourceKey: HOYVALENCIA_SOURCE_KEY,
+    build: buildHoyvalenciaEvents,
+    exec,
+  });
 }

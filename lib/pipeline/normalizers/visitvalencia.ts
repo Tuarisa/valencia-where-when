@@ -1,8 +1,7 @@
 import { sql } from "../../db";
-import { compact, nowIso } from "../util";
-import { parseEventDate, upsertPlainEvent, type EventInsert } from "./worldafisha";
+import { compact } from "../util";
+import { parseEventDate, runPlainNormalizer, type EventInsert } from "./shared";
 import { isJunkCard } from "./valenciarusa";
-import { markRawItem } from "./types";
 import type { RawItem } from "./types";
 
 // T112-family — visitvalencia.com (official tourist board, web source, key
@@ -147,35 +146,14 @@ export function buildVisitvalenciaEvents(
 // each idempotently (shared `upsertPlainEvent` → ON CONFLICT(dedup_hash) preserves
 // downstream enrichment/scoring/notify state), then marks EVERY processed raw row
 // normalized append-only — including dropped nav/chrome rows (never deletes raw rows,
-// constitution I). `exec` is injectable for tests.
+// constitution I). Delegates the canonical orchestration to `runPlainNormalizer`
+// (T183 F2). `exec` is injectable for tests.
 export async function normalizeVisitvalencia(
   { exec = sql }: { exec?: typeof sql } = {},
 ): Promise<{ created: number; updated: number; processed: number }> {
-  const rows = (await exec`
-    SELECT * FROM source_items
-    WHERE source_key = ${VISITVALENCIA_SOURCE_KEY}
-      AND (normalized_status IS NULL OR normalized_status = 'pending'
-           OR normalized_at IS NULL OR normalized_at < last_seen)
-  `) as unknown as RawItem[];
-
-  const drafts = buildVisitvalenciaEvents(rows);
-  let created = 0;
-  let updated = 0;
-
-  for (const { draft, sourceItemId } of drafts) {
-    try {
-      const res = await upsertPlainEvent(draft, sourceItemId, exec);
-      if (res.inserted) created++;
-      else updated++;
-    } catch {
-      // fail-soft: skip the bad draft, keep processing the batch
-    }
-  }
-
-  // Append-only: mark every raw row we saw normalized (incl. dropped nav/chrome).
-  for (const item of rows) {
-    await markRawItem(item.id, "normalized", null, exec);
-  }
-
-  return { created, updated, processed: rows.length };
+  return runPlainNormalizer({
+    sourceKey: VISITVALENCIA_SOURCE_KEY,
+    build: buildVisitvalenciaEvents,
+    exec,
+  });
 }

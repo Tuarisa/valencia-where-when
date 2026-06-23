@@ -1076,12 +1076,18 @@ Structural improvements the fresh-eyes review surfaced. Recorded as tasks; tackl
   drift proof on a throwaway DB — `ALTER TABLE events ADD COLUMN` made export auto-emit 45 cols + the value
   round-tripped; round-trip load of the scratch export = 353 events. 7 new pure tests; 432/432, build green.
 
-- [ ] T183 [H] **F1/F2: normalizer god-module + copy-pasted orchestrator** (code review). `worldafisha.ts` is
-  a SOURCE normalizer but 15 siblings import shared helpers (`parseEventDate`, `upsertPlainEvent`,
-  `EventInsert`) FROM it, and `fever.ts` forked a 2nd copy of the events `INSERT…ON CONFLICT` SQL; the
-  `normalizeX` orchestrator body is copy-pasted ~17×. Fix: extract `normalizers/shared/{dates,persist,fields,
-  raw}.ts` + a `runPlainNormalizer` HOF; re-point the 17 normalizers. Larger refactor (touches every
-  normalizer) — schedule deliberately, gate hard. High maintainability payoff, higher risk.
+- [x] T183 [H] **F1/F2: normalizer god-module + copy-pasted orchestrator → DE-COUPLED** (code review, done
+  2026-06-23). `worldafisha.ts` was a SOURCE normalizer that 16 siblings imported shared helpers FROM, and
+  `fever.ts` had forked a 2nd copy of the events `INSERT…ON CONFLICT` SQL. FIX: extracted a neutral
+  `lib/pipeline/normalizers/shared.ts` holding the genuinely-shared, source-agnostic helpers — `parseEventDate`,
+  `dateFromUrl`, `urlSlug`, `deriveCityFor`, `EventInsert` (type), `upsertPlainEvent`, + a new
+  `runPlainNormalizer` HOF (F2). **18 normalizers** now import these from `./shared` (0 import them from
+  worldafisha → it's just another consumer, no longer the god-module); **fever's forked upsertPlainEvent + SQL
+  removed** (now imports the canonical one); **10 normalizers** adopted the `runPlainNormalizer` HOF (the rest
+  keep bespoke orchestrators where they differ — partial adoption by design, correctness > coverage). PURE
+  mechanical refactor — output identical: build 0, **432/432** tests green, and a live re-normalize of palau
+  (reset→re-run) gave 10 events before = 10 after (0 created / 10 updated, idempotent, no dups). All code-review
+  findings (F1–F5) now closed.
 
 - [x] T184 [perf] **F4: N+1 writes over Neon HTTP, no transactions** (code review). `scoreAll`/`tagAll`/
   `markEventsNotified` etc. issue 2×N round-trips over Neon's per-statement HTTP driver with no transaction —

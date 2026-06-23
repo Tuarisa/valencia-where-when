@@ -1,12 +1,12 @@
 import { sql } from "../../db";
-import { compact, nowIso } from "../util";
+import { compact } from "../util";
 import {
   parseEventDate,
-  upsertPlainEvent,
+  runPlainNormalizer,
   type EventInsert,
-} from "./worldafisha";
+} from "./shared";
 import { isJunkCard } from "./valenciarusa";
-import { markRawItem, type RawItem } from "./types";
+import type { RawItem } from "./types";
 
 // laganzua.net (web source, key `web:laganzua`, id 15). "La Ganzúa" is an
 // independent-music concerts agenda. The seeded page is the Valencia weekend
@@ -177,35 +177,14 @@ export function buildLaganzuaEvents(
 // Normalizer for La Ganzúa. Reads pending raw rows, builds Valencia event drafts,
 // upserts each idempotently (shared `upsertPlainEvent`), then marks EVERY processed
 // raw row normalized append-only — including dropped rows (never deletes raw rows —
-// constitution I). `exec` is injectable for tests.
+// constitution I). Delegates the canonical orchestration to `runPlainNormalizer`
+// (T183 F2). `exec` is injectable for tests.
 export async function normalizeLaganzua(
   { exec = sql }: { exec?: typeof sql } = {},
 ): Promise<{ created: number; updated: number; processed: number }> {
-  const rows = (await exec`
-    SELECT * FROM source_items
-    WHERE source_key = ${LAGANZUA_SOURCE_KEY}
-      AND (normalized_status IS NULL OR normalized_status = 'pending'
-           OR normalized_at IS NULL OR normalized_at < last_seen)
-  `) as unknown as RawItem[];
-
-  const drafts = buildLaganzuaEvents(rows);
-  let created = 0;
-  let updated = 0;
-
-  for (const { draft, sourceItemId } of drafts) {
-    try {
-      const res = await upsertPlainEvent(draft, sourceItemId, exec);
-      if (res.inserted) created++;
-      else updated++;
-    } catch {
-      // fail-soft: skip the bad draft, keep processing the batch
-    }
-  }
-
-  // Append-only bookkeeping on EVERY processed row (incl. dropped ones).
-  for (const item of rows) {
-    await markRawItem(item.id, "normalized", null, exec);
-  }
-
-  return { created, updated, processed: rows.length };
+  return runPlainNormalizer({
+    sourceKey: LAGANZUA_SOURCE_KEY,
+    build: buildLaganzuaEvents,
+    exec,
+  });
 }

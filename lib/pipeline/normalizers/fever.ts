@@ -1,7 +1,8 @@
 import { sql } from "../../db";
-import { compact, eventHash, nowIso } from "../util";
+import { compact } from "../util";
 import { markRawItem } from "./types";
 import type { RawItem } from "./types";
+import { upsertPlainEvent, type EventInsert } from "./shared";
 
 // T151 — feverup.com Valencia (web/ticketing source, key `web:fever`, id 12). The
 // generic web parser stores each Fever listing card as a `link_card` row whose
@@ -239,88 +240,6 @@ export function buildFeverEvents(
     });
   }
   return out;
-}
-
-// Minimal shape this normalizer writes into `events` (subset of the table columns).
-export interface EventInsert {
-  title: string;
-  description?: string | null;
-  category?: string | null;
-  language?: string | null;
-  audience?: string | null;
-  start_date?: string | null;
-  end_date?: string | null;
-  start_time?: string | null;
-  venue_name?: string | null;
-  district?: string | null;
-  address?: string | null;
-  city?: string | null;
-  country?: string | null;
-  price?: string | null;
-  is_free?: number | null;
-  url?: string | null;
-  venue_url?: string | null;
-  image_url?: string | null;
-  source?: string | null;
-  source_url?: string | null;
-  raw_excerpt?: string | null;
-}
-
-// Idempotent upsert of one plain event (mirrors worldafisha.upsertPlainEvent): ON
-// CONFLICT(dedup_hash) updates only normalizer-owned fields + last_seen, never
-// touching score / enriched_at / enrichment_json / title_ru / description_ru /
-// notified (a re-ingest preserves downstream enrichment/scoring/notify state —
-// constitution IV idempotency). Returns whether the row was freshly inserted.
-export async function upsertPlainEvent(
-  draft: EventInsert,
-  sourceItemId: number,
-  exec: typeof sql = sql,
-): Promise<{ inserted: boolean }> {
-  const ts = nowIso();
-  const hash = eventHash({
-    title: draft.title,
-    start_date: draft.start_date,
-    end_date: draft.end_date,
-    venue_name: draft.venue_name,
-    address: draft.address,
-  });
-  const rows = (await exec`
-    INSERT INTO events (
-      dedup_hash, title, description, category, language, audience,
-      start_date, end_date, start_time, venue_name, district, address,
-      city, country, price, is_free, url, venue_url, image_url,
-      source, source_url, raw_excerpt, source_item_id,
-      status, first_seen, last_seen
-    ) VALUES (
-      ${hash}, ${draft.title}, ${draft.description ?? null}, ${draft.category ?? null},
-      ${draft.language ?? null}, ${draft.audience ?? null},
-      ${draft.start_date ?? null}, ${draft.end_date ?? null}, ${draft.start_time ?? null},
-      ${draft.venue_name ?? null}, ${draft.district ?? null}, ${draft.address ?? null},
-      ${draft.city ?? "Valencia"}, ${draft.country ?? "Spain"},
-      ${draft.price ?? null}, ${draft.is_free ?? null}, ${draft.url ?? null},
-      ${draft.venue_url ?? null}, ${draft.image_url ?? null},
-      ${draft.source ?? null}, ${draft.source_url ?? null}, ${draft.raw_excerpt ?? null},
-      ${sourceItemId}, 'upcoming', ${ts}, ${ts}
-    )
-    ON CONFLICT (dedup_hash) DO UPDATE SET
-      title = EXCLUDED.title,
-      description = EXCLUDED.description,
-      category = EXCLUDED.category,
-      start_date = EXCLUDED.start_date,
-      end_date = EXCLUDED.end_date,
-      start_time = EXCLUDED.start_time,
-      venue_name = EXCLUDED.venue_name,
-      district = EXCLUDED.district,
-      address = EXCLUDED.address,
-      price = EXCLUDED.price,
-      is_free = EXCLUDED.is_free,
-      url = EXCLUDED.url,
-      image_url = EXCLUDED.image_url,
-      source_item_id = EXCLUDED.source_item_id,
-      last_seen = ${ts}
-    RETURNING (xmax = 0) AS inserted
-  `) as unknown as Array<{ inserted: boolean }>;
-  return { inserted: rows[0]?.inserted === true };
 }
 
 // Normalizer for Fever. Reads pending raw rows, builds event drafts, upserts each

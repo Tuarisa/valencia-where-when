@@ -1,6 +1,6 @@
 import { sql } from "../../db";
 import { compact, nowIso } from "../util";
-import { parseEventDate, upsertPlainEvent, type EventInsert } from "./worldafisha";
+import { parseEventDate, upsertPlainEvent, type EventInsert } from "./shared";
 import { parsePrice, parseVenue, parseAddress } from "./valenciarusa";
 import { isSpainEvent, hasNonSpainSignal, hasSpainSignal } from "./spain-filter";
 import { postTitle } from "./vidacultural";
