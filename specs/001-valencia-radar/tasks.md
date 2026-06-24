@@ -1178,7 +1178,7 @@ Structural improvements the fresh-eyes review surfaced. Recorded as tasks; tackl
 tag noise — are being fixed by the UI agent and recorded with that commit. T190–T191 below are the two
 additional issues the agent is NOT handling.)
 
-- [ ] T190 [A/F] **Event «Источник» link points to the aggregator INDEX, not the specific event** (user,
+- [x] T190 [A/F] **Event «Источник» link points to the aggregator INDEX, not the specific event** (user,
   2026-06-24, `/events/25531`). For page-snapshot aggregators (`web:lacotorra`, `web:cac_*`) the normalizer
   sets BOTH `url` and `source_url` to the generic listing URL (e.g. `https://lacotorra.io/events`) — individual
   events have NO own URL in the data (the raw snapshot text is the site's nav/chrome, no per-event "Ver más"
