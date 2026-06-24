@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { eventGeoQueries } from "../lib/pipeline/geo.ts";
+import { eventGeoQueries, placeNameFromMapsUrl } from "../lib/pipeline/geo.ts";
 import { isCentroid } from "../lib/pipeline/dedup.ts";
 
 // Pure-logic mirror of lib/pipeline/geo.ts `mapsAddressQuery` (T135). The Google-Maps
@@ -109,4 +109,50 @@ test("fallback decision: a real venue coord is kept, a city centroid is rejected
   assert.equal(isCentroid(39.4493, -0.3573), false);
   // València generic-centre fallback (Teatro Olympia's venue-name hit) → rejected.
   assert.equal(isCentroid(39.4697065, -0.3763353), true);
+});
+
+// ===================== T193: placeNameFromMapsUrl (resolved Google-Maps URL → venue name) =====================
+// Early logunespa places were stored with the raw `maps.app.goo.gl/<short>` URL AS the name.
+// Following the redirect yields a real Google-Maps URL; these lock the deterministic parse
+// that recovers the venue name from its real-world shapes (no network in the test).
+
+test("placeNameFromMapsUrl: ?q=<Venue>, <address> → the venue (first comma-segment, +→space)", () => {
+  // Real resolved target for the Cafe Montoro short-link.
+  assert.equal(
+    placeNameFromMapsUrl("https://www.google.com/maps?q=Cafe+Montoro,+C/+del+Dr.+%C3%81lvaro+L%C3%B3pez,+81,+46011+Val%C3%A8ncia,+Valencia&ftid=0xabc"),
+    "Cafe Montoro",
+  );
+});
+
+test("placeNameFromMapsUrl: chain-store ?q= keeps the branch in the venue segment", () => {
+  assert.equal(
+    placeNameFromMapsUrl("https://www.google.com/maps?q=Costco+Wholesale+Zaragoza,+Calle+Isla+de+Pantelaria,+38,+50197+Zaragoza&entry=gps"),
+    "Costco Wholesale Zaragoza",
+  );
+});
+
+test("placeNameFromMapsUrl: /maps/place/<Venue>/@lat,lng path form → decoded venue", () => {
+  assert.equal(
+    placeNameFromMapsUrl("https://www.google.com/maps/place/Mercado+Central/@39.4738,-0.3795,17z/data=!4m"),
+    "Mercado Central",
+  );
+});
+
+test("placeNameFromMapsUrl: a bare-postcode locality strips the 5-digit postcode", () => {
+  // ids 13/14 — the q= is just "<postcode> <Locality>, Valencia" (no venue).
+  assert.equal(placeNameFromMapsUrl("https://www.google.com/maps?q=46140+Ademuz,+Valencia&entry=gps"), "Ademuz");
+  assert.equal(placeNameFromMapsUrl("https://www.google.com/maps?q=46593+Algar+de+Palancia,+Valencia"), "Algar de Palancia");
+});
+
+test("placeNameFromMapsUrl: percent-encoded Cyrillic/accents decode correctly", () => {
+  assert.equal(placeNameFromMapsUrl("https://www.google.com/maps?q=La+H%C3%ADpica,+Carrer+del+Pintor"), "La Hípica");
+});
+
+test("placeNameFromMapsUrl: no name segment / null / a bare short-link → null (caller falls back)", () => {
+  assert.equal(placeNameFromMapsUrl(null), null);
+  assert.equal(placeNameFromMapsUrl(""), null);
+  // an unfollowed short-link is itself URL-ish → no name
+  assert.equal(placeNameFromMapsUrl("https://maps.app.goo.gl/ayWzLFSR1RTmsVyaA"), null);
+  // a coords-only q= has no textual name
+  assert.equal(placeNameFromMapsUrl("https://www.google.com/maps?q=39.4697,-0.3763"), null);
 });

@@ -93,6 +93,60 @@ export function mapsAddressQuery(qText?: string | null): string | null {
   return parts.join(", ");
 }
 
+// PURE (T193): recover the real VENUE NAME from a RESOLVED Google-Maps URL (the target of
+// a `maps.app.goo.gl/<short>` redirect). Early-crawl logunespa places were stored with the
+// raw short-link AS the name; following the redirect yields e.g.
+//   https://www.google.com/maps?q=Cafe+Montoro,+C/+del+Dr.+Álvaro+López,+81,+...+València
+//   https://www.google.com/maps/place/Mercado+Central/@39.47,-0.37,17z
+//   https://www.google.com/maps?q=46140+Ademuz,+Valencia   (no venue, just a locality)
+// We take the venue from the `/place/<...>/` path segment, else the FIRST comma-segment of
+// the `q=`/`query=`/`search` param. `+`→space, percent-decode, drop a trailing `/@lat,lng`
+// blob, and strip a leading bare postcode ("46140 Ademuz" → "Ademuz"). Returns a readable
+// name or null (dead link / no name segment → caller falls back to area/city).
+export function placeNameFromMapsUrl(resolvedUrl?: string | null): string | null {
+  if (!resolvedUrl) return null;
+  const decode = (s: string): string => {
+    let t = s.replace(/\+/g, " ");
+    try { t = decodeURIComponent(t); } catch { /* keep as-is on malformed escapes */ }
+    return t.replace(/\s+/g, " ").trim();
+  };
+  const cleanName = (raw: string): string | null => {
+    let name = decode(raw)
+      .replace(/\/@.*$/, "") // drop a trailing "/@lat,lng,17z" coords blob
+      .replace(/^[\s,]+|[\s,]+$/g, "");
+    // A bare-postcode-prefixed locality ("46140 Ademuz") — strip the 5-digit postcode.
+    name = name.replace(/^\d{5}\s+/, "").trim();
+    if (!name || URLISH_RE.test(name)) return null;
+    // Take the VENUE (first comma-segment) — the rest is the street address.
+    const first = name.split(",")[0].trim();
+    // Reject a coordinate segment ("39.4697" from a "q=lat,lng") — that is not a name.
+    if (!first || /^-?\d+(\.\d+)?$/.test(first)) return null;
+    return first;
+  };
+  // 1) /maps/place/<Venue+Name>/...  — the canonical place form.
+  const placeMatch = /\/maps\/place\/([^/?#]+)/i.exec(resolvedUrl);
+  if (placeMatch) {
+    const n = cleanName(placeMatch[1]);
+    if (n) return n;
+  }
+  // 2) ?q= / ?query= / ?search= / search/<...> — the first segment is the venue/locality.
+  try {
+    const parsed = new URL(resolvedUrl);
+    for (const key of ["q", "query", "search"]) {
+      const v = parsed.searchParams.get(key);
+      if (!v) continue;
+      const n = cleanName(v);
+      if (n) return n;
+    }
+    const searchPath = /\/maps\/search\/([^/?#]+)/i.exec(resolvedUrl);
+    if (searchPath) {
+      const n = cleanName(searchPath[1]);
+      if (n) return n;
+    }
+  } catch { /* ignore */ }
+  return null;
+}
+
 async function geocodeText(query: string): Promise<{ lat: number | null; lng: number | null; display: string | null }> {
   if (!query) return { lat: null, lng: null, display: null };
   const url = "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=" + encodeURIComponent(query);
