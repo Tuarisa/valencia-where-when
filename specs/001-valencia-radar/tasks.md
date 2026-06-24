@@ -1257,7 +1257,7 @@ additional issues the agent is NOT handling.)
   (+93 net new after dedup, 322 dated). Fresh 3-day backfill in the persistent local `main` DB. Quality nits
   surfaced → T196. A seed re-bake (T173) to ship the +93 to prod is user-confirmed/pending.)*
 
-- [ ] T196 [A] **Normalizer title-noise in freshly-ingested data (hoyvalencia date-prefix, vidacultural)**
+- [x] T196 [A] **Normalizer title-noise in freshly-ingested data (hoyvalencia date-prefix, vidacultural)**
   (found during the T195 refresh, 2026-06-24). New events show title cruft: `web:hoyvalencia` prefixes a date
   RANGE onto titles — "Del al 28 jun 2026 Carmina Burana Palau…", "Del al 26 jun 2026 Representación…" (the
   "Del [DD] al DD mon YYYY" range leaks into `title`; should be parsed into start/end_date + stripped from the
