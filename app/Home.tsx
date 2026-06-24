@@ -141,14 +141,20 @@ export default function Home({ payload }: { payload: SitePayload }) {
       </section>
 
       <main className="layout">
-        <div className="top-row">
-          <Calendar
-            payload={payload}
-            monthIndex={monthIndex}
-            setMonthIndex={setMonthIndex}
-          />
-          <MapPanel events={payload.events.filter((e) => !e.calendar_only)} places={filteredPlaces} center={payload.map_center} />
-        </div>
+        {/* T191: when ANY filter is active (category / tag / search), hide the calendar +
+            map block so the FEED surfaces directly under the filter bar — clicking a chip
+            shouldn't scroll the result far below the calendar + map. Restored when the
+            filter is cleared (the «сбросить фильтры» button below resets all three). */}
+        {!filterActive && (
+          <div className="top-row">
+            <Calendar
+              payload={payload}
+              monthIndex={monthIndex}
+              setMonthIndex={setMonthIndex}
+            />
+            <MapPanel events={payload.events.filter((e) => !e.calendar_only)} places={filteredPlaces} center={payload.map_center} />
+          </div>
+        )}
 
         <section className="panel">
           <div className="panel-head">
