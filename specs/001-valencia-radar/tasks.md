@@ -1213,7 +1213,7 @@ additional issues the agent is NOT handling.)
   ~1 MB. (Hobby is non-commercial only.) One-file change + activate the GH-Actions secrets (`APP_BASE_URL` +
   `CRON_SECRET`). Decide at deploy time; DEPLOY.md already documents this path.
 
-- [ ] T193 [A/H] **8 places show a raw `maps.app.goo.gl` URL as their NAME** (user, 2026-06-24, screenshot —
+- [x] T193 [A/H] **8 places show a raw `maps.app.goo.gl` URL as their NAME** (user, 2026-06-24, screenshot —
   "некрасиво"). Places ids 7–14 (early logunespa crawl) have `name` = a `maps.app.goo.gl/<short>` URL (no real
   name, no address; they DO have geo/lat). The place cards render the URL as the title → ugly. FIX
   (deterministic, T140): `scripts/bake-place-geo.mjs` already FOLLOWS the `maps.app.goo.gl` redirect for geo —
