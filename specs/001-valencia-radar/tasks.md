@@ -1223,7 +1223,7 @@ additional issues the agent is NOT handling.)
   resolved for a row, fall back to the area/city or exclude it from the catalog render rather than show a URL.
   Verify the 8 cards show real names after. (This is the long-open T135-part-2 name cleanup.)
 
-- [ ] T194 [F] **Design feels like generic "Claude Design" stamps — take MORE from dalnoboi.org + drop the
+- [x] T194 [F] **Design feels like generic "Claude Design" stamps — take MORE from dalnoboi.org + drop the
   left-stripe card cliché** (user, `backlog:`, 2026-06-24). The T163 pass took dalnoboi.org's PALETTE but the
   card/layout styling reads as a typical Claude-Design template — specifically the user is annoyed by the
   **cards with a bold accent STRIPE on the left** ("карточки с жирной полоской слева — такой типичный штамп,
