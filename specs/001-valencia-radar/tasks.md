@@ -1134,3 +1134,29 @@ Structural improvements the fresh-eyes review surfaced. Recorded as tasks; tackl
   to assert the batched shape (1 UPDATE + 1 INSERT per call, all ids in one array param). Build green,
   432/432 tests. Chose array-param unnest over `sql.query()` (absent in neon 0.10.4) — fully
   parameterized, no string interpolation.
+
+### UI / UX issues from the user's 2026-06-24 screenshot review
+(T186–T189 = the four visible bugs — calendar exposition wall / dead place images / image-block size /
+tag noise — are being fixed by the UI agent and recorded with that commit. T190–T191 below are the two
+additional issues the agent is NOT handling.)
+
+- [ ] T190 [A/F] **Event «Источник» link points to the aggregator INDEX, not the specific event** (user,
+  2026-06-24, `/events/25531`). For page-snapshot aggregators (`web:lacotorra`, `web:cac_*`) the normalizer
+  sets BOTH `url` and `source_url` to the generic listing URL (e.g. `https://lacotorra.io/events`) — individual
+  events have NO own URL in the data (the raw snapshot text is the site's nav/chrome, no per-event "Ver más"
+  links captured). So the detail-page "Источник" button (`app/events/[id]/page.tsx:39`) opens the aggregator's
+  events index ("главная"), useless for the specific event. NO clean data fix exists (the per-event URL isn't
+  in `source_items`). OPTIONS (decide w/ user): (a) when `source_url`/`url` is a known index-only aggregator
+  URL, RELABEL the button «Все события (lacotorra)» / «Афиша-источник» instead of «Источник» (honest); (b) hide
+  the button for index-only URLs; (c) enhance the lacotorra/cac crawler to capture per-event detail links if
+  they exist on the live site (heavier, needs re-crawl). Recommend (a). Low severity, but misleading.
+
+- [ ] T191 [F] **Filters are at the TOP, but the filtered content (feed) is BELOW the calendar + map** (user,
+  2026-06-24: "фильтры сверху, а контент фильтруемый уже под календарём и картой, звучит как бред"). The search
+  box + category chips + tag cloud sit at the top of the page, but the FEED they filter renders far down, after
+  the calendar panel and the Leaflet map — so clicking a filter scrolls-disconnects the action from its result.
+  FIX (layout, `app/Home.tsx` + `globals.css`): put the filters ADJACENT to the feed they control — either move
+  the filter bar down to sit directly above the feed list, OR move the feed up next to the filters (e.g. feed +
+  filters in one column, calendar/map in another / below). Keep calendar + map accessible. Design decision —
+  confirm the preferred arrangement with the user (feed-first vs calendar-first) before implementing. Part of
+  the T163 design polish.
