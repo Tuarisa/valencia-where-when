@@ -169,13 +169,29 @@ function accumulateSources(group, existing) {
   return out;
 }
 
+// T185 mirror: gap-fill end_date from the loser with the furthest-future span.
+function hasEndDate(v) {
+  return typeof v === 'string' && v.trim() !== '';
+}
+function inheritEndDate(survivor, losers) {
+  if (hasEndDate(survivor.end_date)) return null;
+  let best = null;
+  for (const loser of losers) {
+    if (hasEndDate(loser.end_date) && (best == null || loser.end_date > best)) best = loser.end_date;
+  }
+  return best;
+}
+
 function mergeGroup(group, rankFn = sourceWeightRank) {
   const survivor = chooseSurvivor(group, rankFn);
   const metadata = parseMetadata(survivor.metadata_json);
   const mergedSources = accumulateSources(group, metadata.sources);
   metadata.sources = mergedSources;
-  const mergedSurvivor = { ...survivor, metadata_json: JSON.stringify(metadata) };
   const losers = group.filter((ev) => ev !== survivor);
+  const mergedSurvivor = { ...survivor, metadata_json: JSON.stringify(metadata) };
+  // T185: only fill when the survivor's own end_date is null/empty (never overwrite).
+  const inherited = inheritEndDate(mergedSurvivor, losers);
+  if (inherited != null) mergedSurvivor.end_date = inherited;
   return { survivor: mergedSurvivor, mergedSources, losers };
 }
 
@@ -488,6 +504,61 @@ test('(d) mergeGroup returns exactly two losers', () => {
   assert.equal(losers.length, 2);
   assert.ok(!losers.some((l) => l.id === survivor.id), 'survivor is not among losers');
   assert.deepEqual(losers.map((l) => l.id).sort(), [1, 3]);
+});
+
+// --- T185: merge gap-fills the survivor's end_date from a loser (the ¡BAILAR! case) ---
+// A cac_agenda listing (survivor: higher score, no end_date) merges with the
+// cac_exposiciones listing (loser: carries the multi-day span end_date) — the
+// survivor must INHERIT the span so an exhibition keeps its calendar spanning-bar.
+function bailarGroup() {
+  return [
+    {
+      id: 25796, title: '¡BAILAR!', city: 'Valencia', start_date: '2025-10-03',
+      end_date: null, score: 80, source: 'cac_agenda',
+      source_url: 'https://caixaforum.org/agenda/bailar', source_weight: 'gold',
+    },
+    {
+      id: 25797, title: '¡BAILAR!', city: 'Valencia', start_date: '2025-10-03',
+      end_date: '2028-01-10', score: 50, source: 'cac_exposiciones',
+      source_url: 'https://caixaforum.org/exposiciones/bailar', source_weight: 'gold',
+    },
+  ];
+}
+
+test('(T185 a) survivor with null end_date inherits a loser end_date', () => {
+  const group = bailarGroup();
+  const { survivor, losers } = mergeGroup(group);
+  assert.equal(survivor.id, 25796, 'cac_agenda (higher score) survives');
+  assert.equal(survivor.end_date, '2028-01-10', 'inherited the loser span');
+  assert.equal(losers.length, 1);
+  assert.equal(losers[0].id, 25797);
+});
+
+test('(T185 b) survivor with a NON-null end_date keeps its OWN (no overwrite)', () => {
+  const group = bailarGroup();
+  group[0].end_date = '2026-02-01'; // survivor already has a span
+  const { survivor } = mergeGroup(group);
+  assert.equal(survivor.id, 25796);
+  assert.equal(survivor.end_date, '2026-02-01', 'survivor keeps its own end_date');
+});
+
+test('(T185 c) no loser has an end_date → survivor stays null', () => {
+  const group = bailarGroup();
+  group[1].end_date = null; // strip the only loser span
+  const { survivor } = mergeGroup(group);
+  assert.equal(survivor.id, 25796);
+  assert.equal(survivor.end_date ?? null, null, 'nothing to inherit → stays null');
+});
+
+test('(T185 d) furthest-future loser end_date wins when several losers have one', () => {
+  const group = bailarGroup();
+  group.push({
+    id: 25798, title: '¡BAILAR!', city: 'Valencia', start_date: '2025-10-03',
+    end_date: '2027-06-30', score: 40, source: 'cac_extra',
+    source_url: 'https://caixaforum.org/x/bailar', source_weight: 'gold',
+  });
+  const { survivor } = mergeGroup(group);
+  assert.equal(survivor.end_date, '2028-01-10', 'widest span (furthest future) chosen');
 });
 
 test('sources accumulation de-duplicates and preserves existing entries', () => {

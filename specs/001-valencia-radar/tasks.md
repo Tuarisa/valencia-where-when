@@ -1053,8 +1053,20 @@ exist, raw layer still append-only.
   the existing dedup (cross-source, same title+date, ≥2 sources) handles it; a future T173 seed re-bake (which
   runs dedup) ships the collapsed version. Surfaced a deeper nuance → **T185**.
 
-- [ ] T185 [C] **Dedup merge should GAP-FILL richer scalar fields from losers (e.g. `end_date`)** (found
-  resolving T180, 2026-06-23). When dedup collapses «¡BAILAR!», the SURVIVOR is the agenda variant (`end_date`
+- [x] T185 [C] **Dedup merge GAP-FILLS the survivor's `end_date` from losers → exhibitions keep their span**
+  (done 2026-06-24). Scoped MINIMAL/surgical (not the broad multi-field version below): a pure
+  `inheritEndDate(survivor, losers)` fills the survivor's NULL `end_date` from the loser whose span reaches
+  FURTHEST into the future (never overwrites a non-null survivor value); `mergeGroup` applies it; the fuzzy
+  survivor `UPDATE events` now persists `end_date` too. Left the strong-pre-pass UNTOUCHED (exact-url dups
+  share the same page → same end_date, nothing to fill) — so the blast radius is just the fuzzy merge path
+  (where cross-source exhibition dups actually collapse, e.g. «¡BAILAR!»). VERIFIED: build 0, **437/437** (+4
+  unit tests: inherit / no-overwrite / nothing-to-inherit / furthest-future); LIVE on `main` — un-collapsed the
+  BAILAR pair + re-ran `dedup()` → survivor 25796 inherited `end_date=2028-01-10` (was NULL), **upcoming count
+  264 → 264 unchanged**, idempotent (a 2nd run = merged 0). ADDITIVE — only fills nulls, never un-merges or
+  nulls a value. *(Original broader brief, deferred — fill lat/lng/price/image too + the strong/tier sites:
+  not needed for the exhibition-span case; revisit only if another field shows the same loss.)*
+
+  ORIGINAL FINDING (kept for context): When dedup collapses «¡BAILAR!», the SURVIVOR is the agenda variant (`end_date`
   null) while the loser (exposiciones) carried the real span (→2028-01-10) — so the exhibition LOSES its
   multi-day span and won't render as a T175 spanning bar (it stays a single-day выставка card). Two coupled
   gaps: (1) `mergeGroup` (`lib/pipeline/dedup.ts`) chooses a survivor by `sourceWeightRank` and accumulates

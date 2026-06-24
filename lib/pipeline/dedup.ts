@@ -609,6 +609,27 @@ export interface MergeResult {
   losers: DedupEvent[];
 }
 
+// PURE: is a value a usable (non-null, non-empty) end_date string?
+function hasEndDate(v: unknown): v is string {
+  return typeof v === "string" && v.trim() !== "";
+}
+
+// PURE: T185 — gap-fill end_date. If the survivor has no end_date but a loser
+// does, inherit a loser's end_date so a merge can't erase a multi-day span (e.g.
+// an exhibition's calendar spanning-bar). Picks the loser end_date FURTHEST in the
+// future (preserves the widest span); ADDITIVE — returns null when the survivor
+// already has one (never overwrites) or when no loser has one.
+export function inheritEndDate(survivor: DedupEvent, losers: DedupEvent[]): string | null {
+  if (hasEndDate(survivor.end_date)) return null;
+  let best: string | null = null;
+  for (const loser of losers) {
+    if (hasEndDate(loser.end_date) && (best == null || loser.end_date > best)) {
+      best = loser.end_date;
+    }
+  }
+  return best;
+}
+
 // PURE: merge a group into one survivor. The survivor keeps its OWN start_date
 // (conflicting dates resolve to the reliable, higher-weight source). Every group
 // member's {source, source_url} accumulates into survivor.metadata_json.sources[]
@@ -620,11 +641,16 @@ export function mergeGroup(group: DedupEvent[], rankFn: RankFn = sourceWeightRan
   const mergedSources = accumulateSources(group, metadata.sources);
   metadata.sources = mergedSources;
 
+  const losers = group.filter((ev) => ev !== survivor);
+
   const mergedSurvivor: DedupEvent = {
     ...survivor,
     metadata_json: JSON.stringify(metadata),
   };
-  const losers = group.filter((ev) => ev !== survivor);
+  // T185: only fill when the survivor's own end_date is null/empty (never overwrite).
+  const inherited = inheritEndDate(mergedSurvivor, losers);
+  if (inherited != null) mergedSurvivor.end_date = inherited;
+
   return { survivor: mergedSurvivor, mergedSources, losers };
 }
 
@@ -779,8 +805,11 @@ export async function dedup({ exec = sql }: { exec?: typeof sql } = {}): Promise
   const resolveGroup = async (members: DedupEvent[], matchMethod: string) => {
     const { survivor, losers } = mergeGroup(members);
     merged++;
+    // T185: persist the (possibly gap-filled) survivor end_date. No-op when the
+    // survivor already had one (writes its own value back); inherited value when a
+    // loser supplied a span the survivor lacked. ADDITIVE — never nulls a value.
     await exec`UPDATE events
-      SET metadata_json = ${survivor.metadata_json}, last_seen = ${ts}
+      SET metadata_json = ${survivor.metadata_json}, end_date = ${(survivor.end_date as string | null) ?? null}, last_seen = ${ts}
       WHERE id = ${survivor.id ?? null}`;
     for (const loser of losers) {
       // Convention (research R2): losers carry status='duplicate' + merged_into
