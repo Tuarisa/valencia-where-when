@@ -1238,3 +1238,17 @@ additional issues the agent is NOT handling.)
   the deterministic-from-DB render, the feature accents' meaning, calendar/map/expo-strip/series, and the
   filter behavior (T191). `app/globals.css` + `app/Home.tsx` + detail/places pages. Substantial visual
   iteration — its own pass; show the user before baking a big departure. (Refines T163/T134.)
+
+- [ ] T195 [A/I] **Periodically re-ingest ALL sources to keep the local DB current (standing habit)** (user,
+  `backlog:`, 2026-06-24: "когда ты последний раз проходил по источникам? не забывай это делать тоже
+  периодически чтоб держать базу актуальной"). LAST FULL live pass = **T141, 2026-06-21** (`ingestAll()` → 890
+  `source_items`, 20 sources); only cac.es was ingested since (T148/T177). So fresh events from the last few
+  days aren't pulled. STANDING HABIT: on a periodic basis (e.g. each loop day, or when picking up data work),
+  run a polite live refresh on the LOCAL persistent `main` DB — `ingestAll()` (or the dispatcher tick over due
+  sources — conditional-GET makes unchanged sources cheap) → `normalizeAll()` → dedup/score/tag/geo — so the DB
+  accumulates new events. Append-only raw layer (constitution); the persistent DB is never torn down (user
+  rule). NOTE: on PROD this is AUTOMATIC via the adaptive-cadence cron dispatcher (T011–T015) — this habit is
+  for the LOCAL seed-baking workflow where ingest is manual. After a refresh that adds meaningful new content,
+  consider a seed re-bake (T173 flow, user-confirmed) so prod ships the fresh data. ACTION NOW: run one full
+  `ingestAll()`+`normalizeAll()` pass AFTER the in-flight T190 finishes (avoid overlapping its lacotorra/cac
+  re-ingest), then report what's new.
