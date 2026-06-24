@@ -4,32 +4,46 @@
    (#00a296) as the primary accent for buttons/active states (it has the contrast a
    button needs over white), the mint (#85ceba) as the soft/link accent, slate ink, and
    pale-mint + light-grey backgrounds. The per-feature accents are retuned to cooler,
-   teal-harmonized hues so the calendar bars/badges sit inside this palette. */
+   teal-harmonized hues so the calendar bars/badges sit inside this palette.
+
+   T194 (design pass) — FORM pulled from dalnoboi.org's actual CSS, not just its colors.
+   dalnoboi is a flat, dense, utilitarian classic-web layout: tiny radii (it uses 2–10px),
+   almost no shadow (mostly `none`, occasionally `0 2px 15px rgba(70,76,83,.1)`), NO glassy
+   blur, and it separates list items with a thin BOTTOM divider (`border-bottom:1px solid
+   #e8e8e8`) — never a fat accent stripe on the left. Links are ink-coloured, hovering to
+   mint (`a{color:#43484f} a:hover{color:#85ceba}`). Headings are Roboto Condensed at a
+   modest scale (26–32px). We adopt all of that here: the left-accent stripe on cards and
+   calendar pills is GONE; feature accents now read as a small colour DOT + a tinted
+   heading, not a bar. */
 :root {
   --bg: #f4f5f5;
-  --paper: rgba(255, 255, 255, 0.92);
+  --paper: #ffffff;
   --ink: #43484f;
   --muted: #5d5e61;
-  --line: rgba(67, 72, 79, 0.12);
+  --line: #e3e5e6;
+  --line-soft: #ededee;
   --accent: #00a296;
   --accent-strong: #007772;
   --accent-2: #007772;
   --mint: #85ceba;
   --mint-soft: #e0f1f0;
   --hemis: #5f6caf;
-  --hemis-soft: rgba(95, 108, 175, 0.12);
+  --hemis-soft: #eceef7;
   --hemis-line: rgba(95, 108, 175, 0.30);
   --feria: #c98a2b;
-  --feria-soft: rgba(201, 138, 43, 0.13);
+  --feria-soft: #f8f0e3;
   --feria-line: rgba(201, 138, 43, 0.32);
   --excursion: #00a296;
-  --excursion-soft: rgba(0, 162, 150, 0.12);
+  --excursion-soft: #e3f3f1;
   --excursion-line: rgba(0, 162, 150, 0.32);
   --exposition: #3c7d9c;
-  --exposition-soft: rgba(60, 125, 156, 0.13);
+  --exposition-soft: #e9f0f4;
   --exposition-line: rgba(60, 125, 156, 0.32);
-  --shadow: 0 20px 48px rgba(43, 47, 53, 0.10);
-  --radius: 20px;
+  /* dalnoboi's real values: very light shadow / small radius */
+  --shadow: 0 2px 15px rgba(70, 76, 83, 0.10);
+  --shadow-soft: 0 1px 4px rgba(70, 76, 83, 0.06);
+  --radius: 8px;
+  --radius-sm: 4px;
 }
 
 * { box-sizing: border-box; }
@@ -37,102 +51,112 @@ html, body { margin: 0; padding: 0; }
 body {
   font-family: "Manrope", "Roboto", sans-serif;
   color: var(--ink);
-  background:
-    radial-gradient(circle at top left, rgba(133, 206, 186, 0.22), transparent 30%),
-    radial-gradient(circle at 86% 18%, rgba(0, 162, 150, 0.12), transparent 26%),
-    linear-gradient(180deg, #fbfdfc 0%, #eef1f1 100%);
+  background: var(--bg);
   min-height: 100vh;
 }
-a { color: inherit; }
+/* dalnoboi link treatment: ink by default, mint on hover (no bold teal everywhere). */
+a { color: inherit; transition: color 0.15s ease; }
 
 .page-shell, .detail-page {
-  width: min(1220px, calc(100vw - 32px));
+  width: min(1180px, calc(100vw - 32px));
   margin: 0 auto;
-  padding: 28px 0 48px;
+  padding: 24px 0 48px;
 }
 
 .hero, .panel, .detail-card {
   background: var(--paper);
-  backdrop-filter: blur(14px);
   border: 1px solid var(--line);
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-soft);
   border-radius: var(--radius);
 }
 
 .hero {
   display: grid;
-  gap: 24px;
+  gap: 22px;
   grid-template-columns: 1.3fr 0.9fr;
-  padding: 28px;
+  padding: 24px 26px;
   overflow: hidden;
 }
 
 .hero h1, .detail-card h1, .panel h2 {
-  font-family: "Fraunces", serif;
-  letter-spacing: -0.03em;
+  font-family: "Roboto Condensed", "Fraunces", serif;
+  letter-spacing: -0.01em;
 }
 
-.hero h1 { margin: 0; font-size: clamp(2.6rem, 6vw, 5rem); line-height: 0.95; }
+/* dalnoboi headings top out around 32px; the old clamp(...,5rem) hero read as a template. */
+.hero h1 { margin: 0; font-size: clamp(2rem, 4vw, 3rem); line-height: 1.05; font-weight: 700; }
 .hero-text, .detail-copy, .panel-note { color: var(--muted); line-height: 1.6; }
 
-.hero-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.hero-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .stat-card {
-  background: rgba(255,255,255,0.56);
-  border-radius: 18px;
-  padding: 18px;
-  border: 1px solid rgba(0,0,0,0.06);
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  border: 1px solid var(--line);
 }
-.stat-card strong { display: block; font-size: 2rem; margin-bottom: 4px; }
+.stat-card strong { display: block; font-size: 1.7rem; margin-bottom: 2px; font-weight: 700; }
 
 .eyebrow {
   text-transform: uppercase;
-  letter-spacing: 0.16em;
-  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  font-size: 0.7rem;
   color: var(--accent-2);
   margin: 0 0 8px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
-.toolbar { display: grid; gap: 14px; margin: 18px 0; }
-.facet { margin-top: 14px; }
+.toolbar { display: grid; gap: 14px; margin: 16px 0; }
+.facet { margin-top: 12px; }
 .facet .eyebrow { margin-bottom: 6px; }
 .search {
   width: 100%;
   border: 1px solid var(--line);
-  background: rgba(255,255,255,0.72);
-  border-radius: 999px;
-  padding: 16px 20px;
+  background: var(--paper);
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
   font: inherit;
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-soft);
 }
+.search:focus { outline: none; border-color: var(--accent); }
 
-.tag-strip, .tags-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.tag-strip, .tags-row { display: flex; flex-wrap: wrap; gap: 6px; }
 .tag, .tag-button {
-  border-radius: 999px;
-  padding: 8px 12px;
-  font-size: 0.85rem;
-  border: 1px solid rgba(0,0,0,0.08);
-  background: rgba(255,255,255,0.68);
+  border-radius: var(--radius-sm);
+  padding: 3px 9px;
+  font-size: 0.78rem;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--muted);
 }
 .tag-button { cursor: pointer; transition: 160ms ease; }
 .tag-button.is-active { background: var(--accent); color: white; border-color: var(--accent); }
 
-.layout { display: grid; gap: 18px; }
+.layout { display: grid; gap: 16px; }
 /* First prototype: calendar full-width on top, map stacked below it (was a 2-col row). */
-.top-row { display: grid; grid-template-columns: 1fr; gap: 18px; align-items: start; }
-.panel { padding: 22px; }
-.panel-head { display: flex; justify-content: space-between; gap: 16px; align-items: flex-end; margin-bottom: 18px; }
-.panel h2 { margin: 0; font-size: clamp(1.6rem, 3vw, 2.1rem); }
+.top-row { display: grid; grid-template-columns: 1fr; gap: 16px; align-items: start; }
+.panel { padding: 20px 22px; }
+.panel-head { display: flex; justify-content: space-between; gap: 16px; align-items: flex-end; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.panel h2 { margin: 0; font-size: clamp(1.4rem, 2.4vw, 1.75rem); font-weight: 700; }
 
-.feed-list, .places-list { display: grid; gap: 14px; }
-.feed-card, .place-card {
+/* Feed as a dalnoboi-style divider list: rows separated by a thin bottom rule, no card
+   chrome around each item — denser and flatter than the old rounded glass cards. */
+.feed-list { display: grid; gap: 0; }
+.feed-card {
   display: grid;
   gap: 14px;
-  grid-template-columns: 144px 1fr;
+  grid-template-columns: 132px 1fr;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.feed-card:last-child { border-bottom: none; }
+.places-list { display: grid; gap: 14px; }
+.place-card {
+  display: grid;
+  gap: 12px;
   padding: 14px;
-  border-radius: 20px;
-  background: rgba(255,255,255,0.6);
-  border: 1px solid rgba(0,0,0,0.06);
+  border-radius: var(--radius);
+  background: var(--paper);
+  border: 1px solid var(--line);
 }
 /* Card image block (T188): a tidy, capped 16/9 thumbnail so cards stay even and the
    image doesn't dominate (the old 4/3 made a tall empty box). The placeholder gradient
@@ -141,137 +165,170 @@ a { color: inherit; }
 .feed-card img, .place-card img, .card-visual.placeholder {
   width: 100%;
   aspect-ratio: 16 / 9;
-  max-height: 160px;
+  max-height: 150px;
   object-fit: cover;
-  border-radius: 16px;
+  border-radius: var(--radius-sm);
   background: #e3eceb;
 }
 .card-visual.placeholder {
   background: linear-gradient(135deg, rgba(133, 206, 186, 0.34), rgba(0, 119, 114, 0.22)), #eaf3f1;
 }
-.feed-card.is-hemis { background: var(--hemis-soft); border-color: var(--hemis-line); }
-.feed-card.is-hemis .card-body h3 { color: var(--hemis); }
-.feed-card.feature-feria, .feed-card.feature-festival { background: var(--feria-soft); border-color: var(--feria-line); }
-.feed-card.feature-feria .card-body h3, .feed-card.feature-festival .card-body h3 { color: var(--feria); }
-.feed-card.feature-excursion { background: var(--excursion-soft); border-color: var(--excursion-line); }
-.feed-card.feature-excursion .card-body h3 { color: var(--excursion); }
 
-.card-body h3, .place-card h3 { margin: 0 0 8px; font-size: 1.15rem; }
-.card-body p, .place-card p { margin: 0; color: var(--muted); line-height: 1.55; }
-.card-meta { display: flex; flex-wrap: wrap; gap: 12px; font-size: 0.9rem; color: var(--muted); margin: 8px 0 10px; }
-.card-link, .back-link { color: var(--accent-2); font-weight: 700; text-decoration: none; }
-.card-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px; }
+/* FEATURE ACCENTS WITHOUT THE LEFT STRIPE (T194). dalnoboi never marks a list item with a
+   fat left bar; it distinguishes things typographically + with small colour cues. So a
+   feature event now reads as: a small colour DOT before the title (::before) + a tinted
+   title colour, on a faintly tinted row — no `border-left`. The MEANING (hemis / feria /
+   excursion / exposition each keep their distinct colour) is preserved. */
+.feed-card .card-body h3 { position: relative; }
+.feed-card.is-hemis,
+.feed-card.feature-feria, .feed-card.feature-festival,
+.feed-card.feature-excursion,
+.feed-card.feature-exposition { padding-left: 12px; border-radius: var(--radius-sm); }
+.feed-card.is-hemis { background: var(--hemis-soft); }
+.feed-card.is-hemis .card-body h3 { color: var(--hemis); }
+.feed-card.feature-feria, .feed-card.feature-festival { background: var(--feria-soft); }
+.feed-card.feature-feria .card-body h3, .feed-card.feature-festival .card-body h3 { color: var(--feria); }
+.feed-card.feature-excursion { background: var(--excursion-soft); }
+.feed-card.feature-excursion .card-body h3 { color: var(--excursion); }
+.feed-card.feature-exposition { background: var(--exposition-soft); }
+.feed-card.feature-exposition .card-body h3 { color: var(--exposition); }
+
+/* The colour DOT that replaces the stripe — small, inline, before the title. */
+.feed-card.is-hemis .card-body h3::before,
+.feed-card.feature-feria .card-body h3::before,
+.feed-card.feature-festival .card-body h3::before,
+.feed-card.feature-excursion .card-body h3::before,
+.feed-card.feature-exposition .card-body h3::before {
+  content: "";
+  display: inline-block;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  margin-right: 8px;
+  vertical-align: middle;
+  background: currentColor;
+}
+
+.card-body h3, .place-card h3 { margin: 0 0 6px; font-size: 1.1rem; font-weight: 700; line-height: 1.25; }
+.card-body p, .place-card p { margin: 0; color: var(--muted); line-height: 1.55; font-size: 0.92rem; }
+.card-meta { display: flex; flex-wrap: wrap; gap: 10px; font-size: 0.85rem; color: var(--muted); margin: 6px 0 8px; }
+/* dalnoboi link colour: ink, mint on hover — not the old bold teal links. */
+.card-link, .back-link { color: var(--ink); font-weight: 600; text-decoration: none; }
+.card-link:hover, .back-link:hover { color: var(--mint); }
+.card-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 8px; }
 
 .calendar-nav { display: inline-flex; align-items: center; gap: 10px; }
 .mini-button, .button {
-  border: none; border-radius: 999px; background: var(--accent); color: white;
-  padding: 10px 14px; font: inherit; cursor: pointer; text-decoration: none;
+  border: none; border-radius: var(--radius-sm); background: var(--accent); color: white;
+  padding: 8px 13px; font: inherit; cursor: pointer; text-decoration: none;
 }
-.button-ghost, .mini-button { background: rgba(255,255,255,0.72); color: var(--ink); border: 1px solid rgba(0,0,0,0.08); }
+.button-ghost, .mini-button { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
 
-.legend { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: -6px 0 14px; font-size: 0.82rem; color: var(--muted); }
-.legend-dot { width: 12px; height: 12px; border-radius: 4px; display: inline-block; }
+.legend { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: -4px 0 14px; font-size: 0.8rem; color: var(--muted); }
+.legend-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
 .legend-dot.legend-event { background: var(--accent); }
 .legend-dot.legend-hemis { background: var(--hemis); }
 .legend-dot.legend-feria { background: var(--feria); }
 .legend-dot.legend-excursion { background: var(--excursion); }
 .legend-dot.legend-exposition { background: var(--exposition); }
 
-.calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
+.calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
 .day-cell {
-  min-height: 120px; max-height: 320px; overflow-y: auto; padding: 8px;
-  border-radius: 14px; background: rgba(255,255,255,0.62); border: 1px solid rgba(0,0,0,0.06);
+  min-height: 116px; max-height: 320px; overflow-y: auto; padding: 7px;
+  border-radius: var(--radius-sm); background: var(--paper); border: 1px solid var(--line);
 }
-.day-cell.is-empty { background: rgba(255,255,255,0.22); min-height: 60px; }
+.day-cell.is-empty { background: var(--bg); min-height: 56px; border-style: dashed; }
 .day-cell.is-today { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
-.day-num { font-weight: 800; margin-bottom: 6px; font-size: 0.95rem; }
+.day-num { font-weight: 700; margin-bottom: 6px; font-size: 0.92rem; }
+/* Calendar pills: the left stripe is GONE. A feature pill is identified by a small leading
+   colour dot (::before) + a tinted background, mirroring the feed cards. */
 .day-event {
-  display: block; margin-bottom: 5px; padding: 5px 7px; border-radius: 9px;
-  background: rgba(0, 162, 150, 0.10); border-left: 3px solid var(--accent);
-  color: var(--ink); font-size: 0.78rem; line-height: 1.25; text-decoration: none;
+  display: block; margin-bottom: 4px; padding: 4px 6px; border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--ink); font-size: 0.76rem; line-height: 1.25; text-decoration: none;
 }
-.day-event .ev-time { font-weight: 800; color: var(--accent); margin-right: 4px; }
-.day-event.feature-feria, .day-event.feature-festival { background: var(--feria-soft); border-left-color: var(--feria); }
+.day-event .ev-time { font-weight: 700; color: var(--accent); margin-right: 4px; }
+.day-event.feature-feria, .day-event.feature-festival { background: var(--feria-soft); }
 .day-event.feature-feria .ev-time, .day-event.feature-festival .ev-time { color: var(--feria); }
-.day-event.feature-excursion { background: var(--excursion-soft); border-left-color: var(--excursion); }
+.day-event.feature-excursion { background: var(--excursion-soft); }
 .day-event.feature-excursion .ev-time { color: var(--excursion); }
-.day-hemis { margin-bottom: 5px; border-radius: 9px; background: var(--hemis-soft); border-left: 3px solid var(--hemis); }
-.day-hemis > summary { list-style: none; cursor: pointer; padding: 5px 7px; font-size: 0.78rem; font-weight: 700; color: var(--hemis); }
+.day-event.feature-feria::before, .day-event.feature-festival::before,
+.day-event.feature-excursion::before {
+  content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+  margin-right: 5px; vertical-align: middle;
+}
+.day-event.feature-feria::before, .day-event.feature-festival::before { background: var(--feria); }
+.day-event.feature-excursion::before { background: var(--excursion); }
+.day-hemis { margin-bottom: 4px; border-radius: var(--radius-sm); background: var(--hemis-soft); }
+.day-hemis > summary { list-style: none; cursor: pointer; padding: 4px 6px; font-size: 0.76rem; font-weight: 600; color: var(--hemis); }
 .day-hemis > summary::-webkit-details-marker { display: none; }
 .day-hemis > summary::before { content: '▸ '; }
 .day-hemis[open] > summary::before { content: '▾ '; }
-.day-hemis .hemis-session { display: block; padding: 4px 7px 4px 16px; font-size: 0.75rem; line-height: 1.25; color: var(--ink); text-decoration: none; }
-.day-hemis .hemis-session .ev-time { font-weight: 800; color: var(--hemis); margin-right: 4px; }
+.day-hemis .hemis-session { display: block; padding: 4px 6px 4px 14px; font-size: 0.74rem; line-height: 1.25; color: var(--ink); text-decoration: none; }
+.day-hemis .hemis-session .ev-time { font-weight: 700; color: var(--hemis); margin-right: 4px; }
 
 /* Exposition strip (T186): a single compact, collapsed-by-default <details> above the
    calendar grid — one line per standing exhibition (each appears ONCE, not per-week).
    Replaces the old per-week spanning bars, which degenerated into a full-width "wall"
-   when 20+ exhibitions all span the whole month. Mirrors the .day-hemis collapsible. */
+   when 20+ exhibitions all span the whole month. Mirrors the .day-hemis collapsible.
+   T194: dropped the thick `border-left` accent for a flat tinted block + thin border. */
 .expo-strip {
   margin-bottom: 10px;
-  border-radius: 12px;
+  border-radius: var(--radius-sm);
   background: var(--exposition-soft);
   border: 1px solid var(--exposition-line);
-  border-left: 3px solid var(--exposition);
 }
 .expo-strip > summary {
   list-style: none; cursor: pointer; padding: 8px 12px;
-  font-size: 0.85rem; font-weight: 700; color: var(--exposition);
+  font-size: 0.84rem; font-weight: 600; color: var(--exposition);
 }
 .expo-strip > summary::-webkit-details-marker { display: none; }
 .expo-strip > summary::before { content: '▸ '; }
 .expo-strip[open] > summary::before { content: '▾ '; }
-.expo-strip-list { padding: 2px 8px 8px; display: grid; gap: 4px; }
+.expo-strip-list { padding: 2px 8px 8px; display: grid; gap: 2px; }
 .expo-strip-item {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  padding: 6px 8px; border-radius: 8px; text-decoration: none; color: var(--ink);
+  padding: 6px 8px; border-radius: var(--radius-sm); text-decoration: none; color: var(--ink);
   font-size: 0.85rem; line-height: 1.3;
 }
 .expo-strip-item:hover { background: rgba(60, 125, 156, 0.14); }
 .expo-strip-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .expo-strip-item .expo-badge { flex: none; font-size: 0.72rem; }
 
-.feed-card.feature-exposition { background: var(--exposition-soft); border-color: var(--exposition-line); }
-.feed-card.feature-exposition .card-body h3 { color: var(--exposition); }
 .expo-badge {
-  font-weight: 800;
+  font-weight: 700;
   color: var(--exposition);
-  background: var(--exposition-soft);
+  background: var(--paper);
   border: 1px solid var(--exposition-line);
-  border-radius: 999px;
-  padding: 2px 10px;
+  border-radius: var(--radius-sm);
+  padding: 2px 9px;
 }
 
-.panel-map .map-frame { height: 420px; border-radius: 20px; overflow: hidden; border: 1px solid rgba(0,0,0,0.08); }
-.leaflet-popup-content .map-cat { font-size: 0.7rem; background: var(--line); border-radius: 6px; padding: 1px 7px; }
+.panel-map .map-frame { height: 420px; border-radius: var(--radius-sm); overflow: hidden; border: 1px solid var(--line); }
+.leaflet-popup-content .map-cat { font-size: 0.7rem; background: var(--bg); border-radius: var(--radius-sm); padding: 1px 7px; }
 .leaflet-popup-content .map-loc { color: var(--muted); font-size: 0.8rem; }
 .leaflet-popup-content .map-why { margin-top: 6px; font-size: 0.82rem; line-height: 1.3; color: var(--ink); max-width: 240px; }
 .places-list { margin-top: 14px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
-.place-card { grid-template-columns: 1fr; }
 
-.detail-shell {
-  background:
-    radial-gradient(circle at top left, rgba(133, 206, 186, 0.18), transparent 28%),
-    linear-gradient(180deg, #fbfdfc 0%, #eef1f1 100%);
-}
-.detail-card { padding: 28px; }
-.detail-page { max-width: 920px; }
+.detail-shell { background: var(--bg); }
+.detail-card { padding: 26px; }
+.detail-page { max-width: 900px; }
 .back-link { display: inline-block; margin-bottom: 14px; }
-.meta-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 18px 0; }
-.meta-grid div { background: rgba(255,255,255,0.62); border: 1px solid rgba(0,0,0,0.06); border-radius: 16px; padding: 12px 14px; }
+.meta-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin: 18px 0; }
+.meta-grid div { background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 12px 14px; }
 .meta-grid strong, .meta-grid span { display: block; }
 .meta-grid strong { margin-bottom: 6px; }
 .button-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
-.detail-image { max-width: 100%; height: auto; aspect-ratio: auto; margin: 12px 0; }
+.detail-image { max-width: 100%; height: auto; aspect-ratio: auto; margin: 12px 0; border-radius: var(--radius-sm); }
 .series-schedule { margin: 18px 0; }
 .series-schedule h2 { font-size: 1.05rem; margin-bottom: 10px; }
 .series-schedule ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
-.series-schedule li { background: var(--hemis-soft); border: 1px solid var(--hemis-line); border-radius: 14px; padding: 8px 12px; }
+.series-schedule li { background: var(--hemis-soft); border: 1px solid var(--hemis-line); border-radius: var(--radius-sm); padding: 8px 12px; }
 .series-schedule li strong { color: var(--hemis); }
 
 /* Tag cloud (T163): frequency-weighted tag chips. Each chip's font-size + weight scales
    with how often the tag appears; the active one is filled with the accent. Rendered in
-   a sidebar/strip above the feed; clicking filters the feed client-side. */
+   a sidebar/strip above the feed; clicking filters the feed client-side. T194: small
+   radius + flat fill to match the denser dalnoboi look. */
 .tag-cloud {
   display: flex;
   flex-wrap: wrap;
@@ -281,9 +338,9 @@ a { color: inherit; }
 }
 .tag-cloud-chip {
   border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.7);
-  border-radius: 999px;
-  padding: 5px 11px;
+  background: var(--paper);
+  border-radius: var(--radius-sm);
+  padding: 4px 10px;
   cursor: pointer;
   color: var(--ink);
   line-height: 1.1;
@@ -297,13 +354,13 @@ a { color: inherit; }
 
 /* Category filter bar (T163): one chip per distinct event category, plus an "все
    категории" reset. Combines with the tag-cloud filter as an AND. */
-.category-bar { display: flex; flex-wrap: wrap; gap: 8px; }
+.category-bar { display: flex; flex-wrap: wrap; gap: 7px; }
 .category-chip {
   border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.72);
-  border-radius: 999px;
-  padding: 8px 14px;
-  font-size: 0.86rem;
+  background: var(--paper);
+  border-radius: var(--radius-sm);
+  padding: 7px 13px;
+  font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
   color: var(--ink);
@@ -321,8 +378,8 @@ a { color: inherit; }
   font-size: 0.85rem; color: var(--muted); margin-bottom: 14px;
 }
 .filter-clear {
-  border: 1px solid var(--line); background: rgba(255, 255, 255, 0.72);
-  border-radius: 999px; padding: 5px 12px; font: inherit; font-size: 0.82rem;
+  border: 1px solid var(--line); background: var(--paper);
+  border-radius: var(--radius-sm); padding: 5px 12px; font: inherit; font-size: 0.82rem;
   cursor: pointer; color: var(--accent-strong);
 }
 .filter-clear:hover { border-color: var(--accent); }
@@ -332,7 +389,7 @@ a { color: inherit; }
 .feed-more { display: flex; justify-content: center; margin-top: 18px; }
 .feed-more-sentinel { height: 1px; }
 .feed-more .button {
-  padding: 12px 22px; font-weight: 700;
+  padding: 11px 20px; font-weight: 600;
 }
 
 @media (max-width: 1000px) { .top-row { grid-template-columns: 1fr; } }
