@@ -1192,7 +1192,7 @@ additional issues the agent is NOT handling.)
   so live rows get the real URL); if the site is genuinely a single-page list with NO per-event pages, fall back
   to relabel/hide the button + report. Deterministic.
 
-- [ ] T191 [F] **Filters are at the TOP, but the filtered content (feed) is BELOW the calendar + map** (user,
+- [x] T191 [F] **Filters are at the TOP, but the filtered content (feed) is BELOW the calendar + map** (user,
   2026-06-24: "фильтры сверху, а контент фильтруемый уже под календарём и картой, звучит как бред"). The search
   box + category chips + tag cloud sit at the top of the page, but the FEED they filter renders far down, after
   the calendar panel and the Leaflet map — so clicking a filter scrolls-disconnects the action from its result.
