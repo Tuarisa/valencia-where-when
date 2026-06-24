@@ -9,6 +9,7 @@ import {
   buildVidaculturalEvents,
   looksLikeEvent,
   postTitle,
+  stripPromoIntro,
 } from '../lib/pipeline/normalizers/vidacultural.ts';
 import { isJunkCard } from '../lib/pipeline/normalizers/valenciarusa.ts';
 
@@ -72,4 +73,28 @@ test('postTitle: existing behaviour stays green', () => {
   // single-line headline with a leading date prefix → prefix stripped
   assert.equal(postTitle('21 червня — Concierto en La Nau'), 'Concierto en La Nau');
   assert.equal(postTitle(null, 'Fallback'), 'Fallback');
+});
+
+// T196 — promo-intro noise. A post that opens with a city tag + flag + generic ad copy
+// ("У нас для Вас просто космічні новини 🪐") before the real event must NOT keep the
+// ad copy as its title; the substantive remainder is used instead.
+test('T196 stripPromoIntro: peels a leading "У нас для Вас … 🪐" ad clause', () => {
+  const promo = 'Валенсія 🚩 У нас для Вас просто космічні новини 🪐 26 червня у Валенсії відбудеться спецпоказ фільму «ТИ - КОСМОС». Це українська кіноперлина';
+  const stripped = stripPromoIntro(promo);
+  assert.ok(!/У нас для Вас/i.test(stripped), 'promo ad copy removed');
+  assert.match(stripped, /спецпоказ фільму «ТИ - КОСМОС»/, 'real event content kept');
+});
+
+test('T196 stripPromoIntro: a non-promo post is returned unchanged', () => {
+  const real = 'ФРІДА КАЛО У ВАЛЕНСІЇ: ЖІНКА, ЯКА ПЕРЕТВОРИЛА БІЛЬ У МИСТЕЦТВО У Валенсії триває імерсивна виставка';
+  assert.equal(stripPromoIntro(real), real);
+  const fest = 'SERENATES 2026 | Один із найатмосферніших фестивалів літа у Валенсії';
+  assert.equal(stripPromoIntro(fest), fest);
+});
+
+test('T196 postTitle: a promo-prefixed post yields a clean (non-promo) title', () => {
+  const promo = 'Валенсія 🚩 У нас для Вас просто космічні новини 🪐 26 червня у Валенсії відбудеться спецпоказ фільму «ТИ - КОСМОС».';
+  const title = postTitle(promo);
+  assert.ok(!/У нас для Вас/i.test(title), 'title no longer leads with promo ad copy');
+  assert.match(title, /спецпоказ фільму «ТИ - КОСМОС»/);
 });

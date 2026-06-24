@@ -1,6 +1,6 @@
 import { sql } from "../../db";
 import { compact } from "../util";
-import { runPlainNormalizer, type EventInsert } from "./shared";
+import { normTitle, runPlainNormalizer, type EventInsert } from "./shared";
 import { isJunkCard } from "./valenciarusa";
 import type { RawItem } from "./types";
 
@@ -120,6 +120,12 @@ const CITY_TOKENS: Record<string, string> = {
 const DATE_CELL = /\b(\d{1,2})\s+(ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)\s+(\d{4})\b/i;
 // "Hasta el DD mmm YYYY" — an ongoing run that ends on that date (no explicit start).
 const HASTA = /Hasta el\s+(\d{1,2})\s+(ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)\s+(\d{4})/i;
+// "Del [DD mmm YYYY] al DD mmm YYYY" — a date RANGE (start "Del …", end "al …"). The
+// hoyvalencia weekend roundup prefixes multi-day listings with this. The START cell can
+// be ABSENT in the flattened card ("Del al 28 jun 2026"), so the first "DD mmm YYYY" is
+// optional; when present it is the start, the cell after "al" is always the end.
+const DEL_AL =
+  /Del\s+(?:(\d{1,2})\s+(ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)\s+(\d{4})\s+)?al\s+(\d{1,2})\s+(ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)\s+(\d{4})/i;
 // Relative urgency badges hoyvalencia renders with a "✱" decoration.
 const SOLO_HOY = /✱?\s*¡Solo hoy!|✱?\s*¡Termina hoy!/i;
 const SOLO_MANANA = /✱?\s*¡Solo mañana!|✱?\s*¡Termina mañana!/i;
@@ -140,6 +146,8 @@ function isoFromDate(d: Date): string {
 }
 
 // PURE: parse the hoyvalencia date-phrase out of a card title into { start, end }.
+//   • "Del DD mmm YYYY al DD mmm YYYY" → { start:ISO, end:ISO } (a multi-day range; the
+//     start cell may be ABSENT in the flattened card → { start:null, end:ISO })
 //   • "Hasta el DD mmm YYYY" → { start:null, end:ISO } (ongoing run "until …")
 //   • "DD mmm YYYY"          → { start:ISO,  end:null }
 //   • "✱ ¡Solo/Termina hoy!"   → start = today
@@ -152,6 +160,17 @@ export function parseHoyvalenciaDates(
 ): { start: string | null; end: string | null } {
   const t = compact(text);
   if (!t) return { start: null, end: null };
+
+  // "Del [DD mmm YYYY] al DD mmm YYYY" → range (start "Del …", end "al …"). Tested
+  // FIRST: it contains two bare DATE_CELLs, so the single-cell branch below would
+  // otherwise read the "al" end cell as a lone start. The start cell may be missing in
+  // the flattened card ("Del al 28 jun 2026") → start stays null, end is kept.
+  const r = DEL_AL.exec(t);
+  if (r) {
+    const start = r[1] ? isoFromCell(Number(r[1]), r[2], Number(r[3])) : null;
+    const end = isoFromCell(Number(r[4]), r[5], Number(r[6]));
+    return { start, end };
+  }
 
   // "Hasta el …" → end-only (must be tested before the bare DATE_CELL, which it
   // contains). A run that ends today/in the future is still "ongoing now".
@@ -231,8 +250,12 @@ export function stripHoyvalenciaPrefix(title: string): { head: string; category:
 export function stripHoyvalenciaDatePhrase(head: string): string {
   let t = compact(head) ?? "";
   // Try each known date-phrase; remove from its start to its end (anchored where it
-  // actually sits, which for these rows is the front of the head).
+  // actually sits, which for these rows is the front of the head). The "Del … al …"
+  // RANGE is tried FIRST — it spans two date cells (and the literal "Del"/"al" words),
+  // so the single-cell pattern below would otherwise leave a "Del al <cell>" remnant
+  // glued onto the title. The optional start cell covers the flattened "Del al 28 …".
   const patterns: RegExp[] = [
+    /Del\s+(?:\d{1,2}\s+(?:ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)\s+\d{4}\s+)?al\s+\d{1,2}\s+(?:ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)\s+\d{4}/i,
     /Hasta el\s+\d{1,2}\s+(?:ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)\s+\d{4}/i,
     /\b\d{1,2}\s+(?:ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)\s+\d{4}\b/i,
     /✱?\s*¡Solo hoy!/i,
@@ -285,6 +308,14 @@ export function buildHoyvalenciaEvents(
   today: Date = new Date(),
 ): Array<{ draft: EventInsert; sourceItemId: number }> {
   const out: Array<{ draft: EventInsert; sourceItemId: number }> = [];
+  // Same-source de-dupe within this hoyvalencia batch (mirrors cac's `seen` set). The
+  // weekend roundup lists the same show twice (e.g. a "Desde NN €" offer card AND a
+  // "Consultar precio" card for the same "Carmina Burana", venue spelled inconsistently)
+  // — the cross-source fuzzy dedup pass needs ≥2 DISTINCT sources, so it never collapses
+  // a SAME-source dup. We key on the accent/case-folded cleaned title + start_date and
+  // keep the first occurrence; later identical rows are dropped (still marked normalized
+  // upstream). normTitle folds "Sofia"/"Sofía" + "Les"/"les" so the variant pair merges.
+  const seen = new Set<string>();
   for (const item of rows) {
     const raw = parseRaw(item);
     // The full-page snapshot is the index, not an event.
@@ -305,6 +336,10 @@ export function buildHoyvalenciaEvents(
     if (!title) continue;
 
     const { start, end } = parseHoyvalenciaDates(rawTitle, today);
+
+    const dedupeKey = `${normTitle(title)}|${start ?? ""}`;
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
 
     out.push({
       sourceItemId: item.id,

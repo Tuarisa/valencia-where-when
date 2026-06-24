@@ -101,6 +101,24 @@ test('parseHoyvalenciaDates: "Hasta el DD mmm YYYY" → end_date only (ongoing r
   assert.equal(r.end, '2026-06-27');
 });
 
+test('T196 parseHoyvalenciaDates: "Del DD al DD mmm YYYY" range → start + end', () => {
+  const r = parseHoyvalenciaDates('… Teatro y espectáculos ✱ Del 25 jun 2026 al 28 jun 2026 Carmina Burana …', TODAY);
+  assert.equal(r.start, '2026-06-25');
+  assert.equal(r.end, '2026-06-28');
+  // a range spanning months keeps both ends
+  const r2 = parseHoyvalenciaDates('… Del 28 jun 2026 al 3 oct 2026 Hamblet …', TODAY);
+  assert.equal(r2.start, '2026-06-28');
+  assert.equal(r2.end, '2026-10-03');
+});
+
+test('T196 parseHoyvalenciaDates: collapsed "Del al DD mmm YYYY" → end only, no phantom start', () => {
+  // the flattened card sometimes drops the start cell ("Del al 28 jun 2026"); the cell
+  // after "al" is the END, and we must NOT read it as a lone start_date.
+  const r = parseHoyvalenciaDates('… Teatro y espectáculos ✱ Del al 28 jun 2026 Carmina Burana …', TODAY);
+  assert.equal(r.start, null);
+  assert.equal(r.end, '2026-06-28');
+});
+
 test('parseHoyvalenciaDates: relative badges → today / tomorrow', () => {
   assert.equal(parseHoyvalenciaDates('… Conciertos ✱ ¡Solo hoy! Miguel Poveda …', TODAY).start, '2026-06-19');
   assert.equal(parseHoyvalenciaDates('… ✱ ¡Termina hoy! …', TODAY).start, '2026-06-19');
@@ -131,6 +149,17 @@ test('stripHoyvalenciaDatePhrase: removes the leading date-phrase, leaves title+
     'Miguel Poveda Plaza de Toros de Valencia València');
   assert.equal(stripHoyvalenciaDatePhrase('Fechas disponibles PODRÍA SER PEOR Valencia'),
     'PODRÍA SER PEOR Valencia');
+});
+
+test('T196 stripHoyvalenciaDatePhrase: removes the whole "Del … al …" range (no remnant)', () => {
+  assert.equal(
+    stripHoyvalenciaDatePhrase('Del 25 jun 2026 al 28 jun 2026 Carmina Burana Palau de Les Arts Reina Sofia València'),
+    'Carmina Burana Palau de Les Arts Reina Sofia València',
+  );
+  // collapsed-start variant: "Del al 28 jun 2026 …" → range removed, no "Del al" left over
+  const stripped = stripHoyvalenciaDatePhrase('✱ Del al 28 jun 2026 LIMBUS Teatro Círculo');
+  assert.equal(stripped, 'LIMBUS Teatro Círculo');
+  assert.ok(!/^Del\b/.test(stripped), 'no leading "Del" remnant');
 });
 
 test('splitHoyvalenciaCity: trailing town → city, rest is title; València→Valencia', () => {
@@ -193,6 +222,30 @@ test('buildHoyvalenciaEvents: town outside Valencia kept as city (422 → Culler
   assert.equal(d.title, 'Kata-lidoscopi Jardín Botánico');
   assert.equal(d.price, '€ 25');
   assert.equal(d.start_date, '2026-06-19');
+});
+
+test('T196 buildHoyvalenciaEvents: "Del … al …" range row → clean title + start & end', () => {
+  const row = lc(500, 'https://www.hoyvalencia.app/planes/carmina-burana-palau-de-les-arts/',
+    '¡Oferta con descuento! Desde 61 € Teatro y espectáculos ✱ Del 25 jun 2026 al 28 jun 2026 Carmina Burana Palau de Les Arts Reina Sofia València');
+  const out = buildHoyvalenciaEvents([row], TODAY);
+  assert.equal(out.length, 1);
+  const d = out[0].draft;
+  assert.equal(d.title, 'Carmina Burana Palau de Les Arts Reina Sofia');
+  assert.equal(d.start_date, '2026-06-25');
+  assert.equal(d.end_date, '2026-06-28');
+  assert.equal(d.city, 'Valencia');
+  assert.ok(!/^Del\b/.test(d.title), 'title is not prefixed with the date range');
+});
+
+test('T196 buildHoyvalenciaEvents: collapses SAME-source duplicate (two Carmina cards → one)', () => {
+  const a = lc(501, 'https://www.hoyvalencia.app/planes/carmina-burana-a/',
+    '¡Oferta con descuento! Desde 61 € Teatro y espectáculos ✱ Del 25 jun 2026 al 28 jun 2026 Carmina Burana Palau de Les Arts Reina Sofia València');
+  // same show, different price tier + inconsistent venue spelling (Sofía vs Sofia / Les vs les)
+  const b = lc(502, 'https://www.hoyvalencia.app/planes/carmina-burana-b/',
+    'Consultar precio Teatro y espectáculos ✱ Del 25 jun 2026 al 28 jun 2026 Carmina Burana Palau de les Arts Reina Sofía Valencia');
+  const out = buildHoyvalenciaEvents([a, b], TODAY);
+  assert.equal(out.length, 1, 'the second identical-title+start card is dropped');
+  assert.equal(out[0].sourceItemId, 501, 'the first occurrence is kept');
 });
 
 test('buildHoyvalenciaEvents: "Fechas disponibles" → undated draft still emitted (409)', () => {

@@ -35,13 +35,35 @@ function parseRaw(item: RawItem): RawTelegram {
   }
 }
 
+// PURE (T196): strip a leading PROMO-INTRO clause that some posts open with — a city tag
+// + flag + generic ad copy before the real event, e.g.
+//   "Валенсія 🚩 У нас для Вас просто космічні новини 🪐 26 червня … спецпоказ фільму …"
+// The ad-copy hook ("У нас для Вас …" / "просто космічні новини" / "маємо для вас")
+// followed by an emoji decoration is the recognisable boundary; we cut everything up to
+// and including that emoji, leaving the substantive remainder ("26 червня … спецпоказ …",
+// whose date prefix postTitle then strips). DETERMINISTIC (T140) + conservative: only the
+// recognised promo hook is removed, and only when something substantial (≥12 chars)
+// remains — otherwise the original text is kept (never blank out a real title).
+const PROMO_INTRO =
+  /^.{0,40}?(?:у нас для вас|маємо для вас|у нас є для вас|просто космічні новини).*?[\u{1FA90}\u{2728}\u{1F680}\u{1F389}\u{1F38A}\u{1F386}\u{1F31F}\u{1F4AB}\u{1F525}]\s+/iu;
+export function stripPromoIntro(text?: string | null): string | null {
+  const t = compact(text);
+  if (!t) return t ?? null;
+  if (!PROMO_INTRO.test(t)) return t;
+  const stripped = compact(t.replace(PROMO_INTRO, ""));
+  return stripped && stripped.length >= 12 ? stripped : t;
+}
+
 // PURE: a clean title from a telegram post — the first non-empty line, stripped of a
-// leading date prefix ("21 июня — Concierto" → "Concierto") and surrounding emoji.
+// leading promo-intro clause (T196), a leading date prefix ("21 июня — Concierto" →
+// "Concierto") and surrounding emoji.
 export function postTitle(rawText?: string | null, fallback?: string | null): string | null {
   const t = compact(rawText);
   const first = t ? t.split("\n", 1)[0] : null;
   let line = compact(first) || compact(fallback);
   if (!line) return null;
+  // T196: peel a leading promo-intro ad clause before anything else.
+  line = stripPromoIntro(line) ?? line;
   // drop a leading "DD <month> [—|-|:]" / "DD.MM —" date prefix from the headline
   line = line.replace(
     /^\s*\d{1,2}[.\/-]?\s*(?:de\s+)?[A-Za-zА-Яа-яёЁ]*\.?\s*(?:\d{4})?\s*[—\-:|·]\s*/u,
