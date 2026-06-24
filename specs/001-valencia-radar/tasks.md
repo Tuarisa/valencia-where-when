@@ -1184,17 +1184,41 @@ additional issues the agent is NOT handling.)
   events have NO own URL in the data (the raw snapshot text is the site's nav/chrome, no per-event "Ver más"
   links captured). So the detail-page "Источник" button (`app/events/[id]/page.tsx:39`) opens the aggregator's
   events index ("главная"), useless for the specific event. NO clean data fix exists (the per-event URL isn't
-  in `source_items`). OPTIONS (decide w/ user): (a) when `source_url`/`url` is a known index-only aggregator
-  URL, RELABEL the button «Все события (lacotorra)» / «Афиша-источник» instead of «Источник» (honest); (b) hide
-  the button for index-only URLs; (c) enhance the lacotorra/cac crawler to capture per-event detail links if
-  they exist on the live site (heavier, needs re-crawl). Recommend (a). Low severity, but misleading.
+  in `source_items`). **USER DECISION (2026-06-24): option (c) — докрутить краулер** so the link goes to the
+  SPECIFIC event page. Confirmed lacotorra `link_card` rows carry only nav (index / cookies / `?category=…`),
+  no per-event URL in the raw. PLAN: fetch the LIVE `lacotorra.io/events` (+ `cac.es`) → inspect whether each
+  event card links to its own detail page (`/events/<slug>` etc.); if YES, enhance the web crawler/parser to
+  capture each event's href + the normalizer (`lacotorra.ts`/`cac.ts`) to set `url`/`source_url` to it (re-ingest
+  so live rows get the real URL); if the site is genuinely a single-page list with NO per-event pages, fall back
+  to relabel/hide the button + report. Deterministic.
 
 - [ ] T191 [F] **Filters are at the TOP, but the filtered content (feed) is BELOW the calendar + map** (user,
   2026-06-24: "фильтры сверху, а контент фильтруемый уже под календарём и картой, звучит как бред"). The search
   box + category chips + tag cloud sit at the top of the page, but the FEED they filter renders far down, after
   the calendar panel and the Leaflet map — so clicking a filter scrolls-disconnects the action from its result.
-  FIX (layout, `app/Home.tsx` + `globals.css`): put the filters ADJACENT to the feed they control — either move
-  the filter bar down to sit directly above the feed list, OR move the feed up next to the filters (e.g. feed +
-  filters in one column, calendar/map in another / below). Keep calendar + map accessible. Design decision —
-  confirm the preferred arrangement with the user (feed-first vs calendar-first) before implementing. Part of
-  the T163 design polish.
+  **USER DECISION (2026-06-24): when a filter (category / tag / search) is ACTIVE, HIDE the calendar + map so
+  the FEED surfaces immediately under the filters** (their words: "если выбран фильтр — скрывать календарь и
+  карту чтоб начала лента появляться"; the alternative they offered was "теги вниз перенести"). FIX
+  (`app/Home.tsx` + `globals.css`, client-side): track whether any filter is active (selected category ≠ all,
+  any tag selected, or a non-empty search); when active, collapse/hide the `.top-row` (calendar panel + map) so
+  the feed list renders right below the filter bar; when no filter is active, show calendar + map normally. Keep
+  it a smooth toggle (no layout jank). Part of the T163 design polish.
+
+- [ ] T192 [I] **Make `vercel.json` Hobby (free-tier) compatible** (user, `backlog:`, 2026-06-24 — "может
+  добавить в беклог?"). The current `vercel.json` sets `/api/cron/refresh` `maxDuration: 300` (Vercel Hobby caps
+  functions at 60s → needs Pro) + a daily Vercel cron on `refresh`. To run on the FREE Hobby tier: remove the
+  `functions` block with `maxDuration: 300` and the heavy daily `refresh` cron; instead drive cron from the
+  free GitHub-Actions `scheduler.yml` → `/api/cron/dispatch` (60s, adaptive, incremental) + the weekly digest.
+  `/api/cron/dispatch` + `/digest` are already 60s. Site SSR + Neon free tier (0.5 GB) fit easily; the seed is
+  ~1 MB. (Hobby is non-commercial only.) One-file change + activate the GH-Actions secrets (`APP_BASE_URL` +
+  `CRON_SECRET`). Decide at deploy time; DEPLOY.md already documents this path.
+
+- [ ] T193 [A/H] **8 places show a raw `maps.app.goo.gl` URL as their NAME** (user, 2026-06-24, screenshot —
+  "некрасиво"). Places ids 7–14 (early logunespa crawl) have `name` = a `maps.app.goo.gl/<short>` URL (no real
+  name, no address; they DO have geo/lat). The place cards render the URL as the title → ugly. FIX
+  (deterministic, T140): `scripts/bake-place-geo.mjs` already FOLLOWS the `maps.app.goo.gl` redirect for geo —
+  extend it (or a sibling) to also pull the VENUE NAME from the resolved Google-Maps URL (the redirect target
+  path usually contains `/place/<Venue+Name>/@lat,lng` or a `q=<name>`), URL-decode it, and set `places.name`
+  (+ `address` if available) for these 8 rows; re-bake `data/seed/places-logunespa.json`. If a name can't be
+  resolved for a row, fall back to the area/city or exclude it from the catalog render rather than show a URL.
+  Verify the 8 cards show real names after. (This is the long-open T135-part-2 name cleanup.)
