@@ -3,7 +3,11 @@ import { compact } from "../util";
 import {
   parseEventDate,
   runPlainNormalizer,
+  readEventLinks,
+  matchEventLink,
+  latestSnapshotRows,
   type EventInsert,
+  type EventLink,
 } from "./shared";
 import { parsePrice, isJunkCard } from "./valenciarusa";
 import type { RawItem } from "./types";
@@ -44,6 +48,7 @@ interface RawWeb {
   kind?: string;
   source_page?: string;
   meta?: Record<string, string>;
+  event_links?: Array<{ title: string; url: string }>;
 }
 
 function parseRaw(item: RawItem): RawWeb {
@@ -270,7 +275,9 @@ export function buildLacotorraEvents(
   const out: Array<{ draft: EventInsert; sourceItemId: number }> = [];
   const seen = new Set<string>(); // de-dupe identical title+date within one snapshot
 
-  for (const item of rows) {
+  // T190: only the freshest snapshot per source — an older snapshot is a stale capture
+  // that (lacking event_links) would clobber the fresh one via the cross-row de-dupe.
+  for (const item of latestSnapshotRows(rows)) {
     const raw = parseRaw(item);
     // ONLY the snapshot carries events for this source; every link_card is chrome.
     if (raw.kind !== "page_snapshot") continue;
@@ -278,6 +285,9 @@ export function buildLacotorraEvents(
     const text = item.raw_text || "";
     const lines = text.split("\n").map((s) => s.trim()).filter(Boolean);
     const img = raw.meta?.["og:image"] || null;
+    // T190: per-event detail links captured at ingest (title→/events/<slug>). Used to
+    // point each event at its OWN page instead of the lacotorra index.
+    const eventLinks: EventLink[] = readEventLinks(raw);
 
     for (let i = 0; i < lines.length; i++) {
       const { start, end, startTime } = parseLacotorraDate(lines[i]);
@@ -345,6 +355,11 @@ export function buildLacotorraEvents(
       if (seen.has(dedupeKey)) continue;
       seen.add(dedupeKey);
 
+      // T190: resolve this event's OWN detail page from the captured card links; fall
+      // back to the listing index only when no card matches (better the index than a
+      // wrong page — matchEventLink returns null unless confident).
+      const detailUrl = matchEventLink(title, eventLinks) ?? item.url ?? SOURCE_URL;
+
       out.push({
         sourceItemId: item.id,
         draft: {
@@ -360,10 +375,10 @@ export function buildLacotorraEvents(
           country: "Spain",
           price,
           is_free: isFree,
-          url: item.url ?? SOURCE_URL,
+          url: detailUrl,
           image_url: img,
           source: LACOTORRA_SOURCE_KEY,
-          source_url: item.url ?? SOURCE_URL,
+          source_url: detailUrl,
           raw_excerpt: compact(description)?.slice(0, 1000) ?? null,
         },
       });

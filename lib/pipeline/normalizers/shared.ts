@@ -187,6 +187,139 @@ export function dateFromUrl(url?: string | null): string | null {
 }
 
 // ---------------------------------------------------------------------------
+// Per-event link matching (T190)
+// ---------------------------------------------------------------------------
+
+// A title→URL pair captured at ingest time from a listing page's event cards
+// (see `extractEventLinks` in ingest.ts). The generic web parser stashes these on the
+// `page_snapshot` row's `raw_json.event_links` so a snapshot-driven normalizer
+// (lacotorra, cac) can point each parsed event at its OWN detail page instead of the
+// aggregator's index. Source-agnostic by design.
+export interface EventLink {
+  title: string;
+  url: string;
+}
+
+// PURE: a comparable form of a title for fuzzy matching — lowercased, accent/diacritic
+// folded, punctuation/emoji stripped, whitespace collapsed. Cyrillic is preserved (the
+// RU lacotorra titles match exactly between the snapshot text and the card link).
+export function normTitle(s?: string | null): string {
+  return (s ?? "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "") // strip combining diacritics
+    .replace(/[«»"'`“”„‘’]/g, "")
+    .replace(/[^0-9a-zа-яё ]+/gi, " ") // keep letters/digits/space (incl. Cyrillic)
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// PURE (T190): keep only the FRESHEST page_snapshot per source key. A web source stores
+// a full-page snapshot on every ingest, so an older snapshot is a stale, superseded copy
+// of the same listing. Re-ingest produces a NEW snapshot row (a content change → a new
+// dedup_hash) rather than updating the old one, leaving BOTH pending — and an old
+// snapshot (captured before a feature like event_links existed) would otherwise re-emit
+// every event with stale fields and, via the cross-row title+date de-dupe, CLOBBER the
+// fresh snapshot's better data. Picking the highest-id snapshot per source fixes that and
+// is idempotent. Non-snapshot rows (link_cards) pass through untouched.
+export function latestSnapshotRows<T extends { id: number; source_key: string; raw_json?: string | null }>(
+  rows: T[],
+): T[] {
+  const newestSnapId = new Map<string, number>(); // source_key → max snapshot id
+  for (const r of rows) {
+    let kind: unknown;
+    try {
+      kind = JSON.parse(r.raw_json || "{}")?.kind;
+    } catch {
+      kind = undefined;
+    }
+    if (kind !== "page_snapshot") continue;
+    const prev = newestSnapId.get(r.source_key);
+    if (prev === undefined || r.id > prev) newestSnapId.set(r.source_key, r.id);
+  }
+  return rows.filter((r) => {
+    let kind: unknown;
+    try {
+      kind = JSON.parse(r.raw_json || "{}")?.kind;
+    } catch {
+      kind = undefined;
+    }
+    if (kind !== "page_snapshot") return true; // keep non-snapshot rows
+    return newestSnapId.get(r.source_key) === r.id; // keep only the freshest snapshot
+  });
+}
+
+// PURE: read the `event_links` array off a snapshot row's parsed `raw_json`. Returns []
+// when absent/malformed. Accepts the already-parsed object (normalizers parse raw_json
+// once and pass the result).
+export function readEventLinks(raw: unknown): EventLink[] {
+  if (!raw || typeof raw !== "object") return [];
+  const arr = (raw as { event_links?: unknown }).event_links;
+  if (!Array.isArray(arr)) return [];
+  const out: EventLink[] = [];
+  for (const e of arr) {
+    if (e && typeof e === "object") {
+      const t = (e as { title?: unknown }).title;
+      const u = (e as { url?: unknown }).url;
+      if (typeof t === "string" && typeof u === "string" && t && u) {
+        out.push({ title: t, url: u });
+      }
+    }
+  }
+  return out;
+}
+
+// PURE: pick the detail URL whose card title best matches `title`. Deterministic
+// (T140 — no LLM). Strategy, strongest first:
+//   1. exact normalized-title equality (lacotorra: snapshot text === card title);
+//   2. one normalized title fully contains the other AND the shorter is "substantial"
+//      (≥ 8 chars and ≥ 60% of the longer) — handles cac, whose card heading carries a
+//      "📢NUEVA EXPOSICIÓN. …" prefix or a trailing date the block title lacks;
+//   3. a high token-overlap (Jaccard ≥ 0.6 over word sets) as a last resort.
+// Returns null when nothing clears the bar (better no link than a wrong one — user rule).
+export function matchEventLink(
+  title: string | null | undefined,
+  links: EventLink[],
+): string | null {
+  const want = normTitle(title);
+  if (!want || links.length === 0) return null;
+
+  // 1) exact
+  for (const l of links) {
+    if (normTitle(l.title) === want) return l.url;
+  }
+
+  // 2) containment (substantial overlap)
+  let best: { url: string; score: number } | null = null;
+  const wantSet = new Set(want.split(" ").filter(Boolean));
+  for (const l of links) {
+    const cand = normTitle(l.title);
+    if (!cand) continue;
+    const [shortS, longS] =
+      want.length <= cand.length ? [want, cand] : [cand, want];
+    if (longS.includes(shortS) && shortS.length >= 8 && shortS.length / longS.length >= 0.6) {
+      const score = shortS.length / longS.length;
+      if (!best || score > best.score) best = { url: l.url, score };
+    }
+  }
+  if (best) return best.url;
+
+  // 3) token Jaccard
+  for (const l of links) {
+    const candSet = new Set(normTitle(l.title).split(" ").filter(Boolean));
+    if (candSet.size === 0 || wantSet.size === 0) continue;
+    let inter = 0;
+    for (const w of wantSet) if (candSet.has(w)) inter++;
+    const union = wantSet.size + candSet.size - inter;
+    if (union > 0 && inter / union >= 0.6) {
+      const score = inter / union;
+      if (!best || score > best.score) best = { url: l.url, score };
+    }
+  }
+  return best ? best.url : null;
+}
+
+// ---------------------------------------------------------------------------
 // City derivation
 // ---------------------------------------------------------------------------
 
@@ -296,6 +429,10 @@ export async function upsertPlainEvent(
       price = EXCLUDED.price,
       is_free = EXCLUDED.is_free,
       url = EXCLUDED.url,
+      -- T190: refresh source_url on re-normalize too (was omitted → an existing event
+      -- kept its stale aggregator-index source_url even after we resolved its per-event
+      -- detail URL). Both url and source_url are normalizer-owned; keep them in sync.
+      source_url = EXCLUDED.source_url,
       image_url = EXCLUDED.image_url,
       source_item_id = EXCLUDED.source_item_id,
       last_seen = ${ts}

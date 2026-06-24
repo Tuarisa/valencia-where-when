@@ -3,7 +3,11 @@ import { compact } from "../util";
 import {
   parseEventDate,
   runPlainNormalizer,
+  readEventLinks,
+  matchEventLink,
+  latestSnapshotRows,
   type EventInsert,
+  type EventLink,
 } from "./shared";
 import { parsePrice } from "./valenciarusa";
 import type { RawItem } from "./types";
@@ -78,6 +82,7 @@ const EXPO_CATEGORY = "выставка";
 interface RawWeb {
   kind?: string;
   meta?: Record<string, string>;
+  event_links?: Array<{ title: string; url: string }>;
 }
 
 function parseRaw(item: RawItem): RawWeb {
@@ -316,7 +321,9 @@ export function buildCacEvents(
   const out: Array<{ draft: EventInsert; sourceItemId: number }> = [];
   const seen = new Set<string>(); // de-dupe identical title+date across the page
 
-  for (const item of rows) {
+  // T190: only the freshest snapshot per source key (a stale older capture would clobber
+  // the fresh one's per-event links via the cross-row de-dupe).
+  for (const item of latestSnapshotRows(rows)) {
     const raw = parseRaw(item);
     // ONLY the page_snapshot carries the dated blocks; every link_card is a bare title.
     if (raw.kind !== "page_snapshot") continue;
@@ -325,6 +332,9 @@ export function buildCacEvents(
     const sourceUrl = SOURCE_URL_BY_KEY[sourceKey] ?? item.url ?? "https://cac.es/";
     const img = raw.meta?.["og:image"] || null;
     const exhibitionDefault = EXPO_SOURCES.has(sourceKey);
+    // T190: per-event detail links (title→/exposiciones|conferencias/<slug>) captured at
+    // ingest; used to point each block at its own cac.es page instead of the listing.
+    const eventLinks: EventLink[] = readEventLinks(raw);
 
     for (const block of splitCacBlocks(item.raw_text)) {
       let { title } = block;
@@ -356,6 +366,10 @@ export function buildCacEvents(
       const haystack = `${title} ${block.description ?? ""}`;
       const { price, isFree } = parsePrice(haystack);
 
+      // T190: resolve this block's OWN cac.es detail page from the captured card links;
+      // fall back to the listing URL only when no card matches confidently.
+      const detailUrl = matchEventLink(title, eventLinks) ?? sourceUrl;
+
       out.push({
         sourceItemId: item.id,
         draft: {
@@ -375,10 +389,10 @@ export function buildCacEvents(
           country: "Spain",
           price,
           is_free: isFree,
-          url: sourceUrl,
+          url: detailUrl,
           image_url: img,
           source: sourceKey,
-          source_url: sourceUrl,
+          source_url: detailUrl,
           raw_excerpt: compact(block.description)?.slice(0, 1000) ?? null,
         },
       });

@@ -86,6 +86,90 @@ function parseTelegram(source: any, html: string): RawItem[] {
   return parseGeneric(source, html);
 }
 
+// T190 — per-event detail-link capture for snapshot-driven aggregators (lacotorra,
+// cac.es). Those listings render each event as a CARD: an `<a href="/detail">` that
+// wraps only an IMAGE (empty/short inner text, so `parseGeneric`'s anchor pass drops
+// it) plus a separate TITLE element (an `.event-title <p>` on lacotorra, an `<h1-4>` on
+// cac/Elementor) that follows the anchor inside the same card. We pair each
+// detail-looking internal anchor with the FIRST title element that follows it (before
+// the next anchor's title), giving a deterministic title→href map. The map is stashed on
+// the page_snapshot's `raw_json.event_links` so the snapshot-driven normalizers can point
+// each parsed event at its OWN page instead of the aggregator index (T140 — no LLM).
+const A_OPEN_RE = /<a\b[^>]*href=["']([^"']+)["'][^>]*>/gi;
+const TITLE_EL_RE =
+  /<(?:p|span|div)[^>]*class=["'][^"']*(?:event-title|card-title|entry-title|post-title)[^"']*["'][^>]*>([\s\S]*?)<\/(?:p|span|div)>|<h[1-4][^>]*>([\s\S]*?)<\/h[1-4]>/i;
+
+// PURE: an internal anchor that points at a per-event DETAIL page (not the listing
+// index, a section, or chrome). Heuristic: same host, a path with ≥1 segment that is a
+// content slug (letters + hyphens, ≥ 6 chars), and not an obvious section/chrome path.
+function isDetailHref(href: string, baseHost: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(href);
+  } catch {
+    return false;
+  }
+  if (u.host !== baseHost) return false;
+  const path = u.pathname.replace(/\/+$/, "");
+  if (!path || path === "") return false;
+  const lower = path.toLowerCase();
+  if (
+    ["/tag/", "/category/", "/author/", "/feed", "/wp-", "/page", "/cookies", "/privacidad", "/aviso", "/contacto"].some(
+      (p) => lower.includes(p),
+    )
+  )
+    return false;
+  const segs = path.split("/").filter(Boolean);
+  const last = segs[segs.length - 1];
+  // a content slug: hyphenated words, reasonably long, not a bare section word
+  if (!/[a-z0-9]-[a-z0-9]/i.test(last)) return false;
+  if (last.length < 8) return false;
+  return true;
+}
+
+// PURE: extract title→detail-URL pairs from a listing page's event cards. Exported for
+// tests. Deterministic; returns [] when nothing card-shaped is found.
+export function extractEventLinks(html: string, baseUrl: string): Array<{ title: string; url: string }> {
+  let baseHost: string;
+  try {
+    baseHost = new URL(baseUrl).host;
+  } catch {
+    return [];
+  }
+  const anchors: Array<{ href: string; end: number }> = [];
+  let m: RegExpExecArray | null;
+  A_OPEN_RE.lastIndex = 0;
+  while ((m = A_OPEN_RE.exec(html)) !== null) {
+    let href: string;
+    try {
+      href = new URL(decodeEntities(m[1]), baseUrl).toString();
+    } catch {
+      continue;
+    }
+    if (isDetailHref(href, baseHost)) anchors.push({ href, end: m.index + m[0].length });
+  }
+
+  const out: Array<{ title: string; url: string }> = [];
+  const seen = new Set<string>();
+  for (let i = 0; i < anchors.length; i++) {
+    const a = anchors[i];
+    // Window: from just after this anchor up to the next detail anchor (so a title is
+    // attributed to the card it belongs to, not the following card).
+    const winEnd = i + 1 < anchors.length ? anchors[i + 1].end : Math.min(html.length, a.end + 2500);
+    const win = html.slice(a.end, winEnd + 200);
+    const tm = TITLE_EL_RE.exec(win);
+    if (!tm) continue;
+    const title = compact(stripTags(tm[1] || tm[2] || ""));
+    if (!title || title.length < 4 || title.length > 220) continue;
+    const key = a.href;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ title, url: a.href });
+    if (out.length >= 200) break;
+  }
+  return out;
+}
+
 function isNoiseLink(url: string, text: string): boolean {
   const lower = url.toLowerCase();
   if (["/tag/", "/category/", "/author/", "/feed", "/wp-json/", ".jpg", ".png", ".webp", ".svg", ".pdf"].some((p) => lower.includes(p))) return true;
@@ -96,6 +180,9 @@ function isNoiseLink(url: string, text: string): boolean {
 function parseGeneric(source: any, html: string): RawItem[] {
   const meta = pageMeta(html);
   const pageText = stripTags(html);
+  // T190: capture per-event detail links from the listing's cards so snapshot-driven
+  // normalizers (lacotorra, cac) can point each event at its own page (not the index).
+  const eventLinks = extractEventLinks(html, source.url);
   const items: RawItem[] = [{
     source_key: source.key,
     external_id: source.url,
@@ -103,7 +190,7 @@ function parseGeneric(source: any, html: string): RawItem[] {
     title: meta.title || source.name,
     url: source.url,
     raw_text: pageText.slice(0, 12000),
-    raw_json: { kind: "page_snapshot", meta },
+    raw_json: { kind: "page_snapshot", meta, event_links: eventLinks },
   }];
 
   const baseHost = new URL(source.url).host;
