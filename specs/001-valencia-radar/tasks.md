@@ -1222,3 +1222,19 @@ additional issues the agent is NOT handling.)
   (+ `address` if available) for these 8 rows; re-bake `data/seed/places-logunespa.json`. If a name can't be
   resolved for a row, fall back to the area/city or exclude it from the catalog render rather than show a URL.
   Verify the 8 cards show real names after. (This is the long-open T135-part-2 name cleanup.)
+
+- [ ] T194 [F] **Design feels like generic "Claude Design" stamps — take MORE from dalnoboi.org + drop the
+  left-stripe card cliché** (user, `backlog:`, 2026-06-24). The T163 pass took dalnoboi.org's PALETTE but the
+  card/layout styling reads as a typical Claude-Design template — specifically the user is annoyed by the
+  **cards with a bold accent STRIPE on the left** ("карточки с жирной полоской слева — такой типичный штамп,
+  аж бесит"). They want the visual language pulled FROM dalnoboi.org for real: not just colors but its actual
+  STYLE decisions — card treatment, borders/shadows, spacing/density, typography, section headers, list-vs-card
+  layout. REQUIREMENTS: (1) study `http://dalnoboi.org/` properly (curl/WebFetch its CSS; see how IT styles
+  cards/list items, headers, dividers, type scale, density — likely flatter/denser/more utilitarian than the
+  current airy rounded-card look); (2) REMOVE the generic left-accent-stripe pattern (`border-left: …px solid
+  var(--accent/feature)` on `.day-event`, `.feed-card.feature-*` left-border treatments) and express the
+  feature MEANING differently (a subtle tag/dot/typographic cue, not a fat bar); (3) reduce the "штамп" feel —
+  reconsider the big rounded cards / heavy shadows / blur / oversized hero to match dalnoboi's restraint. Keep
+  the deterministic-from-DB render, the feature accents' meaning, calendar/map/expo-strip/series, and the
+  filter behavior (T191). `app/globals.css` + `app/Home.tsx` + detail/places pages. Substantial visual
+  iteration — its own pass; show the user before baking a big departure. (Refines T163/T134.)
