@@ -7,7 +7,9 @@ import {
   eventLocationLabel,
   loadTags,
   humanizeTag,
+  usableImageUrl,
 } from "@/lib/format";
+import { cleanTags } from "@/lib/tags";
 import { RichText, LinkButtons } from "../../detail-helpers";
 
 export const dynamic = "force-dynamic";
@@ -33,7 +35,7 @@ export default async function EventPage({ params }: { params: { id: string } }) 
   const bodyText =
     row.description_ru || row.description || row.raw_excerpt ||
     "Описание пока короткое, но запись уже в каталоге.";
-  const tags = loadTags(row.tags_json);
+  const tags = cleanTags(loadTags(row.tags_json));
 
   const links: { label: string; href: string; ghost?: boolean }[] = [];
   if (row.source_url || row.url) links.push({ label: "Источник", href: row.source_url || row.url });
@@ -55,9 +57,9 @@ export default async function EventPage({ params }: { params: { id: string } }) 
         <div className="tags-row">
           {tags.map((t) => <span key={t} className="tag">{humanizeTag(t)}</span>)}
         </div>
-        {row.image_url && (
+        {usableImageUrl(row.image_url) && (
           // eslint-disable-next-line @next/next/no-img-element
-          <img className="detail-image" src={row.image_url} alt={headline} />
+          <img className="detail-image" src={usableImageUrl(row.image_url)!} alt={headline} />
         )}
         <p className="detail-copy"><RichText text={bodyText} /></p>
         <div className="button-row">
@@ -82,7 +84,7 @@ function SeriesDetail({
   const bodyText =
     series.description_ru || series.description || series.raw_excerpt ||
     "Описание пока короткое, но запись уже в каталоге.";
-  const tags = loadTags(series.tags_json);
+  const tags = cleanTags(loadTags(series.tags_json));
 
   const links: { label: string; href: string; ghost?: boolean }[] = [];
   if (series.source_url || series.url) links.push({ label: "Источник", href: series.source_url || series.url });
@@ -113,9 +115,9 @@ function SeriesDetail({
         <div className="tags-row">
           {tags.map((t) => <span key={t} className="tag">{humanizeTag(t)}</span>)}
         </div>
-        {series.image_url && (
+        {usableImageUrl(series.image_url) && (
           // eslint-disable-next-line @next/next/no-img-element
-          <img className="detail-image" src={series.image_url} alt={headline} />
+          <img className="detail-image" src={usableImageUrl(series.image_url)!} alt={headline} />
         )}
         <p className="detail-copy"><RichText text={bodyText} /></p>
         <section className="series-schedule">

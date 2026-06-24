@@ -134,16 +134,19 @@ a { color: inherit; }
   background: rgba(255,255,255,0.6);
   border: 1px solid rgba(0,0,0,0.06);
 }
-.feed-card img, .place-card img, .detail-image {
+/* Card image block (T188): a tidy, capped 16/9 thumbnail so cards stay even and the
+   image doesn't dominate (the old 4/3 made a tall empty box). The placeholder gradient
+   uses the SAME dimensions so cards line up whether or not they carry a photo. The
+   detail-image (full-width hero on a detail page) overrides these below. */
+.feed-card img, .place-card img, .card-visual.placeholder {
   width: 100%;
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 16 / 9;
+  max-height: 160px;
   object-fit: cover;
   border-radius: 16px;
   background: #e3eceb;
 }
 .card-visual.placeholder {
-  aspect-ratio: 4 / 3;
-  border-radius: 16px;
   background: linear-gradient(135deg, rgba(133, 206, 186, 0.34), rgba(0, 119, 114, 0.22)), #eaf3f1;
 }
 .feed-card.is-hemis { background: var(--hemis-soft); border-color: var(--hemis-line); }
@@ -200,38 +203,33 @@ a { color: inherit; }
 .day-hemis .hemis-session { display: block; padding: 4px 7px 4px 16px; font-size: 0.75rem; line-height: 1.25; color: var(--ink); text-decoration: none; }
 .day-hemis .hemis-session .ev-time { font-weight: 800; color: var(--hemis); margin-right: 4px; }
 
-/* Exposition spanning-bar lane (T175): a thin top strip over the same 7-col rhythm as the
-   calendar grid. Each bar is a horizontal segment that spans the day columns it covers in
-   its week-row; overlapping expositions stack into separate lane-rows. Visually reads as
-   "это идёт постоянно" — one continuous strip, not a card on every day. */
-.expo-lane {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 4px 8px;
-  margin-bottom: 8px;
-}
-.expo-bar {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  height: 22px;
-  padding: 0 8px;
-  border-radius: 4px;
+/* Exposition strip (T186): a single compact, collapsed-by-default <details> above the
+   calendar grid — one line per standing exhibition (each appears ONCE, not per-week).
+   Replaces the old per-week spanning bars, which degenerated into a full-width "wall"
+   when 20+ exhibitions all span the whole month. Mirrors the .day-hemis collapsible. */
+.expo-strip {
+  margin-bottom: 10px;
+  border-radius: 12px;
   background: var(--exposition-soft);
   border: 1px solid var(--exposition-line);
   border-left: 3px solid var(--exposition);
-  color: var(--exposition);
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-decoration: none;
-  white-space: nowrap;
-  overflow: hidden;
 }
-/* Round only the true start/end edges so a multi-week bar reads as one continuous run. */
-.expo-bar:not(.is-bar-start) { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left-width: 1px; }
-.expo-bar:not(.is-bar-end) { border-top-right-radius: 0; border-bottom-right-radius: 0; }
-.expo-bar-label { overflow: hidden; text-overflow: ellipsis; }
-.expo-bar:hover { background: rgba(60, 125, 156, 0.22); }
+.expo-strip > summary {
+  list-style: none; cursor: pointer; padding: 8px 12px;
+  font-size: 0.85rem; font-weight: 700; color: var(--exposition);
+}
+.expo-strip > summary::-webkit-details-marker { display: none; }
+.expo-strip > summary::before { content: '▸ '; }
+.expo-strip[open] > summary::before { content: '▾ '; }
+.expo-strip-list { padding: 2px 8px 8px; display: grid; gap: 4px; }
+.expo-strip-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 6px 8px; border-radius: 8px; text-decoration: none; color: var(--ink);
+  font-size: 0.85rem; line-height: 1.3;
+}
+.expo-strip-item:hover { background: rgba(60, 125, 156, 0.14); }
+.expo-strip-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.expo-strip-item .expo-badge { flex: none; font-size: 0.72rem; }
 
 .feed-card.feature-exposition { background: var(--exposition-soft); border-color: var(--exposition-line); }
 .feed-card.feature-exposition .card-body h3 { color: var(--exposition); }

@@ -1080,6 +1080,44 @@ exist, raw layer still append-only.
   it's a dedup-semantics change so do it deliberately. Medium value (exhibitions keep their span through
   cross-source merges), moderate risk.
 
+### UI bug-fix batch (user screenshots, 2026-06-24 → display-layer only, no normalizer/seed change)
+- [x] T186 [F] **Calendar exposition "wall" → compact collapsible strip** (done 2026-06-24). The T175
+  per-week spanning-bar render (`.expo-lane`/`.expo-bar`) degenerated into a full-width WALL of ~30+ stacked
+  bars when 24 expositions all span the whole month (one segment per week-row each), pushing the day grid far
+  down the page — a spanning bar conveys nothing when everything spans the entire month. REPLACED with a
+  single collapsed-by-default `<details class="expo-strip">` above the grid: summary «Экспозиции · N (идут
+  постоянно)», expands to a ONE-LINE-PER-exposition list (title + the existing `expositionBadge`, linking to
+  the detail), each exposition appearing ONCE. Mirrors the `.day-hemis` pattern; keeps the `--exposition`
+  accent. Removed the dead `expoLanes` per-week-segment memo + `ExpoSegment` type + `.expo-lane`/`.expo-bar`
+  CSS; the day-grid / day-hemis / regular day-events are UNAFFECTED. (Justified trade of the literal "thin bar
+  across days" for a clean compact list — 24 full-month spans can't be bars cleanly.) Live render-smoke: 0
+  `expo-bar`, exactly 1 `.expo-strip` (19 items this month), DOM order legend → expo-strip → calendar-grid.
+- [x] T187 [F] **Dead Telegram-CDN place/event images → placeholder** (done 2026-06-24). Every Telegram-sourced
+  `image_url` is a hotlink-protected/expiring `https://cdn4.telesco.pe/file/…` that 404s → a broken-image icon
+  on every card. Added pure SSR-safe `usableImageUrl(url)` (`lib/format.ts`): returns null for known-dead hosts
+  (`telesco.pe` + any `*.telesco.pe`) and any non-http/non-absolute/unparseable URL, else the URL. Applied at
+  every card image site — `app/Home.tsx` (FeedCard + MapPanel place-card), `app/places/page.tsx`,
+  `app/places/[id]`, `app/events/[id]` (event + series) — so dead-host images render the EXISTING
+  `.card-visual.placeholder` gradient instead of a broken `<img>`. (No re-hosting; graceful placeholder is the
+  fix.) Live render-smoke: 0 `telesco.pe` in any rendered `<img src>` on `/` or `/places`; 128 placeholders.
+- [x] T188 [F] **Place/feed card image block oversized → tidy 16/9 cap** (done 2026-06-24). The shared card
+  image used `aspect-ratio: 4/3` → a tall empty box dominating each card; placeholder + image used different
+  sizing so cards were uneven. Tightened `.feed-card img, .place-card img, .card-visual.placeholder` to
+  `aspect-ratio: 16/9; max-height: 160px; object-fit: cover` (placeholder shares the exact dimensions so cards
+  line up with or without a photo); responsive grid kept; `.detail-image` hero override untouched (dropped from
+  the shared selector). Verified in served CSS + render-smoke.
+- [x] T189 [F] **Tag chips: drop garbage + system tags** (done 2026-06-24). Chips showed price/menu dumps
+  ("angus-premium-15-50-…", "4-95-6-5-50-fried-chicken-…", "99 5") and internal tags ("has image", "mapped",
+  "place", "tg logunespa", "city valencia", `area:*`/`from:*`/source-key prefixes). Added pure deterministic
+  (T140, no LLM) `cleanTags(tags)` + `isNoiseTag` (`lib/tags.ts`): drops exact system labels, the
+  tg/area/city/district/from/source/web:/api: prefixes (slug AND spaced forms), and garbage (pure
+  numeric/punctuation, digit-ratio > 0.35, or length > 28). Wrapped every `loadTags(row.tags_json)` site in
+  `lib/queries.ts` (events / series / places) so the feed cards, place cards, tag-cloud (T163) AND
+  category builders all see clean tags; also the two detail pages. Real human tags ("bbq", "acai bowls",
+  "family", "basilica") survive. 8 unit tests (`tests/tags-clean.test.mjs`, real DB tag forms). Live
+  render-smoke: 0 "has image"/"angus premium"/"fried chicken"/"tg logunespa"/"city valencia" in any rendered
+  chip on `/` or `/places`; human tags intact.
+
 ### Independent code-review findings (senior-architect agent, 2026-06-21 → `code-review-independent.md`)
 Structural improvements the fresh-eyes review surfaced. Recorded as tasks; tackled by value/risk.
 

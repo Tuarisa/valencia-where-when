@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getPlaces } from "@/lib/queries";
-import { humanizeTag } from "@/lib/format";
+import { humanizeTag, usableImageUrl } from "@/lib/format";
 
 // Places catalog (sub-area F, T063). A browsable, FILTERABLE surface for the places
 // the pipeline + the logunespa crawl collect — distinct from the events feed
@@ -104,11 +104,15 @@ export default async function PlacesPage({ searchParams }: { searchParams: SP })
           <p className="panel-note">Ничего не нашлось — попробуй сбросить фильтр.</p>
         ) : (
           <div className="places-list">
-            {filtered.map((item) => (
+            {filtered.map((item) => {
+              const img = usableImageUrl(item.image_url);
+              return (
               <article key={item.id} className="place-card">
-                {item.image_url && (
+                {img ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={item.image_url} alt="" />
+                  <img src={img} alt="" />
+                ) : (
+                  <div className="card-visual placeholder" />
                 )}
                 <div>
                   <h3>{item.name}</h3>
@@ -127,7 +131,8 @@ export default async function PlacesPage({ searchParams }: { searchParams: SP })
                   </div>
                 </div>
               </article>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>

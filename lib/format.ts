@@ -133,6 +133,29 @@ export function placeLocationLabel(row: {
   return out.join(", ") || "Valencia";
 }
 
+// Image URL gate (T187). Many records carry a Telegram CDN image_url
+// (https://cdn4.telesco.pe/file/…) that is hotlink-protected / expiring, so it 404s in
+// the browser → a broken-image icon on every card. usableImageUrl() returns the URL only
+// if it's a plausibly-loadable image, else null so the caller renders the placeholder
+// gradient instead of a broken <img>. Pure + SSR-safe (no fetch) — we route dead hosts to
+// the placeholder, we do NOT try to re-host. Deterministic (T140).
+const DEAD_IMAGE_HOST_RE = /(^|\.)telesco\.pe$/i; // Telegram CDN (incl. cdn4.telesco.pe)
+
+export function usableImageUrl(url?: string | null): string | null {
+  const raw = (url || "").trim();
+  if (!raw) return null;
+  let host: string;
+  try {
+    const u = new URL(raw);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+    host = u.hostname;
+  } catch {
+    return null; // not a parseable absolute URL → can't safely use as <img src>
+  }
+  if (DEAD_IMAGE_HOST_RE.test(host)) return null; // known-dead Telegram CDN host
+  return raw;
+}
+
 export function humanizeTag(tag: string): string {
   return tag
     .replace(/^city:/, "city ")

@@ -8,6 +8,7 @@ import {
   loadTags,
   pageSlug,
 } from "./format";
+import { cleanTags } from "./tags";
 import { canonicalCategory } from "./categories";
 
 export const VALENCIA_CENTER = { lat: 39.4699, lng: -0.3763 };
@@ -200,7 +201,7 @@ export function featureKind(row: EventRow): string | null {
 export function toSiteEvent(row: EventRow): SiteEvent {
   const title = displayTitle(row);
   const slug = pageSlug(title, `event-${row.id}`);
-  const tags = loadTags(row.tags_json);
+  const tags = cleanTags(loadTags(row.tags_json));
   return {
     id: row.id,
     title,
@@ -258,7 +259,7 @@ export function toSitePlace(row: PlaceRow): SitePlace {
     source: row.source ?? null,
     source_url: row.source_url ?? null,
     location_label: placeLocationLabel(row),
-    tags: loadTags(row.tags_json),
+    tags: cleanTags(loadTags(row.tags_json)),
     page_url: `/places/${row.id}-${slug}`,
   };
 }
@@ -293,7 +294,7 @@ export function seriesToSiteEvents(
 ): SiteEvent[] {
   const title = series.title_ru || deriveTitle(series.title);
   const slug = pageSlug(title, `series-${series.id}`);
-  const tags = loadTags(series.tags_json);
+  const tags = cleanTags(loadTags(series.tags_json));
   const pageUrl = `/events/series-${series.id}-${slug}`;
   const sorted = [...occurrences].sort((a, b) => {
     const da = (a.occurrence_date || "") + (a.start_time || "99:99");

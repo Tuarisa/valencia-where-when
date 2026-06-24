@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { SitePayload, SiteEvent, SitePlace } from "@/lib/queries";
-import { humanizeTag } from "@/lib/format";
+import { humanizeTag, usableImageUrl } from "@/lib/format";
 import { canonicalCategory, categoryLabelRu } from "@/lib/categories";
 
 const MONTH_NAMES = [
@@ -174,11 +174,12 @@ export default function Home({ payload }: { payload: SitePayload }) {
 }
 
 function FeedCard({ item, today }: { item: SiteEvent; today: string }) {
+  const img = usableImageUrl(item.image_url);
   return (
     <article className={`feed-card${item.is_hemisferic ? " is-hemis" : ""}${item.feature && item.feature !== "hemisferic" ? " feature-" + item.feature : ""}`}>
-      {item.image_url ? (
+      {img ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={item.image_url} alt="" />
+        <img src={img} alt="" />
       ) : (
         <div className="card-visual placeholder" />
       )}
@@ -348,20 +349,6 @@ function LazyFeed({ events, today }: { events: SiteEvent[]; today: string }) {
   );
 }
 
-// Bar segment within one week-row of the month grid (T175 spanning bar). An exposition
-// that overlaps the visible month produces one segment per week it touches, positioned
-// over the day columns it covers in that week. Lane = vertical stacking slot so multiple
-// overlapping expositions don't collide.
-type ExpoSegment = {
-  event: SiteEvent;
-  week: number; // 0-based grid row
-  colStart: number; // 1-based grid column (1..7), Monday-first
-  span: number; // number of columns covered in this week
-  lane: number; // stacking slot within the lane block
-  isStart: boolean; // the exposition's real start falls in this week (round the left edge)
-  isEnd: boolean; // the exposition's real end falls in this week (round the right edge)
-};
-
 const MONTH_ABBR_RU = [
   "янв", "фев", "мар", "апр", "мая", "июн",
   "июл", "авг", "сен", "окт", "ноя", "дек",
@@ -391,19 +378,19 @@ function Calendar({
   const months = payload.months;
   const monthKey = months[monthIndex];
 
-  // Exposition spanning bars (T175): clamp each standing exhibition to the visible month
-  // and lay it out as one or more week-row segments stacked into non-overlapping lanes.
-  const expoLanes = useMemo<{ segments: ExpoSegment[]; weeks: number; lanes: number } | null>(() => {
-    if (!monthKey) return null;
+  // Standing expositions overlapping the visible month (T186). Each exhibition appears
+  // ONCE (not per-week-segment). When 20+ exhibitions all span the whole month, spanning
+  // bars degenerate into a full-width "wall" that conveys nothing and pushes the day grid
+  // down the page — so we render a single compact collapsible strip of one-line entries
+  // instead (mirrors the .day-hemis <details> pattern). Deterministic order: longest span
+  // first (reads as the most "standing"), then start, then title.
+  const expositions = useMemo<SiteEvent[]>(() => {
+    if (!monthKey) return [];
     const [year, month] = monthKey.split("-").map(Number);
-    const firstDay = new Date(year, month - 1, 1);
     const daysInMonth = new Date(year, month, 0).getDate();
-    const offset = (firstDay.getDay() + 6) % 7; // Monday-first
-    const weeks = Math.ceil((offset + daysInMonth) / 7);
     const monthStartMs = Date.UTC(year, month - 1, 1);
     const monthEndMs = Date.UTC(year, month - 1, daysInMonth);
 
-    // Collect expositions that overlap this month at all.
     const expos = payload.events.filter(
       (e) =>
         e.is_exposition &&
@@ -413,7 +400,6 @@ function Calendar({
         Date.parse(e.start_date.slice(0, 10)) <= monthEndMs &&
         Date.parse(e.end_date.slice(0, 10)) >= monthStartMs,
     );
-    // Deterministic order: longest span first (it reads as the most "standing"), then start, title.
     expos.sort((a, b) => {
       const la = Date.parse(a.end_date!.slice(0, 10)) - Date.parse(a.start_date!.slice(0, 10));
       const lb = Date.parse(b.end_date!.slice(0, 10)) - Date.parse(b.start_date!.slice(0, 10));
@@ -423,60 +409,7 @@ function Calendar({
       if (sa !== sb) return sa.localeCompare(sb);
       return a.title.localeCompare(b.title);
     });
-
-    const segments: ExpoSegment[] = [];
-    // Lane occupancy: laneOccupied[lane] is a Set of "week:col" cells already taken.
-    const laneCells: Set<string>[] = [];
-    let maxLane = -1;
-
-    for (const e of expos) {
-      const realStart = Date.parse(e.start_date!.slice(0, 10));
-      const realEnd = Date.parse(e.end_date!.slice(0, 10));
-      // Clamp to the visible month's day numbers.
-      const clampStartDay = realStart < monthStartMs ? 1 : new Date(realStart).getUTCDate();
-      const clampEndDay = realEnd > monthEndMs ? daysInMonth : new Date(realEnd).getUTCDate();
-      const isStart = realStart >= monthStartMs;
-      const isEnd = realEnd <= monthEndMs;
-
-      // Cells (0-based grid index) this exposition covers in the visible month.
-      const startIdx = offset + clampStartDay - 1;
-      const endIdx = offset + clampEndDay - 1;
-
-      // Pick the lowest lane with no cell collision across the whole clamped range.
-      let lane = 0;
-      for (;; lane++) {
-        if (!laneCells[lane]) laneCells[lane] = new Set();
-        let collides = false;
-        for (let idx = startIdx; idx <= endIdx; idx++) {
-          if (laneCells[lane].has(String(idx))) { collides = true; break; }
-        }
-        if (!collides) break;
-      }
-      for (let idx = startIdx; idx <= endIdx; idx++) laneCells[lane].add(String(idx));
-      maxLane = Math.max(maxLane, lane);
-
-      // Split the [startIdx, endIdx] cell run into per-week segments.
-      let idx = startIdx;
-      while (idx <= endIdx) {
-        const week = Math.floor(idx / 7);
-        const weekEndIdx = Math.min(endIdx, week * 7 + 6);
-        const colStart = (idx % 7) + 1;
-        const span = weekEndIdx - idx + 1;
-        segments.push({
-          event: e,
-          week,
-          colStart,
-          span,
-          lane,
-          isStart: isStart && idx === startIdx,
-          isEnd: isEnd && weekEndIdx === endIdx,
-        });
-        idx = weekEndIdx + 1;
-      }
-    }
-
-    if (segments.length === 0) return null;
-    return { segments, weeks, lanes: maxLane + 1 };
+    return expos;
   }, [monthKey, payload.events]);
 
   const cells = useMemo(() => {
@@ -491,7 +424,7 @@ function Calendar({
       // Skip series feed cards (is_series): they have no single calendar date — their
       // sessions are placed individually via the calendar-only occurrence rows below.
       if (item.is_series) continue;
-      // Skip expositions: they render as a continuous spanning bar in the top lane (T175),
+      // Skip expositions: they render in the compact .expo-strip above the grid (T186),
       // NOT as a per-day card duplicated across every day of their range.
       if (item.is_exposition) continue;
       if (!(item.start_date || "").startsWith(monthKey)) continue;
@@ -556,26 +489,18 @@ function Calendar({
         <span className="legend-dot legend-excursion" /> экскурсии
         <span className="legend-dot legend-exposition" /> экспозиции (идут постоянно)
       </p>
-      {expoLanes && (
-        <div
-          className="expo-lane"
-          style={{ gridTemplateRows: `repeat(${expoLanes.weeks * expoLanes.lanes}, auto)` }}
-        >
-          {expoLanes.segments.map((seg, i) => (
-            <Link
-              key={`${seg.event.id}-${seg.week}-${i}`}
-              className={`expo-bar${seg.isStart ? " is-bar-start" : ""}${seg.isEnd ? " is-bar-end" : ""}`}
-              href={seg.event.page_url}
-              title={seg.event.title}
-              style={{
-                gridColumn: `${seg.colStart} / span ${seg.span}`,
-                gridRow: seg.week * expoLanes.lanes + seg.lane + 1,
-              }}
-            >
-              <span className="expo-bar-label">{seg.event.title}</span>
-            </Link>
-          ))}
-        </div>
+      {expositions.length > 0 && (
+        <details className="expo-strip">
+          <summary>Экспозиции · {expositions.length} (идут постоянно)</summary>
+          <div className="expo-strip-list">
+            {expositions.map((e) => (
+              <Link key={e.id} className="expo-strip-item" href={e.page_url} title={e.title}>
+                <span className="expo-strip-title">{e.title}</span>
+                <span className="expo-badge">{expositionBadge(e, payload.today)}</span>
+              </Link>
+            ))}
+          </div>
+        </details>
       )}
       <div className="calendar-grid">
         {cells || <div className="day-cell">Пока нет датированных событий.</div>}
@@ -654,11 +579,15 @@ function MapPanel({
       </div>
       <div ref={mapRef} className="map-frame" />
       <div className="places-list">
-        {places.map((item) => (
+        {places.map((item) => {
+          const img = usableImageUrl(item.image_url);
+          return (
           <article key={item.id} className="place-card">
-            {item.image_url && (
+            {img ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={item.image_url} alt="" />
+              <img src={img} alt="" />
+            ) : (
+              <div className="card-visual placeholder" />
             )}
             <div>
               <h3>{item.name}</h3>
@@ -676,7 +605,8 @@ function MapPanel({
               </div>
             </div>
           </article>
-        ))}
+          );
+        })}
       </div>
     </section>
   );

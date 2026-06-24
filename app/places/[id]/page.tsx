@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getPlaceRow } from "@/lib/queries";
-import { placeLocationLabel, loadTags, humanizeTag } from "@/lib/format";
+import { placeLocationLabel, loadTags, humanizeTag, usableImageUrl } from "@/lib/format";
+import { cleanTags } from "@/lib/tags";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +12,7 @@ export default async function PlacePage({ params }: { params: { id: string } }) 
   const row = await getPlaceRow(id);
   if (!row) notFound();
 
-  const tags = loadTags(row.tags_json);
+  const tags = cleanTags(loadTags(row.tags_json));
   const coords =
     row.lat != null && row.lng != null ? `${row.lat}, ${row.lng}` : "ещё нет";
 
@@ -34,9 +35,9 @@ export default async function PlacePage({ params }: { params: { id: string } }) 
         <div className="tags-row">
           {tags.map((t) => <span key={t} className="tag">{humanizeTag(t)}</span>)}
         </div>
-        {row.image_url && (
+        {usableImageUrl(row.image_url) && (
           // eslint-disable-next-line @next/next/no-img-element
-          <img className="detail-image" src={row.image_url} alt={row.name} />
+          <img className="detail-image" src={usableImageUrl(row.image_url)!} alt={row.name} />
         )}
         <p className="detail-copy">
           {row.description || row.notes || "Место уже в каталоге; описание ещё будем вычищать и обогащать."}
