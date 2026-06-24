@@ -439,14 +439,16 @@ exist, raw layer still append-only.
   "1,5-2 часа" as a date. Both regression-free, 316/316. NOTE: these fixes improve prices/dates across all
   normalizers → a seed re-bake (T160) would capture the now-parsed prices/dates on existing events.)*
 
-- [ ] T143 [I] **`/api/health` + `npm run smoke` ergonomics on a seed-only DB** (found by the T102
-  E2E run). `pipelineWarnings()` HARD-fails (`ok=false` → 503) when there is "no successful pipeline
-  run on record" (`source_runs` empty), so on a freshly-seeded local DB the smoke gate can NEVER pass
-  even though all row counts are healthy. Options: (a) demote "no pipeline run on record" to a
-  soft/INFO warning when counts are otherwise healthy (keep it a HARD fail on prod where a run is
-  expected), (b) seed a synthetic `source_runs` success row in `db:local:setup`, or (c) document that
-  a local seed-only health-fail is expected and gate `smoke` on row counts. Likely auto-resolves once
-  **T141** live-ingest populates `source_runs`. Low severity; not a render/crash bug.
+- [x] T143 [I] **`/api/health` seed-only 503 → demoted to INFO** (found by T102 E2E, fixed 2026-06-23).
+  `pipelineWarnings()` HARD-failed (`ok=false`/503) on "no successful pipeline run on record" (`source_runs`
+  empty), so a freshly-seeded DB (= every fresh prod deploy, DEPLOY.md Phase 3) failed `smoke` despite healthy
+  counts. FIX (option (a)): the "never ran" branch now emits `"no pipeline run yet (info)"` (INFO), and the
+  route's hard filter generalised to `!w.endsWith("(info)")` so any info-suffixed warning is non-hard. Still
+  CORRECT on a truly-broken deploy: an EMPTY DB also trips the HARD `"0 upcoming events"` → still 503; and a
+  run that DID happen but went STALE (>48h) stays HARD (the real "pipeline died on prod" signal). VERIFIED on a
+  throwaway seed-only DB: `/api/health` = **`ok:true` / HTTP 200**, `warnings:["no pipeline run yet (info)"]`,
+  248 upcoming. Updated DEPLOY.md (no pre-smoke `refresh` needed) + the health-test mirror (+2 cases). build 0,
+  tests 433/433.
 
 - [~] T144 [A/E/I] **Local-first data baking → seed; prod = incremental-only** (user, `backlog:`,
   2026-06-21 strategy). Do ALL the heavy lifting LOCALLY and bake the result into `data/seed/`, so

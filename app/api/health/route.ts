@@ -164,8 +164,10 @@ export async function GET() {
     // INFO-only — does NOT flip `ok`.
     if (enrich.stalled) warnings.push("enrich stalled (info)");
 
-    // `ok` is driven by HARD warnings only. The enrich-stalled line is informational.
-    const hard = warnings.filter((w) => w !== "enrich stalled (info)");
+    // `ok` is driven by HARD warnings only. Any warning suffixed "(info)" is
+    // informational and does NOT flip ok — currently "enrich stalled (info)" and the
+    // seed-only "no pipeline run yet (info)" (T143).
+    const hard = warnings.filter((w) => !w.endsWith("(info)"));
     const ok = hard.length === 0;
 
     return NextResponse.json(

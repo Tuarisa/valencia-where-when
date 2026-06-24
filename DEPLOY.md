@@ -26,10 +26,12 @@ absent (the offline `run.ts` path is live); the seed (`data/seed/*.json`, ~400 d
 5. Deploy.
 
 ### Phase 3 — Verify (REQUIRED)
-6. Fire ONE pipeline run so `source_runs` has a row (else `/api/health` is 503 on a seed-only DB — the
-   site still renders fine): GH-Actions `scheduler.yml` → Run workflow → `refresh`, OR
-   `curl -H "Authorization: Bearer $CRON_SECRET" https://<app>/api/cron/refresh`.
-7. `APP_BASE_URL=https://<app>.vercel.app npm run smoke` → expect 3/3 PASS, `/api/health` `ok:true`.
+6. `APP_BASE_URL=https://<app>.vercel.app npm run smoke` → expect 3/3 PASS, `/api/health` `ok:true`.
+   **A freshly-seeded DB now passes immediately (T143):** "never ran" is an INFO note
+   (`"no pipeline run yet (info)"`), not a hard fail — health is `ok:true` as long as the seed has
+   upcoming events. (Optional: fire one pipeline run to clear even the info note — GH-Actions
+   `scheduler.yml` → Run workflow → `refresh`, OR
+   `curl -H "Authorization: Bearer $CRON_SECRET" https://<app>/api/cron/refresh`.)
 
 ### Phase 4 — Cron (REQUIRED — pick one)
 8. **Either** `vercel.json`'s daily `/api/cron/refresh` (Hobby-friendly, 1×/day) **or** activate
@@ -47,7 +49,7 @@ absent (the offline `run.ts` path is live); the seed (`data/seed/*.json`, ~400 d
 3. **Manual seed:** confirm you'll run `npm run db:setup` against the prod Neon URL once.
 4. **Enrich on prod:** leave OFF (recommended — pre-enriched seed). Confirm.
 5. **Notifications:** dry-run for launch, or wire Telegram now (needs bot token + chat id)?
-6. **Fresh-deploy health 503:** fire one `refresh`/`dispatch` after seeding before running `smoke`.
+6. **Fresh-deploy health:** seed-only is now `ok:true` (T143); no pre-smoke `refresh` needed.
 
 _Audit 2026-06-21. Key files: `vercel.json`, `next.config.mjs`, `lib/db.ts`, `lib/pipeline/run.ts`,
 `app/api/cron/*`, `app/api/health/route.ts`, `scripts/{apply-schema,seed,migrate-hemisferic-series,smoke}.mjs`,

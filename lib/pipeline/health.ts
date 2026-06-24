@@ -103,7 +103,13 @@ export function pipelineWarnings(input: WarningInput): string[] {
   const lastMs = isoToMs(input.lastSuccessIso);
   const nowMs = isoToMs(input.nowIso);
   if (lastMs == null) {
-    out.push("no successful pipeline run on record");
+    // NEVER ran (source_runs empty) is INFO, not a hard fail (T143): a freshly-seeded
+    // DB renders fine from the seed and simply hasn't had a pipeline tick yet. If the DB
+    // is ALSO empty the "0 upcoming events" HARD warning below fires and flips ok=false,
+    // so a truly-broken deploy is still caught. A run that DID happen but went STALE
+    // (>coldSec) stays HARD — that's the real "pipeline died on prod" signal. The route
+    // treats any "(info)"-suffixed warning as non-hard.
+    out.push("no pipeline run yet (info)");
   } else if (nowMs != null && (nowMs - lastMs) / 1000 > coldSec) {
     const ageH = Math.round(((nowMs - lastMs) / 3600000) * 10) / 10;
     const limitH = Math.round(coldSec / 3600);

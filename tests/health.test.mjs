@@ -46,7 +46,7 @@ function pipelineWarnings(input) {
   const lastMs = isoToMs(input.lastSuccessIso);
   const nowMs = isoToMs(input.nowIso);
   if (lastMs == null) {
-    out.push('no successful pipeline run on record');
+    out.push('no pipeline run yet (info)'); // T143: INFO, not a hard fail (seed-only DB)
   } else if (nowMs != null && (nowMs - lastMs) / 1000 > coldSec) {
     const ageH = Math.round(((nowMs - lastMs) / 3600000) * 10) / 10;
     const limitH = Math.round(coldSec / 3600);
@@ -134,9 +134,18 @@ test('pipelineWarnings: no successful run in 48h → hard warning', () => {
   assert.match(w[0], /no successful pipeline run in 48h/);
 });
 
-test('pipelineWarnings: never ran → on-record warning', () => {
+test('pipelineWarnings: never ran but healthy data → INFO only, not hard (T143)', () => {
   const w = pipelineWarnings({ lastSuccessIso: null, upcomingCount: 42, nowIso: NOW });
-  assert.deepEqual(w, ['no successful pipeline run on record']);
+  assert.deepEqual(w, ['no pipeline run yet (info)']);
+  // The route treats "(info)"-suffixed warnings as non-hard → ok stays true.
+  assert.equal(w.filter((x) => !x.endsWith('(info)')).length, 0);
+});
+
+test('pipelineWarnings: never ran AND empty DB → 0-upcoming is still a HARD fail (T143)', () => {
+  const w = pipelineWarnings({ lastSuccessIso: null, upcomingCount: 0, nowIso: NOW });
+  assert.deepEqual(w, ['no pipeline run yet (info)', '0 upcoming events']);
+  // A truly-empty fresh deploy is still caught: one hard warning remains.
+  assert.equal(w.filter((x) => !x.endsWith('(info)')).length, 1);
 });
 
 test('pipelineWarnings: zero upcoming events → warning', () => {
