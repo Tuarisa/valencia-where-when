@@ -1252,3 +1252,18 @@ additional issues the agent is NOT handling.)
   consider a seed re-bake (T173 flow, user-confirmed) so prod ships the fresh data. ACTION NOW: run one full
   `ingestAll()`+`normalizeAll()` pass AFTER the in-flight T190 finishes (avoid overlapping its lacotorra/cac
   re-ingest), then report what's new.
+  *(DONE 2026-06-24 — full `ingestAll()` (25 sources, 20 ok / 0 err, 908 items) → `normalizeAll()` (created 214
+  / updated 129) → dedup (30 merged + 119 collapsed) → score (364) → tag → geo. Upcoming events **271 → 364**
+  (+93 net new after dedup, 322 dated). Fresh 3-day backfill in the persistent local `main` DB. Quality nits
+  surfaced → T196. A seed re-bake (T173) to ship the +93 to prod is user-confirmed/pending.)*
+
+- [ ] T196 [A] **Normalizer title-noise in freshly-ingested data (hoyvalencia date-prefix, vidacultural)**
+  (found during the T195 refresh, 2026-06-24). New events show title cruft: `web:hoyvalencia` prefixes a date
+  RANGE onto titles — "Del al 28 jun 2026 Carmina Burana Palau…", "Del al 26 jun 2026 Representación…" (the
+  "Del [DD] al DD mon YYYY" range leaks into `title`; should be parsed into start/end_date + stripped from the
+  title), and some appear DUPLICATED (multiple "Carmina Burana" same date+source — a same-source dup the
+  ≥2-source fuzzy guard misses, cf. the Rod Stewart tier-variant case). `tg:vidacultural_Valencia` has noisy
+  promo titles ("Валенсія 🚩 У нас для Вас просто космічні…"). FIX: hoyvalencia normalizer — parse + strip the
+  "Del … al DD mon YYYY" date-range prefix (set start/end_date from it), and add a same-source dedupe for
+  identical title+date; vidacultural — tighten the title extraction / junk guard. Deterministic (T140). Low–med
+  severity, cosmetic-to-quality. Re-normalize on the live DB after.
