@@ -75,3 +75,50 @@ export function shape(row, cols) {
   for (const c of cols) o[c] = row[c] === undefined ? null : row[c];
   return o;
 }
+
+// --- native event_series / event_occurrences seed ----------------------------
+//
+// The seed used to ship Hemisfèric as 104 LEGACY `api:hemisferic` event rows that
+// `db:migrate:series` re-derived into series at db:setup — so a fresh prod deploy
+// AFTER the last legacy showtime rendered ZERO Hemisfèric until the first live
+// cron. The bake now ships `event_series.json` + `event_occurrences.json`
+// NATIVELY (exported by scripts/rebake-seed.mjs — the canonical bake entry —
+// loaded by scripts/seed.mjs). Neither table has EXPORT_EXCLUDES: the full
+// schema-driven column set ships (incl. enrichment/score/notified — shipping
+// baked state is the point).
+
+// PURE: pick the FUTURE-RELEVANT series for the seed = status 'upcoming' (or
+// NULL) whose LATEST occurrence is on/after `today`, plus ALL occurrences of
+// those series (recent-past occurrence dates ship too — simpler, and keeps the
+// upsertSeries dedup_hash identity stable on the first live re-ingest).
+// `today` is 'YYYY-MM-DD'; date compares are lexicographic.
+export function selectSeriesForExport(seriesRows, occurrenceRows, today) {
+  const lastOcc = new Map();
+  for (const o of occurrenceRows) {
+    if (!o.occurrence_date) continue;
+    const prev = lastOcc.get(o.series_id);
+    if (!prev || o.occurrence_date > prev) lastOcc.set(o.series_id, o.occurrence_date);
+  }
+  const series = seriesRows.filter(
+    (s) =>
+      (s.status === "upcoming" || s.status == null) &&
+      (lastOcc.get(s.id) || "") >= today,
+  );
+  const keep = new Set(series.map((s) => s.id));
+  const occurrences = occurrenceRows.filter((o) => keep.has(o.series_id));
+  return { series, occurrences };
+}
+
+// PURE: the seed loader's per-table conflict clause. Most tables are keyed by
+// their explicit seed ids -> `ON CONFLICT (id) DO NOTHING`. event_series /
+// event_occurrences ALSO carry a UNIQUE dedup_hash (the live pipeline's
+// upsertSeries identity), so a re-seeded row conflicts on id AND dedup_hash —
+// and a targeted ON CONFLICT only absorbs its named constraint. Bare
+// `ON CONFLICT DO NOTHING` absorbs both, keeping db:setup idempotent. Updates
+// stay owned by the live pipeline (upsertSeries), never by the seeder.
+export function seedConflictClause(table) {
+  if (table === "event_series" || table === "event_occurrences") {
+    return "ON CONFLICT DO NOTHING";
+  }
+  return "ON CONFLICT (id) DO NOTHING";
+}

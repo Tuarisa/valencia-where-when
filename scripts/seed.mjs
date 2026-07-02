@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { neon } from "@neondatabase/serverless";
 import { applyLocalNeonConfig } from "./_neon-local.mjs";
+import { seedConflictClause } from "./_seed-schema.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const url = process.env.DATABASE_URL;
@@ -32,7 +33,9 @@ async function insertRows(table, rows) {
   for (const row of rows) {
     const values = cols.map((c) => (row[c] === undefined ? null : row[c]));
     const placeholders = cols.map((_, i) => `$${i + 1}`).join(", ");
-    const text = `INSERT INTO ${table} (${colList}) VALUES (${placeholders}) ON CONFLICT (id) DO NOTHING`;
+    // event_series/event_occurrences carry TWO unique keys (id + dedup_hash) ->
+    // bare ON CONFLICT DO NOTHING there; everything else keys on (id).
+    const text = `INSERT INTO ${table} (${colList}) VALUES (${placeholders}) ${seedConflictClause(table)}`;
     await sql(text, values);
     inserted++;
   }
@@ -81,6 +84,12 @@ const order = [
   ["events", "events-fever.json"], // T132: one-off Fever DroneArt Show (drone show) dates
   ["events", "events-logunespa.json"], // T130: dated events mined from tg:logunespa posts
   ["events", "events-ads.json"], // curated:ads — user-requested events from Facebook ads (ids 1201+)
+  // NATIVE recurring series (Hemisfèric etc.), baked by scripts/rebake-seed.mjs.
+  // event_series MUST load before event_occurrences (FK series_id). The live
+  // pipeline (upsertSeries) later matches these rows by dedup_hash and updates
+  // them in place — the seed just ships the current schedule for fresh deploys.
+  ["event_series", "event_series.json"],
+  ["event_occurrences", "event_occurrences.json"],
   ["places", "places.json"],
   ["places", "places-logunespa.json"], // T130: historical place recs crawled from tg:logunespa
   ["places", "places-recommendations.json"], // T159: curated personal recs (curated:recommendations)

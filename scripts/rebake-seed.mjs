@@ -1,30 +1,39 @@
-// Re-bake the prod seed `data/seed/events.json` via a CURATED MERGE so it picks
-// up the live local-DB fixes (dedup, corrected dates/cities, lacotorra hybrid
-// filter, exposition end_dates) WITHOUT regressing the Hemisfèric series or
-// reintroducing null-date rows. (T173.)
+// Re-bake the prod seed from the live local DB (T173; the CANONICAL bake entry).
+// Writes THREE files:
 //
-// A naive `export-seed --commit` REGRESSES the seed: it would (a) drop the 104
-// `api:hemisferic` rows (in the live DB those rows have been migrated away into
-// event_series/event_occurrences, so they no longer export cleanly), losing the
-// 11 Hemisfèric series, and (b) potentially export curated-source rows that live
-// in SEPARATE files (events-feria-julio-2026.json / events-logunespa.json / the
-// 2 curated DroneArt rows in events-fever.json), colliding on id.
+//   events.json             DERIVED events only (see the WHERE below) — dedup'd,
+//                           dated, future-relevant, enriched.
+//   event_series.json       NATIVE recurring series (Hemisfèric etc.), exported
+//   event_occurrences.json  straight from event_series/event_occurrences.
 //
-// THE CORRECT MERGE = concat of:
-//   (1) DERIVED events from the live main DB:
-//         source <> 'api:hemisferic'
-//         AND status = 'upcoming'      (excludes 'duplicate'/'filtered')
-//         AND start_date IS NOT NULL   (0 null dates)
-//         AND id >= 25000              (excludes curated low-id rows that belong
-//                                       to the separate curated files — feria
-//                                       1001-1043, logunespa 24737-24796, the 2
-//                                       DroneArt rows 1101-1102; the live derived
-//                                       id range starts at 25171)
-//       This set already reflects dedup, corrected dates/cities, the lacotorra
-//       hybrid filter, and exposition end_dates.
-//   (2) The 104 `api:hemisferic` rows taken VERBATIM from the CURRENT
-//       data/seed/events.json (ids ~193-296), preserved unchanged so
-//       db:migrate:series still yields 11 series + 104 occurrences.
+// WHY native series (the production-critical gap this closed): the seed used to
+// ship Hemisfèric as 104 LEGACY `api:hemisferic` event rows (a frozen showtime
+// window) that `db:migrate:series` converted to series at db:setup — so a fresh
+// prod deploy AFTER that window's last date rendered ZERO Hemisfèric until the
+// first live cron. The live local DB's series (maintained by the hemisferic
+// normalizer via upsertSeries) are the CURRENT schedule; the bake now ships them
+// directly and events.json carries NO api:hemisferic rows at all.
+// `db:migrate:series` stays in db:setup as a harmless no-op (0 source events).
+//
+// events.json = DERIVED events from the live main DB:
+//     source <> 'api:hemisferic'    (hemisferic ships via the series files)
+//     AND status = 'upcoming'       (excludes 'duplicate'/'filtered')
+//     AND start_date IS NOT NULL    (0 null dates)
+//     AND end >= today              (no past events in a fresh deploy)
+//     AND id >= 25000               (excludes curated low-id rows that belong to
+//                                    the separate curated files — feria 1001-1043,
+//                                    logunespa 24737-24796, DroneArt 1101-1102;
+//                                    the derived id range starts at 25171)
+//   This set already reflects dedup, corrected dates/cities, the lacotorra
+//   hybrid filter, and exposition end_dates. Curated events-*.json files are
+//   NEVER touched here.
+//
+// series files = FUTURE-RELEVANT series (status 'upcoming'/NULL whose latest
+//   occurrence >= today) + ALL occurrences of those series (recent-past
+//   occurrence dates ship too — keeps upsertSeries hashes stable). Selection is
+//   the PURE selectSeriesForExport (scripts/_seed-schema.mjs, unit-tested);
+//   columns are schema-driven (resolveExportColumns — no excludes for either
+//   table, T182), loaded by scripts/seed.mjs with bare ON CONFLICT DO NOTHING.
 //
 // Output defaults to data/seed-rebake/ (scratch); pass `--commit` (or
 // `--out data/seed`) to write the real seed. READ-ONLY on the DB (SELECT only).
@@ -33,11 +42,11 @@
 //   DATABASE_URL=postgresql://postgres:postgres@db.localtest.me:5432/main \
 //     node --import tsx scripts/rebake-seed.mjs [--out <dir>] [--commit]
 
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, isAbsolute } from "node:path";
 import { sql } from "../lib/db.ts";
-import { resolveExportColumns, shape } from "./_seed-schema.mjs";
+import { resolveExportColumns, shape, selectSeriesForExport } from "./_seed-schema.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(__dirname, "..");
@@ -62,11 +71,6 @@ const { out } = parseArgs(process.argv.slice(2));
 const outDir = isAbsolute(out) ? out : join(repoRoot, out);
 const clobbersSeed = outDir === join(repoRoot, "data", "seed");
 
-// SCHEMA-DRIVEN columns (T182, F3): the events column list is resolved off the
-// LIVE schema (same source as scripts/export-seed.mjs), so an additive ALTER
-// TABLE can't silently drop a new column from the re-baked seed. events has no
-// excludes, so this is the full schema set, in ordinal order.
-
 // Floor for "derived" ids; curated low-id rows (feria/logunespa/DroneArt) live in
 // separate files and must NOT be duplicated into events.json.
 const DERIVED_ID_FLOOR = 25000;
@@ -74,12 +78,17 @@ const DERIVED_ID_FLOOR = 25000;
 async function run() {
   mkdirSync(outDir, { recursive: true });
   if (clobbersSeed) {
-    console.warn("⚠ --commit/--out data/seed — this OVERWRITES the curated seed events.json.");
+    console.warn("⚠ --commit/--out data/seed — this OVERWRITES the seed events.json + series files.");
   }
 
-  // Resolve the events column list from the live schema (drift-proof).
+  // SCHEMA-DRIVEN columns (T182, F3): resolved off the LIVE schema so an additive
+  // ALTER TABLE can't silently drop a new column from the re-baked seed.
   const EVENT_COLS = await resolveExportColumns(sql, "events");
-  console.log(`  events: ${EVENT_COLS.length} columns (schema-driven)`);
+  const SERIES_COLS = await resolveExportColumns(sql, "event_series");
+  const OCC_COLS = await resolveExportColumns(sql, "event_occurrences");
+  console.log(
+    `  events: ${EVENT_COLS.length} cols · event_series: ${SERIES_COLS.length} cols · event_occurrences: ${OCC_COLS.length} cols (schema-driven)`,
+  );
 
   // (1) DERIVED events from the live DB. READ-ONLY. ORDER BY id -> stable diffs.
   const colList = EVENT_COLS.map((c) => `"${c}"`).join(", ");
@@ -92,48 +101,66 @@ async function run() {
          AND id >= ${DERIVED_ID_FLOOR}
        ORDER BY id ASC`,
   );
-  const derivedShaped = derived.map((r) => shape(r, EVENT_COLS));
+  const events = derived.map((r) => shape(r, EVENT_COLS));
 
-  // (2) The 104 api:hemisferic rows VERBATIM from the current seed file.
-  const currentSeedPath = join(repoRoot, "data", "seed", "events.json");
-  const currentSeed = JSON.parse(readFileSync(currentSeedPath, "utf-8"));
-  const hemisferic = currentSeed.filter((e) => e.source === "api:hemisferic");
+  // (2) NATIVE series: full tables, then the PURE future-relevant selection.
+  const seriesColList = SERIES_COLS.map((c) => `"${c}"`).join(", ");
+  const occColList = OCC_COLS.map((c) => `"${c}"`).join(", ");
+  const allSeries = await sql(`SELECT ${seriesColList} FROM event_series ORDER BY id ASC`);
+  const allOcc = await sql(`SELECT ${occColList} FROM event_occurrences ORDER BY id ASC`);
+  const today = new Date().toISOString().slice(0, 10);
+  const picked = selectSeriesForExport(allSeries, allOcc, today);
+  const series = picked.series.map((r) => shape(r, SERIES_COLS));
+  const occurrences = picked.occurrences.map((r) => shape(r, OCC_COLS));
 
-  // --- merge + integrity guards ---------------------------------------------
-  const merged = [...derivedShaped, ...hemisferic];
-
-  // Guard: no id collisions.
-  const ids = merged.map((e) => e.id);
-  const dupIds = ids.filter((id, i) => ids.indexOf(id) !== i);
-  if (dupIds.length) {
-    console.error("id collision in merged set:", [...new Set(dupIds)]);
+  // --- integrity guards -------------------------------------------------------
+  // Guard: no api:hemisferic rows may leak into events.json (they ship as series).
+  const hemisLeak = events.filter((e) => e.source === "api:hemisferic").length;
+  if (hemisLeak) {
+    console.error(`${hemisLeak} api:hemisferic rows leaked into derived events — aborting.`);
     process.exit(1);
   }
-  // Guard: 0 null start_date.
-  const nullDates = merged.filter((e) => !e.start_date).length;
+  // Guard: 0 null start_date in events (seed policy).
+  const nullDates = events.filter((e) => !e.start_date).length;
   if (nullDates) {
-    console.error(`merged set has ${nullDates} null start_date rows — aborting.`);
+    console.error(`events set has ${nullDates} null start_date rows — aborting.`);
     process.exit(1);
   }
-  // Guard: exactly 104 hemisferic (else series count would change).
-  if (hemisferic.length !== 104) {
-    console.error(
-      `expected 104 api:hemisferic rows in current seed, found ${hemisferic.length} — aborting.`,
-    );
+  // Guard: a bake that ships ZERO series is exactly the "Hemisfèric vanishes on a
+  // fresh deploy" regression this file exists to prevent.
+  if (!series.length) {
+    console.error("0 future-relevant event_series — refusing to bake a series-less seed.");
+    process.exit(1);
+  }
+  // Guard: every shipped occurrence is dated + references a shipped series (FK).
+  const seriesIds = new Set(series.map((s) => s.id));
+  const badOcc = occurrences.filter((o) => !o.occurrence_date || !seriesIds.has(o.series_id)).length;
+  if (badOcc) {
+    console.error(`${badOcc} occurrences undated or orphaned from the shipped series — aborting.`);
     process.exit(1);
   }
 
-  const path = join(outDir, "events.json");
-  writeFileSync(path, JSON.stringify(merged, null, 2) + "\n", "utf-8");
+  const files = {
+    "events.json": events,
+    "event_series.json": series,
+    "event_occurrences.json": occurrences,
+  };
+  for (const [file, rows] of Object.entries(files)) {
+    writeFileSync(join(outDir, file), JSON.stringify(rows, null, 2) + "\n", "utf-8");
+  }
 
   console.log(
     JSON.stringify(
       {
         ok: true,
-        out: path,
-        total: merged.length,
-        derived: derivedShaped.length,
-        hemisferic: hemisferic.length,
+        out: outDir,
+        events: events.length,
+        series: series.length,
+        occurrences: occurrences.length,
+        lastOccurrence: occurrences.reduce(
+          (m, o) => (o.occurrence_date > m ? o.occurrence_date : m),
+          "",
+        ),
         nullDates,
       },
       null,

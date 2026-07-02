@@ -10,6 +10,8 @@ import {
   EXPORT_EXCLUDES,
   exportColumns,
   shape,
+  selectSeriesForExport,
+  seedConflictClause,
 } from "../scripts/_seed-schema.mjs";
 
 test("exportColumns: events has no excludes -> full set passes through unchanged", () => {
@@ -67,4 +69,40 @@ test("shape: orders keys by cols and null-coerces missing values", () => {
   assert.deepEqual(Object.keys(out), ["a", "b", "missing"]);
   assert.equal(out.missing, null);
   assert.equal(out.a, 1);
+});
+
+// --- native series seed (rebake-seed.mjs export + seed.mjs load) --------------
+
+test("selectSeriesForExport: keeps upcoming/NULL-status series with an occurrence on/after today + ALL their occurrences", () => {
+  const today = "2026-07-02";
+  const series = [
+    { id: 1, status: "upcoming" }, // future occurrence -> keep
+    { id: 2, status: null }, // NULL status counts as upcoming -> keep
+    { id: 3, status: "upcoming" }, // latest occurrence in the past -> drop
+    { id: 4, status: "cancelled" }, // future occurrence but wrong status -> drop
+    { id: 5, status: "upcoming" }, // no occurrences at all -> drop
+  ];
+  const occ = [
+    { id: 10, series_id: 1, occurrence_date: "2026-06-20" }, // PAST occ of a kept series still ships
+    { id: 11, series_id: 1, occurrence_date: "2026-07-15" },
+    { id: 12, series_id: 2, occurrence_date: "2026-07-02" }, // today itself is future-relevant
+    { id: 13, series_id: 3, occurrence_date: "2026-07-01" },
+    { id: 14, series_id: 4, occurrence_date: "2026-08-01" },
+    { id: 15, series_id: 3, occurrence_date: null }, // dateless never counts toward "latest"
+  ];
+  const out = selectSeriesForExport(series, occ, today);
+  assert.deepEqual(out.series.map((s) => s.id), [1, 2]);
+  assert.deepEqual(out.occurrences.map((o) => o.id), [10, 11, 12]);
+});
+
+test("selectSeriesForExport: empty inputs -> empty export (rebake guard then aborts)", () => {
+  const out = selectSeriesForExport([], [], "2026-07-02");
+  assert.deepEqual(out, { series: [], occurrences: [] });
+});
+
+test("seedConflictClause: series tables absorb ANY unique conflict (id + dedup_hash); others key on id", () => {
+  assert.equal(seedConflictClause("event_series"), "ON CONFLICT DO NOTHING");
+  assert.equal(seedConflictClause("event_occurrences"), "ON CONFLICT DO NOTHING");
+  assert.equal(seedConflictClause("events"), "ON CONFLICT (id) DO NOTHING");
+  assert.equal(seedConflictClause("sources"), "ON CONFLICT (id) DO NOTHING");
 });

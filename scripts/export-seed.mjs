@@ -23,8 +23,11 @@
 //   - places.json         all place columns INCL. the enrich/notify cols — the
 //                         whole point of baking is to ship enriched places.
 //   - media_assets.json   as-is.
-//   event_series / event_occurrences are NOT exported: they are re-derived from
-//   the api:hemisferic events by `npm run db:migrate:series` during db:setup.
+//   event_series / event_occurrences ARE part of the seed (event_series.json /
+//   event_occurrences.json, native series — Hemisfèric etc.) but are baked by
+//   scripts/rebake-seed.mjs (the canonical bake entry, which also applies the
+//   future-relevant filter). This dump tool covers only the four base tables;
+//   `--commit` here does NOT refresh the series files — use rebake-seed for that.
 //
 // Output defaults to data/seed-export/ (scratch) so the curated data/seed/ is
 // never clobbered. Pass `--out data/seed` (or `--commit`) to target the real seed.
@@ -66,9 +69,9 @@ const clobbersSeed = outDir === join(repoRoot, "data", "seed");
 // The COLUMN list per table is no longer hardcoded here — it's resolved off the
 // live schema via resolveExportColumns() (full set minus EXPORT_EXCLUDES), so an
 // additive ALTER TABLE can't silently drop a new column from the baked seed.
-// event_series / event_occurrences are NOT exported (re-derived by
-// db:migrate:series). The loader is column-agnostic; ORDER BY id keeps diffs
-// stable.
+// event_series / event_occurrences are baked by scripts/rebake-seed.mjs (native
+// series seed), not here. The loader is column-agnostic; ORDER BY id keeps
+// diffs stable.
 const EXPORTS = [
   { file: "sources.json", table: "sources" },
   { file: "events.json", table: "events" },
