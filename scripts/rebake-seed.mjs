@@ -88,6 +88,7 @@ async function run() {
        WHERE source <> 'api:hemisferic'
          AND status = 'upcoming'
          AND start_date IS NOT NULL
+         AND COALESCE(end_date, start_date) >= to_char(CURRENT_DATE, 'YYYY-MM-DD')
          AND id >= ${DERIVED_ID_FLOOR}
        ORDER BY id ASC`,
   );
