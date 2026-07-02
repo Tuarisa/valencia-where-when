@@ -1204,7 +1204,7 @@ additional issues the agent is NOT handling.)
   the feed list renders right below the filter bar; when no filter is active, show calendar + map normally. Keep
   it a smooth toggle (no layout jank). Part of the T163 design polish.
 
-- [ ] T192 [I] **Make `vercel.json` Hobby (free-tier) compatible** (user, `backlog:`, 2026-06-24 — "может
+- [x] T192 [I] **Make `vercel.json` Hobby (free-tier) compatible** (user, `backlog:`, 2026-06-24 — "может
   добавить в беклог?"). The current `vercel.json` sets `/api/cron/refresh` `maxDuration: 300` (Vercel Hobby caps
   functions at 60s → needs Pro) + a daily Vercel cron on `refresh`. To run on the FREE Hobby tier: remove the
   `functions` block with `maxDuration: 300` and the heavy daily `refresh` cron; instead drive cron from the

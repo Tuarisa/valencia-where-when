@@ -2,13 +2,8 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [
     {
-      "path": "/api/cron/refresh",
+      "path": "/api/cron/dispatch",
       "schedule": "15 7 * * *"
     }
-  ],
-  "functions": {
-    "app/api/cron/refresh/route.ts": {
-      "maxDuration": 300
-    }
-  }
+  ]
 }
