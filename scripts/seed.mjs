@@ -80,6 +80,7 @@ const order = [
   ["events", "events-feria-julio-2026.json"], // one-off: Feria de Julio 2026 curated highlights
   ["events", "events-fever.json"], // T132: one-off Fever DroneArt Show (drone show) dates
   ["events", "events-logunespa.json"], // T130: dated events mined from tg:logunespa posts
+  ["events", "events-ads.json"], // curated:ads — user-requested events from Facebook ads (ids 1201+)
   ["places", "places.json"],
   ["places", "places-logunespa.json"], // T130: historical place recs crawled from tg:logunespa
   ["places", "places-recommendations.json"], // T159: curated personal recs (curated:recommendations)

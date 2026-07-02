@@ -17,6 +17,7 @@ import { normalizeLaganzua, LAGANZUA_SOURCE_KEY } from "./normalizers/laganzua";
 import { normalizeLacotorra, LACOTORRA_SOURCE_KEY } from "./normalizers/lacotorra";
 import { normalizeElcontacto, ELCONTACTO_SOURCE_KEY } from "./normalizers/elcontacto";
 import { normalizeRusspain, RUSSPAIN_SOURCE_KEY } from "./normalizers/russpain";
+import { normalizeTicketbest, TICKETBEST_SOURCE_KEY } from "./normalizers/ticketbest";
 import { CAC_SOURCE_KEYS, cacNormalizerFor } from "./normalizers/cac";
 import { markRawItem } from "./normalizers/types";
 
@@ -50,6 +51,7 @@ export const NORMALIZER_REGISTRY: Map<string, SourceNormalizer> = new Map([
   [LACOTORRA_SOURCE_KEY, normalizeLacotorra],
   [ELCONTACTO_SOURCE_KEY, normalizeElcontacto],
   [RUSSPAIN_SOURCE_KEY, normalizeRusspain],
+  [TICKETBEST_SOURCE_KEY, normalizeTicketbest],
   // T177 — Ciutat de les Arts i les Ciències (cac.es): four listing-page sources, each
   // bound to the same per-source cac normalizer (exposiciones/museu → exhibitions,
   // agenda/actividades → dated events).
