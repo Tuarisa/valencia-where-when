@@ -1273,3 +1273,19 @@ additional issues the agent is NOT handling.)
   "Del … al DD mon YYYY" date-range prefix (set start/end_date from it), and add a same-source dedupe for
   identical title+date; vidacultural — tighten the title extraction / junk guard. Deterministic (T140). Low–med
   severity, cosmetic-to-quality. Re-normalize on the live DB after.
+- [x] T197 [I] **PRODUCTION LAUNCH — 2026-07-05** 🚀. Deployed to **https://valencia-where-when.vercel.app**
+  (Vercel Hobby, git-integration auto-deploy from `main`) + Neon free tier (project `valencia-radar`,
+  Frankfurt; seeded once via `db:setup`: 210 events / 13 series / 261 occurrences / 103 places / 29 sources).
+  Env: `DATABASE_URL` + `CRON_SECRET` only (AI-less prod per T162). Final smoke **3/3 PASS**, health
+  `ok:true`, warnings **empty**, first real dispatch ran ON PROD (7 sources, 342 items, 43s). THREE launch
+  bugs found + fixed live:
+  1. `e88be77` — dispatch 500: the T148 cert was read from disk at module load; serverless bundles don't
+     ship loose repo files (ENOENT) → PEM inlined as code (`lib/pipeline/cac-intermediate-ca.ts`).
+  2. `577520c` — Vercel Cron invokes with GET but dispatch only exported POST → the daily cron 405'd and
+     would never have run → GET now delegates to the same fail-closed handler.
+  3. `f3154bc` — **Neon driver fetches were served from the Next/Vercel Data Cache** (identical query
+     bodies replayed across requests AND deployments): /api/health froze at first-request state (dispatch
+     runs invisible). `fetchOptions.cache='no-store'` on the sql client opts ALL DB queries out of the
+     framework cache. (Same root cause as the stale local `next start` Data Cache from the T190 run.)
+  Refresh loop from here: prod self-ingests via the daily Vercel dispatch cron (+ optional GH-Actions */15);
+  RU enrichment stays the local bake ritual (T195: scan → enrich → rebake → push → `db:setup` idempotent).
