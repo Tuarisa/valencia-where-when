@@ -2,9 +2,7 @@ import crypto from "crypto";
 import https from "node:https";
 import http from "node:http";
 import tls from "node:tls";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import path from "node:path";
+import { CAC_ES_INTERMEDIATE_PEM } from "./cac-intermediate-ca";
 
 export const USER_AGENT =
   "Mozilla/5.0 (compatible; ValenciaRadarIngest/1.0; +https://valencia-where-when.vercel.app)";
@@ -20,12 +18,12 @@ export const USER_AGENT =
 // parent suffix (cac.es matches www.cac.es too). Keep this list as SMALL as possible.
 const EXTRA_CA_HOSTS = new Set<string>(["cac.es"]);
 
-// Bundled intermediate CAs these hosts omit, read ONCE at module load. See the file's
-// header comment for chain/expiry. Combined with Node's built-in roots into a single
-// trust list so the leaf validates up to a real public root.
-const EXTRA_CA_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "certs");
-const EXTRA_CA_PEMS: string[] = [readFileSync(path.join(EXTRA_CA_DIR, "cac-es-intermediate.pem"), "utf-8")];
-const EXTRA_CA_TRUST: string[] = [...tls.rootCertificates, ...EXTRA_CA_PEMS];
+// Bundled intermediate CAs these hosts omit — INLINED as code (cac-intermediate-ca.ts),
+// NOT read from disk: serverless bundlers don't ship loose repo files into the lambda,
+// and a module-load readFileSync 500'd /api/cron/dispatch on Vercel (ENOENT). Combined
+// with Node's built-in roots into a single trust list so the leaf validates up to a
+// real public root.
+const EXTRA_CA_TRUST: string[] = [...tls.rootCertificates, CAC_ES_INTERMEDIATE_PEM];
 
 // PURE: does this URL target a host whose chain we complete with a bundled intermediate?
 // Only https hosts qualify; http and any non-allowlisted host return false.
