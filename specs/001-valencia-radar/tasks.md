@@ -791,9 +791,15 @@ exist, raw layer still append-only.
   → loses enrichment unless re-enriched, ~50 min `claude -p`). Marginal value (prices on ~telegram events) vs
   heavy cost → DEFERRED. Do it only as part of a future full local-first re-bake, not standalone.)*
 
-- [ ] T162 [E/I] **Authorize the Claude agent (enrich engine) in PROD** (user, `backlog:`, 2026-06-21).
-  The enrich engine is `claude -p` (Claude subscription / OAuth CLI) — it does NOT exist on Vercel
-  serverless (no CLI binary, no interactive login). Decide how prod enriches NEW cards. Options:
+- [x] T162 [E/I] **Authorize the Claude agent (enrich engine) in PROD → DECIDED: option (1), AI-less prod**
+  (user confirmed 2026-07-05: "давай AI-less пока"). Prod runs NO Claude at all — no `ANTHROPIC_API_KEY`,
+  no `claude -p` (impossible on serverless anyway). The seed ships PRE-enriched from the local
+  subscription bake; prod's cron does deterministic incremental ingest only; new cards show in the
+  original language until the next local bake (T195 habit: scan → enrich → rebake → push → db:setup).
+  Documented in DEPLOY.md "Decisions". Upgrade path if the manual ritual gets old: option (2) — build
+  `createSdkEnrichClient` + set the key (~$3–6.5/mo per cost-estimate.md); enrich.ts is engine-agnostic.
+  ORIGINAL OPTIONS (kept for context): The enrich engine is `claude -p` (Claude subscription / OAuth CLI)
+  — it does NOT exist on Vercel serverless (no CLI binary, no interactive login). Options:
   1. **No prod enrich (simplest, default).** The seed is PRE-ENRICHED; prod runs incremental ingest only
      (`runPipeline()` passes no `enrichClient`). New cards stay un-enriched until a periodic OFF-prod pass
      (run `claude -p` enrich locally against a copy / re-bake → re-deploy the seed, or push enriched rows to
