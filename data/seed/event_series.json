@@ -7,8 +7,8 @@
     "category": "show",
     "language": "ru",
     "audience": "adult",
-    "start_date": "2026-07-03",
-    "end_date": "2026-07-15",
+    "start_date": "2026-07-05",
+    "end_date": "2026-07-18",
     "timezone": "Europe/Madrid",
     "recurrence_kind": "sessions",
     "recurrence_summary": null,
@@ -43,7 +43,7 @@
     "notified": 0,
     "notified_at": null,
     "first_seen": "2026-06-20T19:20:27Z",
-    "last_seen": "2026-07-02T21:07:38Z"
+    "last_seen": "2026-07-05T03:06:32Z"
   },
   {
     "id": 6,
@@ -53,8 +53,8 @@
     "category": "show",
     "language": "ru",
     "audience": "family",
-    "start_date": "2026-07-03",
-    "end_date": "2026-07-15",
+    "start_date": "2026-07-05",
+    "end_date": "2026-07-18",
     "timezone": "Europe/Madrid",
     "recurrence_kind": "sessions",
     "recurrence_summary": null,
@@ -89,7 +89,7 @@
     "notified": 0,
     "notified_at": null,
     "first_seen": "2026-06-20T19:20:29Z",
-    "last_seen": "2026-07-02T21:07:36Z"
+    "last_seen": "2026-07-05T03:06:34Z"
   },
   {
     "id": 7,
@@ -99,8 +99,8 @@
     "category": "show",
     "language": "ru",
     "audience": "adult",
-    "start_date": "2026-07-03",
-    "end_date": "2026-07-15",
+    "start_date": "2026-07-05",
+    "end_date": "2026-07-18",
     "timezone": "Europe/Madrid",
     "recurrence_kind": "sessions",
     "recurrence_summary": null,
@@ -135,7 +135,7 @@
     "notified": 0,
     "notified_at": null,
     "first_seen": "2026-06-20T19:20:31Z",
-    "last_seen": "2026-07-02T21:07:39Z"
+    "last_seen": "2026-07-05T03:06:39Z"
   },
   {
     "id": 8,
@@ -145,8 +145,8 @@
     "category": "show",
     "language": "ru",
     "audience": "adult",
-    "start_date": "2026-07-03",
-    "end_date": "2026-07-15",
+    "start_date": "2026-07-06",
+    "end_date": "2026-07-18",
     "timezone": "Europe/Madrid",
     "recurrence_kind": "sessions",
     "recurrence_summary": null,
@@ -181,7 +181,7 @@
     "notified": 0,
     "notified_at": null,
     "first_seen": "2026-06-20T19:20:32Z",
-    "last_seen": "2026-07-02T21:07:35Z"
+    "last_seen": "2026-07-05T03:06:33Z"
   },
   {
     "id": 9,
@@ -191,8 +191,8 @@
     "category": "show",
     "language": "ru",
     "audience": "adult",
-    "start_date": "2026-07-03",
-    "end_date": "2026-07-15",
+    "start_date": "2026-07-05",
+    "end_date": "2026-07-18",
     "timezone": "Europe/Madrid",
     "recurrence_kind": "sessions",
     "recurrence_summary": null,
@@ -227,7 +227,7 @@
     "notified": 0,
     "notified_at": null,
     "first_seen": "2026-06-20T19:20:34Z",
-    "last_seen": "2026-07-02T21:07:32Z"
+    "last_seen": "2026-07-05T03:06:35Z"
   },
   {
     "id": 10,
@@ -237,8 +237,8 @@
     "category": "show",
     "language": "ru",
     "audience": "adult",
-    "start_date": "2026-07-03",
-    "end_date": "2026-07-15",
+    "start_date": "2026-07-05",
+    "end_date": "2026-07-18",
     "timezone": "Europe/Madrid",
     "recurrence_kind": "sessions",
     "recurrence_summary": null,
@@ -273,7 +273,7 @@
     "notified": 0,
     "notified_at": null,
     "first_seen": "2026-06-20T19:20:36Z",
-    "last_seen": "2026-07-02T21:07:33Z"
+    "last_seen": "2026-07-05T03:06:36Z"
   },
   {
     "id": 11,
@@ -283,8 +283,8 @@
     "category": "show",
     "language": "ru",
     "audience": "family",
-    "start_date": "2026-07-04",
-    "end_date": "2026-07-11",
+    "start_date": "2026-07-11",
+    "end_date": "2026-07-18",
     "timezone": "Europe/Madrid",
     "recurrence_kind": "sessions",
     "recurrence_summary": null,
@@ -319,7 +319,7 @@
     "notified": 0,
     "notified_at": null,
     "first_seen": "2026-06-20T19:20:37Z",
-    "last_seen": "2026-07-02T21:07:41Z"
+    "last_seen": "2026-07-05T03:06:41Z"
   },
   {
     "id": 12,
@@ -330,7 +330,7 @@
     "language": "ru",
     "audience": "adult",
     "start_date": "2026-07-07",
-    "end_date": "2026-07-14",
+    "end_date": "2026-07-16",
     "timezone": "Europe/Madrid",
     "recurrence_kind": "sessions",
     "recurrence_summary": null,
@@ -365,7 +365,7 @@
     "notified": 0,
     "notified_at": null,
     "first_seen": "2026-06-20T19:20:38Z",
-    "last_seen": "2026-07-02T21:07:41Z"
+    "last_seen": "2026-07-05T03:06:41Z"
   },
   {
     "id": 13,
@@ -375,8 +375,8 @@
     "category": "show",
     "language": "ru",
     "audience": "adult",
-    "start_date": "2026-07-03",
-    "end_date": "2026-07-15",
+    "start_date": "2026-07-05",
+    "end_date": "2026-07-18",
     "timezone": "Europe/Madrid",
     "recurrence_kind": "sessions",
     "recurrence_summary": null,
@@ -411,7 +411,7 @@
     "notified": 0,
     "notified_at": null,
     "first_seen": "2026-06-20T19:20:38Z",
-    "last_seen": "2026-07-02T21:07:37Z"
+    "last_seen": "2026-07-05T03:06:37Z"
   },
   {
     "id": 14,
@@ -421,8 +421,8 @@
     "category": "show",
     "language": "ru",
     "audience": "adult",
-    "start_date": "2026-07-03",
-    "end_date": "2026-07-15",
+    "start_date": "2026-07-05",
+    "end_date": "2026-07-17",
     "timezone": "Europe/Madrid",
     "recurrence_kind": "sessions",
     "recurrence_summary": null,
@@ -457,7 +457,7 @@
     "notified": 0,
     "notified_at": null,
     "first_seen": "2026-06-20T19:20:40Z",
-    "last_seen": "2026-07-02T21:07:40Z"
+    "last_seen": "2026-07-05T03:06:40Z"
   },
   {
     "id": 15,
@@ -467,8 +467,8 @@
     "category": "show",
     "language": "ru",
     "audience": "adult",
-    "start_date": "2026-07-03",
-    "end_date": "2026-07-15",
+    "start_date": "2026-07-05",
+    "end_date": "2026-07-18",
     "timezone": "Europe/Madrid",
     "recurrence_kind": "sessions",
     "recurrence_summary": null,
@@ -503,7 +503,7 @@
     "notified": 0,
     "notified_at": null,
     "first_seen": "2026-06-20T19:20:41Z",
-    "last_seen": "2026-07-02T21:07:34Z"
+    "last_seen": "2026-07-05T03:06:38Z"
   },
   {
     "id": 148,
@@ -549,7 +549,7 @@
     "notified": 0,
     "notified_at": null,
     "first_seen": "2026-06-24T21:33:24Z",
-    "last_seen": "2026-07-02T21:07:41Z"
+    "last_seen": "2026-07-05T03:06:33Z"
   },
   {
     "id": 149,
@@ -595,6 +595,6 @@
     "notified": 0,
     "notified_at": null,
     "first_seen": "2026-06-24T21:33:25Z",
-    "last_seen": "2026-07-02T21:07:42Z"
+    "last_seen": "2026-07-05T03:06:41Z"
   }
 ]
