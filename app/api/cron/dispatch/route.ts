@@ -11,6 +11,14 @@ export const maxDuration = 60;
 //
 //   POST /api/cron/dispatch        → poll only sources whose cadence says due
 //   POST /api/cron/dispatch?force=1 → poll ALL enabled sources (still updates cadence)
+//
+// GET is accepted too (same fail-closed auth): VERCEL CRON invokes cron paths with a
+// GET carrying "Authorization: Bearer <CRON_SECRET>" — without this the daily
+// vercel.json cron got a 405 and never ran (found at launch, 2026-07-05).
+export async function GET(req: NextRequest) {
+  return POST(req);
+}
+
 export async function POST(req: NextRequest) {
   const secret = process.env.CRON_SECRET;
   const auth = req.headers.get("authorization");
