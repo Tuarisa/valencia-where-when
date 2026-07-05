@@ -1289,3 +1289,7 @@ additional issues the agent is NOT handling.)
      framework cache. (Same root cause as the stale local `next start` Data Cache from the T190 run.)
   Refresh loop from here: prod self-ingests via the daily Vercel dispatch cron (+ optional GH-Actions */15);
   RU enrichment stays the local bake ritual (T195: scan → enrich → rebake → push → `db:setup` idempotent).
+  *(Post-launch, same evening: GH-Actions scheduler ACTIVATED — repo secrets `APP_BASE_URL` +
+  `CRON_SECRET` set via `gh secret set`, manual verify run `completed/success` with `[dispatch]
+  HTTP 200` → the `*/15` adaptive tick + Friday-digest schedules are now live. Prod refresh
+  cadence: GH-Actions every 15 min + Vercel daily as backup.)*
