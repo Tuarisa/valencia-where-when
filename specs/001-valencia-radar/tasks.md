@@ -1293,3 +1293,28 @@ additional issues the agent is NOT handling.)
   `CRON_SECRET` set via `gh secret set`, manual verify run `completed/success` with `[dispatch]
   HTTP 200` → the `*/15` adaptive tick + Friday-digest schedules are now live. Prod refresh
   cadence: GH-Actions every 15 min + Vercel daily as backup.)*
+
+- [x] T198 [A/I] **PROD ARCHITECTURAL GAP: the */15 dispatch tick only INGESTED — a month of
+  autonomous prod accumulated 5406 pending raw `source_items` and materialized 0 events** (found
+  2026-08-07; the site only gained events via the manual local bake, T195). FIX: `dispatch()`
+  (`lib/pipeline/dispatcher.ts`) now runs `materializeTick()` after the ingest pool — each stage
+  fail-soft in its own try/catch: (a) **normalize ONLY the sources ingested this tick** (per-key
+  `resolveNormalizer`; unregistered → skipped; status-"ok" sources are included even on 304/no-new
+  because they may hold earlier-tick backlog). A registered normalizer drains its source's FULL
+  pending backlog in one go — ACCEPTABLE because normalizers are pure CPU-light JS over
+  already-fetched text (no network, no LLM; the expensive stages were only ever fetch + claude):
+  hundreds→low-thousands of rows parse in ms, so the month backlog clears source-by-source as each
+  comes due (every enabled source is due within its cadence max interval → whole backlog drains in
+  ~a day of ticks). (b) **dedup()** — O(upcoming events) SQL+JS. (c) **scoreAll()+tagAll()** —
+  batched O(1)-statement writes (T184). Deliberately NOT in the tick: **geo** (Nominatim
+  network+rate-limit latency would blow the budget) and **enrich** (AI-less prod, T162) — both stay
+  in the local bake. **Soft 45s budget** (`DEFAULT_BUDGET_MS`, ~15s headroom under the route's
+  `maxDuration=60`): a `Date.now()` deadline check before each stage (and per-source inside
+  normalize) defers remaining work to the next tick — everything is idempotent. `DispatchResult`
+  extended (`ingestOnly`/`materialize`/`budget` incl. `cutAt`) and surfaced in the
+  `/api/cron/dispatch` response; escape hatch **`DISPATCH_INGEST_ONLY=1`** restores the historical
+  ingest-only tick (documented in `.env.example`). Tests: `tests/dispatch-materialize.test.mjs`
+  drives the REAL `materializeTick`/`isIngestOnly` with injected registry/stage-fns/clock (no DB) —
+  only ingested+registered normalize, unregistered skipped, dup keys collapse, throwing
+  normalizer/dedup fail-soft, deadline cuts before/mid/after normalize + between score and tag,
+  `DISPATCH_INGEST_ONLY` gate. Gate: `npm run build` + `npm test` green.

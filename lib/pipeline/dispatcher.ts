@@ -9,6 +9,10 @@ import {
   nextDueIso,
   selectDue,
 } from "./cadence";
+import { NORMALIZER_REGISTRY, resolveNormalizer, type SourceNormalizer } from "./normalize";
+import { dedup } from "./dedup";
+import { scoreAll } from "./score";
+import { tagAll } from "./tags";
 
 // Adaptive ingest dispatcher (sub-area A, research A6). The */15 scheduler tick POSTs
 // /api/cron/dispatch → dispatch(), which polls only the sources whose per-source
@@ -17,6 +21,13 @@ import {
 //
 // ingestAll() (force-all, legacy) stays in ingest.ts untouched; dispatch({force:true})
 // is the adaptive equivalent that ignores due-times but still updates cadence.
+//
+// T198 — the tick MATERIALIZES events, not just raw rows. PROD GAP found 2026-08-07
+// after a month of autonomous running: dispatch only ingested, so prod accumulated
+// 5406 pending `source_items` and created 0 events — the site only gained events via
+// the manual local bake. Each tick now also runs, fail-soft and under a soft time
+// budget: normalize (ONLY the sources just ingested) → dedup → score + tag.
+// See materializeTick() below for the stage-by-stage reasoning.
 
 export async function selectDueSources(nowIsoArg?: string): Promise<any[]> {
   const now = nowIsoArg ?? nowIso();
@@ -77,6 +88,151 @@ async function applyCadence(source: any, outcome: IngestOutcome): Promise<void> 
     WHERE key = ${source.key}`;
 }
 
+// ---------------------------------------------------------------------------
+// T198 — per-tick materialization (normalize → dedup → score + tag)
+// ---------------------------------------------------------------------------
+//
+// Why draining a source's FULL pending backlog in one tick is acceptable: a
+// registered normalizer processes ALL pending `source_items` rows for its source,
+// but normalizers are pure JS over already-fetched raw text/html — no network, no
+// LLM (the expensive stages were only ever fetch + claude). Hundreds to low
+// thousands of rows parse in milliseconds, so even the month-scale prod backlog
+// (5406 rows across ~27 sources) clears source-by-source as each comes due, and
+// the 45s soft budget is the safety net: anything cut off simply stays `pending`
+// and completes on a later tick (every stage is idempotent).
+//
+// Deliberately NOT run in the tick (would blow the Hobby 60s budget / AI-less prod):
+//   - geo: Nominatim is network-bound and politeness-rate-limited (~1 req/s) —
+//     geocoding stays in the local bake (T157) / a dedicated slow path.
+//   - enrich: prod has no AI engine (T162); RU enrichment is the local `claude -p`
+//     bake ritual (T195).
+
+// Escape hatch: DISPATCH_INGEST_ONLY=1 restores the historical ingest-only tick
+// (documented in .env.example). Pure + injectable so tests need no process.env.
+export function isIngestOnly(env: Record<string, string | undefined> = process.env): boolean {
+  return env.DISPATCH_INGEST_ONLY === "1";
+}
+
+// Soft time budget: leave ~15s headroom under the route's maxDuration=60 so an
+// in-flight stage can finish and the response still gets out.
+export const DEFAULT_BUDGET_MS = 45_000;
+
+export interface MaterializeDeps {
+  registry?: Map<string, SourceNormalizer>;
+  dedupFn?: () => Promise<unknown>;
+  scoreFn?: () => Promise<unknown>;
+  tagFn?: () => Promise<unknown>;
+  now?: () => number;
+}
+
+export interface NormalizeTickSummary {
+  sources: string[];  // ingested + registered → normalizer ran this tick
+  skipped: string[];  // ingested but no registered normalizer (raw stays pending/ignored)
+  deferred: string[]; // registered but cut by the time budget → next tick (idempotent)
+  created: number;
+  updated: number;
+  processed: number;
+  errors: Array<{ source: string; error: string }>;
+}
+
+export interface MaterializeResult {
+  normalize: NormalizeTickSummary;
+  dedup: unknown | null; // null = stage did not run (budget) — see cutAt
+  score: unknown | null;
+  tag: unknown | null;
+  errors: { dedup?: string; score?: string; tag?: string };
+  budgetExhausted: boolean;
+  cutAt: "normalize" | "dedup" | "score" | "tag" | null; // first stage hit by the budget
+}
+
+// Run the post-ingest materialization stages for one tick. Bounded: normalize is
+// restricted to the source keys actually ingested this tick; dedup is O(upcoming
+// events) SQL+JS; score/tag are batched single-statement writes (T184). Every
+// stage is fail-soft (its own try/catch) and gated on a Date.now() deadline check
+// so a slow stage never starts with the budget already spent. All deps are
+// injectable — unit-testable without a DB.
+export async function materializeTick(
+  ingestedKeys: string[],
+  deadlineMs: number,
+  deps: MaterializeDeps = {},
+): Promise<MaterializeResult> {
+  const registry = deps.registry ?? NORMALIZER_REGISTRY;
+  const runDedup = deps.dedupFn ?? (() => dedup());
+  const runScore = deps.scoreFn ?? (() => scoreAll());
+  const runTag = deps.tagFn ?? (() => tagAll());
+  const now = deps.now ?? Date.now;
+
+  const result: MaterializeResult = {
+    normalize: { sources: [], skipped: [], deferred: [], created: 0, updated: 0, processed: 0, errors: [] },
+    dedup: null,
+    score: null,
+    tag: null,
+    errors: {},
+    budgetExhausted: false,
+    cutAt: null,
+  };
+
+  const overBudget = (stage: NonNullable<MaterializeResult["cutAt"]>): boolean => {
+    if (now() < deadlineMs) return false;
+    result.budgetExhausted = true;
+    if (result.cutAt == null) result.cutAt = stage;
+    return true;
+  };
+
+  // Stage 1: normalize ONLY the sources ingested this tick. A registered
+  // normalizer drains ALL pending rows for its source (incl. earlier-tick
+  // backlog — see the CPU-light reasoning above). Deadline-checked per source;
+  // a thrown normalizer never aborts the tick.
+  for (const key of Array.from(new Set(ingestedKeys))) {
+    const normalizer = resolveNormalizer(key, registry);
+    if (!normalizer) {
+      result.normalize.skipped.push(key);
+      continue;
+    }
+    if (overBudget("normalize")) {
+      result.normalize.deferred.push(key);
+      continue;
+    }
+    try {
+      const res = await normalizer();
+      result.normalize.sources.push(key);
+      result.normalize.created += res.created;
+      result.normalize.updated += res.updated;
+      result.normalize.processed += res.processed;
+    } catch (err: any) {
+      result.normalize.errors.push({ source: key, error: String(err?.message ?? err) });
+    }
+  }
+
+  // Stage 2: dedup — O(upcoming events) SQL + JS, seconds at prod scale.
+  if (!overBudget("dedup")) {
+    try {
+      result.dedup = await runDedup();
+    } catch (err: any) {
+      result.errors.dedup = String(err?.message ?? err);
+    }
+  }
+
+  // Stage 3: score + tag — batched O(1)-statement writes (T184).
+  if (!overBudget("score")) {
+    try {
+      result.score = await runScore();
+    } catch (err: any) {
+      result.errors.score = String(err?.message ?? err);
+    }
+  }
+  if (!overBudget("tag")) {
+    try {
+      result.tag = await runTag();
+    } catch (err: any) {
+      result.errors.tag = String(err?.message ?? err);
+    }
+  }
+
+  // NOT run: geo (Nominatim latency) and enrich (AI-less prod) — see header note.
+  return result;
+}
+
 export interface DispatchResult {
   ok: boolean;
   total: number;
@@ -84,12 +240,28 @@ export interface DispatchResult {
   error: number;
   items: number;
   results: IngestOutcome[];
+  ingestOnly: boolean; // true ⇢ DISPATCH_INGEST_ONLY=1 restored the legacy behavior
+  materialize: MaterializeResult | null; // null when ingest-only
+  budget: { budgetMs: number; elapsedMs: number; exhausted: boolean; cutAt: string | null };
 }
 
 // Bounded pool: process due (or all-enabled when force) sources `concurrency` at a
 // time via Promise.allSettled, ingesting then persisting cadence per source. Fail-soft
-// — a thrown source never aborts the batch.
-export async function dispatch({ concurrency = 5, force = false }: { concurrency?: number; force?: boolean } = {}): Promise<DispatchResult> {
+// — a thrown source never aborts the batch. After ingest, the tick materializes
+// (normalize → dedup → score + tag; T198) unless DISPATCH_INGEST_ONLY=1.
+export async function dispatch({
+  concurrency = 5,
+  force = false,
+  budgetMs = DEFAULT_BUDGET_MS,
+  deps,
+}: {
+  concurrency?: number;
+  force?: boolean;
+  budgetMs?: number;
+  deps?: MaterializeDeps;
+} = {}): Promise<DispatchResult> {
+  const startedMs = Date.now();
+  const deadlineMs = startedMs + budgetMs;
   const now = nowIso();
   const sources = force
     ? ((await sql`SELECT * FROM sources WHERE enabled = 1`) as any[])
@@ -118,6 +290,18 @@ export async function dispatch({ concurrency = 5, force = false }: { concurrency
     }
   }
 
+  // T198: materialize the tick's fresh raw into events. "Ingested this tick" =
+  // every source polled with status "ok" — INCLUDING 304/no-new-items outcomes,
+  // because such a source may still hold pending backlog rows from earlier
+  // ingest-only ticks (on prod: the 5406-row month backlog), and its normalizer
+  // is a cheap no-op when nothing is pending.
+  const ingestOnly = isIngestOnly();
+  let materialize: MaterializeResult | null = null;
+  if (!ingestOnly) {
+    const ingestedKeys = results.filter((r) => r.status === "ok").map((r) => r.source);
+    materialize = await materializeTick(ingestedKeys, deadlineMs, deps);
+  }
+
   return {
     ok: true,
     total: results.length,
@@ -125,5 +309,13 @@ export async function dispatch({ concurrency = 5, force = false }: { concurrency
     error: results.filter((r) => r.status === "error").length,
     items: results.reduce((a, r) => a + (r.items || 0), 0),
     results,
+    ingestOnly,
+    materialize,
+    budget: {
+      budgetMs,
+      elapsedMs: Date.now() - startedMs,
+      exhausted: materialize?.budgetExhausted ?? false,
+      cutAt: materialize?.cutAt ?? null,
+    },
   };
 }

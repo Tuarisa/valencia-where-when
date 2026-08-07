@@ -12,6 +12,13 @@ export const maxDuration = 60;
 //   POST /api/cron/dispatch        → poll only sources whose cadence says due
 //   POST /api/cron/dispatch?force=1 → poll ALL enabled sources (still updates cadence)
 //
+// T198: the tick MATERIALIZES events, not just raw rows (a month of ingest-only
+// prod = 5406 pending source_items, 0 events). After ingest it normalizes the
+// just-ingested sources, dedups, and scores+tags — fail-soft, under a ~45s soft
+// budget (headroom below maxDuration=60); geo/enrich stay OUT of the tick
+// (Nominatim latency / AI-less prod, T162). DISPATCH_INGEST_ONLY=1 restores the
+// old ingest-only behavior.
+//
 // GET is accepted too (same fail-closed auth): VERCEL CRON invokes cron paths with a
 // GET carrying "Authorization: Bearer <CRON_SECRET>" — without this the daily
 // vercel.json cron got a 405 and never ran (found at launch, 2026-07-05).
@@ -37,6 +44,14 @@ export async function POST(req: NextRequest) {
       ok_count: result.okCount,
       error: result.error,
       items: result.items,
+      // T198 materialization summary (null when DISPATCH_INGEST_ONLY=1).
+      ingest_only: result.ingestOnly,
+      normalize: result.materialize?.normalize ?? null,
+      dedup: result.materialize?.dedup ?? null,
+      score: result.materialize?.score ?? null,
+      tag: result.materialize?.tag ?? null,
+      stage_errors: result.materialize?.errors ?? null,
+      budget: result.budget,
     });
   } catch (err: any) {
     return NextResponse.json({ ok: false, error: String(err?.message || err) }, { status: 500 });
