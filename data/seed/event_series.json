@@ -7,8 +7,8 @@
     "category": "show",
     "language": "ru",
     "audience": "adult",
-    "start_date": "2026-07-05",
-    "end_date": "2026-07-18",
+    "start_date": "2026-08-08",
+    "end_date": "2026-08-20",
     "timezone": "Europe/Madrid",
     "recurrence_kind": "sessions",
     "recurrence_summary": null,
@@ -43,7 +43,7 @@
     "notified": 0,
     "notified_at": null,
     "first_seen": "2026-06-20T19:20:27Z",
-    "last_seen": "2026-07-05T03:06:32Z"
+    "last_seen": "2026-08-07T21:43:10Z"
   },
   {
     "id": 6,
@@ -53,8 +53,8 @@
     "category": "show",
     "language": "ru",
     "audience": "family",
-    "start_date": "2026-07-05",
-    "end_date": "2026-07-18",
+    "start_date": "2026-08-08",
+    "end_date": "2026-08-20",
     "timezone": "Europe/Madrid",
     "recurrence_kind": "sessions",
     "recurrence_summary": null,
@@ -89,7 +89,7 @@
     "notified": 0,
     "notified_at": null,
     "first_seen": "2026-06-20T19:20:29Z",
-    "last_seen": "2026-07-05T03:06:34Z"
+    "last_seen": "2026-08-07T21:43:07Z"
   },
   {
     "id": 7,
@@ -99,8 +99,8 @@
     "category": "show",
     "language": "ru",
     "audience": "adult",
-    "start_date": "2026-07-05",
-    "end_date": "2026-07-18",
+    "start_date": "2026-08-08",
+    "end_date": "2026-08-19",
     "timezone": "Europe/Madrid",
     "recurrence_kind": "sessions",
     "recurrence_summary": null,
@@ -135,7 +135,7 @@
     "notified": 0,
     "notified_at": null,
     "first_seen": "2026-06-20T19:20:31Z",
-    "last_seen": "2026-07-05T03:06:39Z"
+    "last_seen": "2026-08-07T21:43:12Z"
   },
   {
     "id": 8,
@@ -145,8 +145,8 @@
     "category": "show",
     "language": "ru",
     "audience": "adult",
-    "start_date": "2026-07-06",
-    "end_date": "2026-07-18",
+    "start_date": "2026-08-08",
+    "end_date": "2026-08-20",
     "timezone": "Europe/Madrid",
     "recurrence_kind": "sessions",
     "recurrence_summary": null,
@@ -181,7 +181,7 @@
     "notified": 0,
     "notified_at": null,
     "first_seen": "2026-06-20T19:20:32Z",
-    "last_seen": "2026-07-05T03:06:33Z"
+    "last_seen": "2026-08-07T21:43:06Z"
   },
   {
     "id": 9,
@@ -191,8 +191,8 @@
     "category": "show",
     "language": "ru",
     "audience": "adult",
-    "start_date": "2026-07-05",
-    "end_date": "2026-07-18",
+    "start_date": "2026-08-08",
+    "end_date": "2026-08-20",
     "timezone": "Europe/Madrid",
     "recurrence_kind": "sessions",
     "recurrence_summary": null,
@@ -227,7 +227,7 @@
     "notified": 0,
     "notified_at": null,
     "first_seen": "2026-06-20T19:20:34Z",
-    "last_seen": "2026-07-05T03:06:35Z"
+    "last_seen": "2026-08-07T21:43:13Z"
   },
   {
     "id": 10,
@@ -237,8 +237,8 @@
     "category": "show",
     "language": "ru",
     "audience": "adult",
-    "start_date": "2026-07-05",
-    "end_date": "2026-07-18",
+    "start_date": "2026-08-08",
+    "end_date": "2026-08-20",
     "timezone": "Europe/Madrid",
     "recurrence_kind": "sessions",
     "recurrence_summary": null,
@@ -273,7 +273,7 @@
     "notified": 0,
     "notified_at": null,
     "first_seen": "2026-06-20T19:20:36Z",
-    "last_seen": "2026-07-05T03:06:36Z"
+    "last_seen": "2026-08-07T21:43:09Z"
   },
   {
     "id": 11,
@@ -283,8 +283,8 @@
     "category": "show",
     "language": "ru",
     "audience": "family",
-    "start_date": "2026-07-11",
-    "end_date": "2026-07-18",
+    "start_date": "2026-08-08",
+    "end_date": "2026-08-15",
     "timezone": "Europe/Madrid",
     "recurrence_kind": "sessions",
     "recurrence_summary": null,
@@ -319,7 +319,7 @@
     "notified": 0,
     "notified_at": null,
     "first_seen": "2026-06-20T19:20:37Z",
-    "last_seen": "2026-07-05T03:06:41Z"
+    "last_seen": "2026-08-07T21:43:12Z"
   },
   {
     "id": 12,
@@ -329,8 +329,8 @@
     "category": "show",
     "language": "ru",
     "audience": "adult",
-    "start_date": "2026-07-07",
-    "end_date": "2026-07-16",
+    "start_date": "2026-08-11",
+    "end_date": "2026-08-20",
     "timezone": "Europe/Madrid",
     "recurrence_kind": "sessions",
     "recurrence_summary": null,
@@ -365,7 +365,7 @@
     "notified": 0,
     "notified_at": null,
     "first_seen": "2026-06-20T19:20:38Z",
-    "last_seen": "2026-07-05T03:06:41Z"
+    "last_seen": "2026-08-07T21:43:06Z"
   },
   {
     "id": 13,
@@ -375,8 +375,8 @@
     "category": "show",
     "language": "ru",
     "audience": "adult",
-    "start_date": "2026-07-05",
-    "end_date": "2026-07-18",
+    "start_date": "2026-08-08",
+    "end_date": "2026-08-20",
     "timezone": "Europe/Madrid",
     "recurrence_kind": "sessions",
     "recurrence_summary": null,
@@ -411,7 +411,7 @@
     "notified": 0,
     "notified_at": null,
     "first_seen": "2026-06-20T19:20:38Z",
-    "last_seen": "2026-07-05T03:06:37Z"
+    "last_seen": "2026-08-07T21:43:08Z"
   },
   {
     "id": 14,
@@ -421,8 +421,8 @@
     "category": "show",
     "language": "ru",
     "audience": "adult",
-    "start_date": "2026-07-05",
-    "end_date": "2026-07-17",
+    "start_date": "2026-08-09",
+    "end_date": "2026-08-20",
     "timezone": "Europe/Madrid",
     "recurrence_kind": "sessions",
     "recurrence_summary": null,
@@ -457,7 +457,7 @@
     "notified": 0,
     "notified_at": null,
     "first_seen": "2026-06-20T19:20:40Z",
-    "last_seen": "2026-07-05T03:06:40Z"
+    "last_seen": "2026-08-07T21:43:11Z"
   },
   {
     "id": 15,
@@ -467,8 +467,8 @@
     "category": "show",
     "language": "ru",
     "audience": "adult",
-    "start_date": "2026-07-05",
-    "end_date": "2026-07-18",
+    "start_date": "2026-08-08",
+    "end_date": "2026-08-20",
     "timezone": "Europe/Madrid",
     "recurrence_kind": "sessions",
     "recurrence_summary": null,
@@ -484,7 +484,7 @@
     "location_notes": null,
     "price": null,
     "is_free": null,
-    "url": "https://www.cac.es",
+    "url": "https://cac.es/proyeccion/recombination-hemisferic-viaje-universo-fractal/",
     "venue_url": null,
     "image_url": "https://exposiciones.cac.es/media/cartelerahemisferic/idcontenido_img_10141631.jpg",
     "source": "api:hemisferic",
@@ -503,53 +503,7 @@
     "notified": 0,
     "notified_at": null,
     "first_seen": "2026-06-20T19:20:41Z",
-    "last_seen": "2026-07-05T03:06:38Z"
-  },
-  {
-    "id": 148,
-    "dedup_hash": "6c91ad72ed2b3189",
-    "title": "Astromenuts. Planetario infantil.",
-    "description": "(ES) planetario infantil en directo",
-    "category": "show",
-    "language": "es",
-    "audience": "family",
-    "start_date": "2026-07-05",
-    "end_date": "2026-07-05",
-    "timezone": "Europe/Madrid",
-    "recurrence_kind": "sessions",
-    "recurrence_summary": null,
-    "rrule": null,
-    "venue_name": "L'Hemisfèric",
-    "district": "Quatre Carreres",
-    "address": "Av. del Professor López Piñero, 7, Valencia",
-    "city": "Valencia",
-    "country": "Spain",
-    "lat": null,
-    "lng": null,
-    "geo_source": null,
-    "location_notes": null,
-    "price": null,
-    "is_free": null,
-    "url": "https://www.cac.es",
-    "venue_url": null,
-    "image_url": "https://exposiciones.cac.es/media/cartelerahemisferic/idcontenido_img_7189246.jpg",
-    "source": "api:hemisferic",
-    "source_url": "https://www.cac.es",
-    "external_ref": null,
-    "raw_excerpt": "Astromenuts. Planetario infantil. 2026-07-05 12:00 (ES) planetario infantil en directo",
-    "tags_json": null,
-    "metadata_json": null,
-    "title_ru": null,
-    "description_ru": null,
-    "links_json": null,
-    "enrichment_json": null,
-    "enriched_at": null,
-    "status": "upcoming",
-    "score": null,
-    "notified": 0,
-    "notified_at": null,
-    "first_seen": "2026-06-24T21:33:24Z",
-    "last_seen": "2026-07-05T03:06:33Z"
+    "last_seen": "2026-08-07T21:43:14Z"
   },
   {
     "id": 149,
@@ -559,8 +513,8 @@
     "category": "show",
     "language": "es",
     "audience": "family",
-    "start_date": "2026-07-06",
-    "end_date": "2026-07-13",
+    "start_date": "2026-08-10",
+    "end_date": "2026-08-17",
     "timezone": "Europe/Madrid",
     "recurrence_kind": "sessions",
     "recurrence_summary": null,
@@ -595,6 +549,6 @@
     "notified": 0,
     "notified_at": null,
     "first_seen": "2026-06-24T21:33:25Z",
-    "last_seen": "2026-07-05T03:06:41Z"
+    "last_seen": "2026-08-07T21:43:13Z"
   }
 ]
