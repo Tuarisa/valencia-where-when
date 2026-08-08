@@ -1469,13 +1469,23 @@ additional issues the agent is NOT handling.)
   legit fever 2027-03 gig. +11 regression tests, targeted 375/375, gate 573/573. Side finding →
   T210.)*
 
-- [ ] T210 [C/E] **valenciabonita drift pairs: enrichment-rewritten rows vs frozen dedup_hash**
+- [x] T210 [C/E] **valenciabonita drift pairs: enrichment-rewritten rows vs frozen dedup_hash**
   (T209 forced re-offer surfaced 33 PRE-EXISTING pairs; proven old-code-identical, NOT a T209
   regression): old enriched rows (dates rewritten by enrichment, e.g. 26125 start=null
   end=2026-07-31) coexist with new correctly-dated rows for the same post. Old rows carry title_ru
   content, new rows carry correct dates. Reconcile T202-style: merge/repoint enrichment onto the
   dated survivor, retire the relic. Mostly past-dated (seed-bake excluded) but a few current (28024
   @ 2026-08-08) show as feed duplicates of enriched digests until reconciled.
+
+  *(DONE 2026-08-08 — DB-only, single transaction: 14 pairs reconciled (relic→dated survivor by
+  source_item_id+url identity; all 4 enrichment fields grafted; relics retired per dedup.ts loser
+  convention; 7 entity_sources repointed; 2 relics were themselves survivors — their 10 old losers
+  flattened single-hop). 10 rows correctly excluded (6 enriched null-date singletons w/o dated twin,
+  2 healthy, 2 nothing-to-graft). dedup RUN2 fixed point; normalize re-run resurrects nothing; feed
+  duplicate 28024 gone. Final: vb 43 upcoming/14 duplicate, global 937/212/19. FOLLOW-UP in the same
+  iteration: the run exposed 5 more false contain merges (dates from T209 pushed long vb titles into
+  the containment pool) via tokens exposicion/mercado/grandes/presenta/horchata → added to
+  NON_IDENTITY_TOKENS + the 5 pairs reset T202b-style.)*
 
 - [x] T202 [C] **Containment dedup pass over-merges — venue tokens, null-date bridges, digest-post
   hubs** (T155 verification side finding, 2026-08-08). Live DB: survivor 26969 holds **76 losers

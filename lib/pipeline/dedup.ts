@@ -115,6 +115,11 @@ const NON_IDENTITY_TOKENS = new Set<string>([
   // Sagunto concert ← "Best places to enjoy flamenco" guide via "flamenco" —
   // genre/format words, never an event's identity.
   "workshops", "workshop", "nights", "flamenco",
+  // …second round (T210 catch-up run): once T209 gave valenciabonita rows real
+  // dates, their long editorial titles entered the containment pool and generic
+  // ES words started bridging (CAC «¡BAILAR!» ← digest via "exposicion",
+  // excursion ← digest via "mercado", etc.). Format/topic words, not identity.
+  "exposicion", "exposiciones", "mercado", "grandes", "presenta", "horchata",
   // RU month genitives (translit) — "15 августа" vs "14 августа" proves shared
   // MONTH, not shared event (the date-window guard owns dates). The ambiguous
   // marta/maya (also person names) are deliberately NOT listed.
