@@ -90,6 +90,33 @@ const TITLE_STOPWORDS = new Set<string>([
 // words; the stopword set removes the long generic ones.
 const STRONG_TOKEN_MIN = 6;
 
+// T202: NON-IDENTITY tokens must never act as the corroborating/distinctive shared
+// token in the containment pass. They are long (≥6) and distinctive-looking, but two
+// DIFFERENT events routinely share them, so they prove shared place/framing/month —
+// never shared identity. "Mamma Mía! Teatro Olympia" and "Ilustres Ignorantes …
+// Teatro Olympia" share only "olympia", yet are unrelated shows at one venue. Kept
+// SEPARATE from TITLE_STOPWORDS on purpose: these tokens still belong to the title
+// SIGNATURE (so the exact fuzzy pass and the subset test are untouched — two events
+// differing only in venue keep different signatures); they just can't be the shared
+// token that PROVES two titles are the same event. Hardcoded, derived from the false
+// merges observed in the live DB (T155/T202 replay).
+const NON_IDENTITY_TOKENS = new Set<string>([
+  // Valencia venue words (ES/CA/EN/translit) — shared PLACE, not shared event.
+  "olympia", "auditorio", "auditori", "caixaforum", "palau", "teatre", "sala",
+  "arena", "roig", "marina", "estadio", "estadi", "ciutat", "ciudad", "viveros",
+  "hemisferic", "umbracle", "oceanografic", "rambleta", "flumen", "palacio",
+  "jardines", "jardin",
+  // Generic framing words that escaped TITLE_STOPWORDS (plural/variant forms) —
+  // "Abbamania (tributo a ABBA)" vs "Candlelight: Tributo a Ludovico Einaudi" share
+  // only "tributo"; identity lives in the tributee's name, never the framing.
+  "conciertos", "tributo", "musica", "directo", "guiada", "cultural", "summer",
+  // RU month genitives (translit) — "15 августа" vs "14 августа" proves shared
+  // MONTH, not shared event (the date-window guard owns dates). The ambiguous
+  // marta/maya (also person names) are deliberately NOT listed.
+  "yanvarya", "fevralya", "aprelya", "iyunya", "iyulya", "avgusta",
+  "sentyabrya", "oktyabrya", "noyabrya", "dekabrya",
+]);
+
 // Russian Cyrillic → Latin map. CRITICAL for this RU-focused app: bare `slugify`
 // strips non-ASCII, so every Cyrillic title (e.g. "Моргенштерн", "Антон Лирник")
 // collapsed to the empty slug → the "untitled" signature → ALL RU events grouped
@@ -336,9 +363,11 @@ export function significantTokens(title?: string | null): string[] {
 }
 
 // PURE: do two token lists share a token of length ≥ `min`? (≥4 for the containment
-// corroboration, ≥6 for the standalone distinctive-name signal.)
+// corroboration, ≥6 for the standalone distinctive-name signal.) T202: a NON-IDENTITY
+// token (venue/framing/month — olympia, tributo, avgusta, …) never counts — it proves
+// shared place/framing/month, never shared event identity.
 function shareTokenOfLen(a: Set<string>, b: Set<string>, min: number): boolean {
-  for (const t of a) if (t.length >= min && b.has(t)) return true;
+  for (const t of a) if (t.length >= min && !NON_IDENTITY_TOKENS.has(t) && b.has(t)) return true;
   return false;
 }
 
@@ -365,12 +394,21 @@ export function titlesContain(a?: string | null, b?: string | null): boolean {
   return shareTokenOfLen(setA, setB, 4);
 }
 
+// T202: a candidate that title-matches ≥ this many MUTUALLY-unrelated partners is a
+// HUB (a multi-artist digest/news post whose long title "contains" many distinct
+// events), not a duplicate of any of them — it is excluded from containment merging
+// entirely, so union-find can't chain unrelated clusters through it transitively.
+const CONTAINMENT_HUB_MIN = 3;
+
 // PURE: cross-source containment grouping over a survivor list. Returns groups of ≥2
 // events that are the same real-world event by title containment, restricted to:
 //   • DIFFERENT sources (≥2 distinct) — never collapses same-source rows (those are
 //     recurring occurrences or the separate same-source tier rule),
 //   • SAME city,
-//   • start_dates within `windowDays`.
+//   • start_dates BOTH present and within `windowDays` (T202: a null date on either
+//     side used to SKIP this guard, letting undated digest/news rows bridge anything —
+//     containment now REQUIRES a real date-window match; strong/url passes unaffected),
+//   • neither endpoint is a HUB (see CONTAINMENT_HUB_MIN).
 // Single-linkage union-find over the pairwise predicate; each returned group has ≥2
 // members. Events not in any merge are omitted. Deterministic + order-stable.
 export function containmentGroups(
@@ -392,7 +430,11 @@ export function containmentGroups(
     if (ra !== rb) parent[Math.max(ra, rb)] = Math.min(ra, rb);
   };
 
+  // Phase 1 (T202): collect candidate pairs WITHOUT unioning yet, so hub detection
+  // can veto a node before it glues clusters together.
   const cityOf = (e: DedupEvent) => slugify(e.city) || "unknown";
+  const pairs: Array<[number, number]> = [];
+  const partners: number[][] = Array.from({ length: n }, () => []);
   for (let i = 0; i < n; i++) {
     for (let j = i + 1; j < n; j++) {
       const a = events[i];
@@ -401,10 +443,35 @@ export function containmentGroups(
       if (cityOf(a) !== cityOf(b)) continue;
       const da = epochDay(a.start_date);
       const db = epochDay(b.start_date);
-      if (da != null && db != null && Math.abs(da - db) > windowDays) continue;
+      if (da == null || db == null) continue; // T202: no date → no containment merge
+      if (Math.abs(da - db) > windowDays) continue;
       if (!titlesContain(a.title, b.title)) continue;
-      union(i, j);
+      pairs.push([i, j]);
+      partners[i].push(j);
+      partners[j].push(i);
     }
+  }
+
+  // Phase 2 (T202): hub detection. For each node, greedily count partners that are
+  // pairwise UNRELATED to each other (by titlesContain). A genuine popular event's
+  // partners all describe the same event → mutually related → count stays 1. A digest
+  // post's partners are distinct events → count ≥ CONTAINMENT_HUB_MIN → hub.
+  const isHub = new Array<boolean>(n).fill(false);
+  for (let i = 0; i < n; i++) {
+    if (partners[i].length < CONTAINMENT_HUB_MIN) continue;
+    const unrelated: number[] = [];
+    for (const j of partners[i]) {
+      if (unrelated.every((k) => !titlesContain(events[j].title, events[k].title))) {
+        unrelated.push(j);
+      }
+    }
+    if (unrelated.length >= CONTAINMENT_HUB_MIN) isHub[i] = true;
+  }
+
+  // Phase 3: union only hub-free pairs.
+  for (const [i, j] of pairs) {
+    if (isHub[i] || isHub[j]) continue;
+    union(i, j);
   }
 
   const byRoot = new Map<number, DedupEvent[]>();

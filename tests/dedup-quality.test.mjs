@@ -124,6 +124,99 @@ test("containmentGroups: different CITY → no merge (geo guard)", () => {
   assert.equal(containmentGroups(events).length, 0);
 });
 
+// ===================== T202: containment over-merge guards =====================
+// Live-DB verified failure modes (T155 replay: 448 of 1049 candidates collapsed into
+// one 377-member blob): venue tokens counted as distinctive names, null dates skipping
+// the date-window guard, and multi-artist digest posts acting as union-find hubs.
+
+test("T202 titlesContain: VENUE token (olympia) is NOT a distinctive-name overlap", () => {
+  // Two unrelated shows at Teatre Olympia — share only the venue word.
+  assert.equal(
+    titlesContain("Mamma Mía! Teatro Olympia", "Ilustres Ignorantes World Tour Teatro Olympia"),
+    false,
+  );
+  // Live pair: unrelated events sharing only "auditorio"/"roig"/"arena".
+  assert.equal(
+    titlesContain("Nanpa Básico en Auditorio Roig Arena", "Concierto Sala Auditorio - Roig Arena"),
+    false,
+  );
+});
+
+test("T202 containmentGroups: venue-token false pair at the same venue stays apart", () => {
+  const events = [
+    { id: 1, source: "web:hoyvalencia", city: "Valencia", start_date: "2026-07-01",
+      title: "Mamma Mía! Teatro Olympia" },
+    { id: 2, source: "web:visitvalencia", city: "Valencia", start_date: "2026-07-02",
+      title: "The Kiev Ballet returns to the Olympia Theatre" },
+  ];
+  assert.equal(containmentGroups(events).length, 0);
+});
+
+test("T202 containmentGroups: NULL date on either side → containment never merges", () => {
+  // Genuinely-contained titles, cross-source, same city — but one side is undated.
+  // An undated digest/news row must not bridge anything (strong/url passes handle
+  // true re-fetches; containment needs a real date-window match).
+  const oneNull = [
+    { id: 1, source: "web:a", city: "Valencia", start_date: "2026-06-28", title: "Oxxxymiron Tour" },
+    { id: 2, source: "web:b", city: "Valencia", start_date: null, title: "Oxxxymiron Tour в Валенсии Roig Arena" },
+  ];
+  assert.equal(containmentGroups(oneNull).length, 0);
+  const bothNull = [
+    { id: 1, source: "web:a", city: "Valencia", start_date: null, title: "Oxxxymiron Tour" },
+    { id: 2, source: "web:b", city: "Valencia", start_date: null, title: "Oxxxymiron Tour в Валенсии" },
+  ];
+  assert.equal(containmentGroups(bothNull).length, 0);
+});
+
+test("T202 containmentGroups: digest post matching 3 unrelated events is a HUB — no chaining", () => {
+  // A multi-artist digest title "contains" three distinct events. Union-find must not
+  // glue the three through it: the digest is excluded from containment entirely.
+  const events = [
+    { id: 1, source: "tg:concerten", city: "Valencia", start_date: "2026-06-28",
+      title: "Добавили на сайт: Oxxxymiron, Morgenshtern и Слава Комиссаренко в Валенсии" },
+    { id: 2, source: "web:a", city: "Valencia", start_date: "2026-06-28", title: "Oxxxymiron концерт" },
+    { id: 3, source: "web:b", city: "Valencia", start_date: "2026-06-29", title: "Morgenshtern концерт" },
+    { id: 4, source: "web:c", city: "Valencia", start_date: "2026-06-27", title: "Слава Комиссаренко стендап" },
+  ];
+  assert.equal(containmentGroups(events).length, 0, "hub excluded, unrelated events not chained");
+});
+
+test("T202 containmentGroups: genuine popular event listed by many sources still merges (not a hub)", () => {
+  // Four sources describe ONE event — every pair shares the distinctive surname, so
+  // partners are mutually RELATED and the hub rule must not fire.
+  const events = [
+    { id: 1, source: "web:worldafisha", city: "Valencia", start_date: "2026-06-21", title: "Слава Комиссаренко, Stand Up - Новая программа" },
+    { id: 2, source: "web:valenciarusa", city: "Valencia", start_date: "2026-06-21", title: "Слава Комиссаренко в Валенсии: стендап" },
+    { id: 3, source: "web:lacotorra", city: "Valencia", start_date: "2026-06-21", title: "Стендап-концерт Славы Комиссаренко в Валенсии" },
+    { id: 4, source: "tg:afisha", city: "Valencia", start_date: "2026-06-22", title: "Комиссаренко: новая программа" },
+  ];
+  const groups = containmentGroups(events);
+  assert.equal(groups.length, 1);
+  assert.deepEqual(groups[0].map((e) => e.id).sort((a, b) => a - b), [1, 2, 3, 4]);
+});
+
+test("T202 containmentGroups: genuine containment dup (strict subset, same date, cross-source) still merges", () => {
+  const events = [
+    { id: 1, source: "web:fever", city: "Valencia", start_date: "2026-07-24", title: "Zevra Festival 2026" },
+    { id: 2, source: "web:songkick", city: "Valencia", start_date: "2026-07-24",
+      title: "Zevra Festival 2026 Ozuna, Nicky Jam, Anuel AA, Juan Magan" },
+  ];
+  const groups = containmentGroups(events);
+  assert.equal(groups.length, 1);
+  assert.deepEqual(groups[0].map((e) => e.id).sort((a, b) => a - b), [1, 2]);
+});
+
+test("T202 titlesContain: RU month genitive (августа) is NOT a distinctive overlap", () => {
+  // Live false pair: a concert and an unrelated excursion, glued only by "августа".
+  assert.equal(
+    titlesContain(
+      "Мумий Тролль в Валенсии: концерт в Roig Arena 15 августа 2026",
+      "14 августа мы снова поднимаемся на колокольню Кафедрального собора",
+    ),
+    false,
+  );
+});
+
 // ===================== Bug 2: same-source ticket-tier variants =====================
 
 test("tierBaseTitle: strips '| Paquetes VIP' suffix", () => {
