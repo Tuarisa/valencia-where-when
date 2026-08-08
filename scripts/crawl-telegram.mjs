@@ -42,7 +42,36 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const sha1short = (s) => crypto.createHash("sha1").update(s, "utf-8").digest("hex").slice(0, 16);
 const nowIso = () => new Date().toISOString().replace(/\.\d+Z$/, "Z");
 const loadArr = (p) => (existsSync(p) ? JSON.parse(readFileSync(p, "utf-8")) : []);
-const normName = (s) => String(s || "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+// T208: canonical venue-name form. The old normName kept letters as-is, so accent pairs
+// («El Molinón»≠«El Molinon») and cross-script variants («Биопарк»≠"BIOPARC") slipped
+// past the seen-name guard. Now: NFD + strip combining marks (ó→o, à→a) BEFORE the
+// letter/number filter, transliterate Cyrillic→Latin (mirrors RU_TRANSLIT in
+// lib/pipeline/dedup.ts; inlined — this script stays standalone), then fold c→k outside
+// "ch" so BIOPARC↔Биопарк and Oceanogràfic↔Океанографик land on the same key.
+const RU_LAT = {
+  а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "e", ж: "zh", з: "z",
+  и: "i", й: "y", к: "k", л: "l", м: "m", н: "n", о: "o", п: "p", р: "r",
+  с: "s", т: "t", у: "u", ф: "f", х: "h", ц: "ts", ч: "ch", ш: "sh", щ: "sch",
+  ъ: "", ы: "y", ь: "", э: "e", ю: "yu", я: "ya",
+};
+const normName = (s) => [...String(s || "").normalize("NFD").replace(/\p{M}+/gu, "").toLowerCase()]
+  .map((ch) => RU_LAT[ch] ?? ch).join("")
+  .replace(/c(?!h)/g, "k").replace(/[^\p{L}\p{N}]+/gu, "");
+// A name like "BIOPARC Valencia (Биопарк Валенсии)" carries an alias in parens — index
+// BOTH the outer name and each parenthetical alias as seen keys, so a later variant
+// matches whichever form the channel used this time.
+const nameKeys = (raw) => {
+  const s = String(raw || "");
+  const keys = new Set([normName(s), normName(s.replace(/\([^)]*\)/g, " "))]);
+  for (const m of s.matchAll(/\(([^)]+)\)/g)) keys.add(normName(m[1]));
+  keys.delete("");
+  return [...keys];
+};
+// Variant guard: a candidate is "seen" if any of its keys hits a seen key exactly, OR
+// contains / is contained by one (both sides ≥6 chars — keeps short names like "SALT"
+// or "Altea" from false-hitting inside longer unrelated names).
+const isSeenVariant = (keys, seen) => keys.some((k) => seen.has(k) ||
+  [...seen].some((s) => Math.min(s.length, k.length) >= 6 && (s.includes(k) || k.includes(s))));
 
 // Fetch with on-disk cache: never re-request a post we've already pulled.
 async function fetchPostCached(n) {
@@ -134,7 +163,7 @@ const places = loadArr(placesPath);
 const events = loadArr(eventsPath);
 const seenPosts = new Set([...places, ...events].map((r) => Number(JSON.parse(r.metadata_json || "{}").post_id)).filter(Boolean));
 const placeKeys = new Set(places.map((p) => p.dedup_hash));
-const seenPlaceNames = new Set(places.map((p) => normName(p.name))); // dedup a venue by name regardless of area phrasing
+const seenPlaceNames = new Set(places.flatMap((p) => nameKeys(p.name))); // dedup a venue by name regardless of area phrasing / accents / script (T208)
 const eventKeys = new Set(events.map((e) => e.dedup_hash));
 const lowest = seenPosts.size ? Math.min(...seenPosts) : startId + 1;
 const begin = startId || lowest - 1;
@@ -153,8 +182,8 @@ for (let n = begin; n > begin - count && n > 0; n--) {
       if (ex && ex.name) {
         if (ex.kind === "place") {
           const rec = placeRecord(post, ex);
-          const nm = normName(rec.name);
-          if (!placeKeys.has(rec.dedup_hash) && nm && !seenPlaceNames.has(nm)) { places.push(rec); placeKeys.add(rec.dedup_hash); seenPlaceNames.add(nm); addedPlaces++; console.log(`  place +${n}: ${rec.name}${rec.area ? " — " + rec.area : ""}${rec.maps_url ? " 📍" : ""}`); }
+          const keys = nameKeys(rec.name);
+          if (!placeKeys.has(rec.dedup_hash) && keys.length && !isSeenVariant(keys, seenPlaceNames)) { places.push(rec); placeKeys.add(rec.dedup_hash); for (const k of keys) seenPlaceNames.add(k); addedPlaces++; console.log(`  place +${n}: ${rec.name}${rec.area ? " — " + rec.area : ""}${rec.maps_url ? " 📍" : ""}`); }
         } else if (!placesOnly && ex.kind === "event") {
           const rec = eventRecord(post, ex);
           if (!eventKeys.has(rec.dedup_hash)) { events.push(rec); eventKeys.add(rec.dedup_hash); addedEvents++; console.log(`  event +${n}: ${rec.title}${ex.start_date ? " @ " + ex.start_date : ""}`); }
