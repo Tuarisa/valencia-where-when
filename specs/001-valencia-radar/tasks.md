@@ -133,10 +133,19 @@ exist, raw layer still append-only.
   path safe, PROVEN: id 9999999 → no error, no insert). Wired into BOTH merge paths; merge
   logic + over-merge guards (T035/T141/T156) UNCHANGED. Live DB: entity_sources 0→1, FK holds,
   idempotent re-run. 301/301, build green.)*
-- [ ] T034 [C] Backfill `entity_sources` for the 90 seed duplicates from
+- [x] T034 [C] Backfill `entity_sources` for the 90 seed duplicates from
   `merged_into`+`source_item_id`. Note: the 90 rows ALREADY use
   `status='duplicate'`+`merged_into` (no status migration needed). Backfill is BLOCKED
   by the same missing-`source_items` issue as T033.
+
+  *(DONE 2026-08-08 (DB-only, count drifted 90→207 since June) — everything mechanically derivable
+  backfilled: 124 legacy losers → 105 `role='duplicate'/match_method='backfill'` + 15 `primary/self`
+  rows (one txn, idempotent ON CONFLICT DO NOTHING; `backfill` chosen — no CHECK constraint, the
+  original strong/fuzzy method is unknowable). dedup() re-run = fixed point. Remaining 36 legacy
+  rows underivable BY DESIGN: 11 lack source_item_id (ES schema: NOT NULL FK → row impossible), 25
+  June-era valenciarusa/eventbrite lack merged_into entirely — left as historical records; the
+  constitution covers pipeline-performed merges, all provenance-complete since T033. Census note:
+  entity_sources currently has zero readers (write-only audit provenance) — fine, that's its job.)*
 - [x] T035 [C] Deterministic strong-match pre-pass (exact url / `(source,external_id)`
   / resolved `maps_url` / person-URL) before fuzzy; same-person far-date → related
   link, not hard-merge (research C1/C5).
@@ -1486,6 +1495,8 @@ additional issues the agent is NOT handling.)
   iteration: the run exposed 5 more false contain merges (dates from T209 pushed long vb titles into
   the containment pool) via tokens exposicion/mercado/grandes/presenta/horchata → added to
   NON_IDENTITY_TOKENS + the 5 pairs reset T202b-style.)*
+  Residual noted: 27719 (visitvalencia horchata workshops) carries own end_date=2027-07-04 —
+  T209-class suspicion on a single row; check on the next visitvalencia audit.
 
 - [x] T202 [C] **Containment dedup pass over-merges — venue tokens, null-date bridges, digest-post
   hubs** (T155 verification side finding, 2026-08-08). Live DB: survivor 26969 holds **76 losers
