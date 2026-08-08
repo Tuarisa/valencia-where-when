@@ -1318,3 +1318,28 @@ additional issues the agent is NOT handling.)
   only ingested+registered normalize, unregistered skipped, dup keys collapse, throwing
   normalizer/dedup fail-soft, deadline cuts before/mid/after normalize + between score and tag,
   `DISPATCH_INGEST_ONLY` gate. Gate: `npm run build` + `npm test` green.
+
+- [ ] T199 [F] **SEO/discoverability pack — the site is NOT indexed and has zero analytics**
+  (audit 2026-08-08, user asked "как индексируется? ходит ли кто?"). Findings: DuckDuckGo/Bing
+  return explicit no-results for the exact domain; nothing BLOCKS indexing (no noindex/X-Robots-Tag)
+  but nothing invites it either — `/robots.txt` 404, `/sitemap.xml` 404, and EVERY page (275+ event
+  details) serves the identical `<title>Valencia Radar</title>` + generic description (no
+  `generateMetadata` on `app/events/[id]`/`app/places/[id]`), no og:/twitter tags (Telegram shares
+  have no preview — RU-audience relevant), no canonical (id+slug URLs accept any slug variant →
+  duplicate-URL risk), no JSON-LD schema.org/Event (prime rich-results candidate), no favicon,
+  no metadataBase/title.template; zero inbound links on a shared vercel.app subdomain. Analytics:
+  none at all (`@vercel/analytics` absent; Hobby runtime logs retained ~1h → visitors unknowable).
+  PLAN (one iteration): `app/robots.ts` + `app/sitemap.ts` (events/places/calendar from DB) +
+  `generateMetadata` on event/place pages (title/description/canonical/og, og-image from
+  `usableImageUrl`) + JSON-LD Event + favicon + `@vercel/analytics` `<Analytics/>` in layout.
+  USER ACTIONS needed separately: Google Search Console verification (+ submit sitemap); custom
+  domain — her call (vercel.app subdomains rank poorly).
+
+- [ ] T200 [A] **Dispatch tick hit the Hobby 60s wall despite the 45s soft budget** — runtime logs
+  2026-08-07 23:59:45 UTC: `POST /api/cron/dispatch` → **504 "Task timed out after 60 seconds"**
+  (an adjacent tick returned 200; also only 2 of the expected 4 `*/15` dispatches appear in the
+  retained hour). Hypothesis: the budget deadline is checked BETWEEN stages/sources, so one slow
+  fetch (source timeout) or a big normalize batch can overshoot 45s→60s. Investigate: per-fetch
+  timeout vs budget interplay, `budget.cutAt` telemetry in recent responses; consider lowering
+  DEFAULT_BUDGET_MS or adding an in-stage deadline for the ingest pool. Fail-soft means no data
+  loss (next tick retries), but 504s waste ticks and mask real errors.
