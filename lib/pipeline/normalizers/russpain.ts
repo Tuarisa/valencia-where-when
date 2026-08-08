@@ -17,15 +17,21 @@ import type { RawItem } from "./types";
 // emitting ONE event per real listing. Already Valencia-scoped (the afisha URL is
 // /afisha/valencia/), so NO Spain pre-filter is needed (unlike worldafisha).
 //
-// REALITY (live local DB, 2026-06): russpain.com has been REORGANISED into separate
-// language editions and the afisha/valencia path currently returns a "Page Not Found"
-// snapshot; the only other rows are chrome/nav `link_card`s ("Continue to RUSSPAIN.COM",
-// "Publishing Principles", "Corrections Policy"). So today this normalizer correctly
-// yields ZERO events — every row is dropped as the 404 snapshot or site chrome. It is
-// built to parse the real afisha shape (link_card listings with a dated/priced body)
-// once the agenda is restored. Deterministic, no LLM (T140). Fail-soft + append-only
-// (constitution I/IV): an unparseable row is skipped, never throws, and EVERY processed
-// raw row is marked normalized.
+// REALITY (live local DB, 2026-06 → re-checked 2026-08, T154): russpain.com has been
+// REORGANISED into separate language editions; `/afisha/valencia/` first 404'd and now
+// serves the ENGLISH NEWS homepage ("RUSSPAIN.COM Spain News in English"). The 2026-08
+// crawl therefore yields `/news/<article>/` and `/cat/<category>/` link_cards — NEWS
+// ARTICLES ("Málaga Murder Case…", "Solar Eclipse on August 12…"), not events. The
+// original fall-through ("any other russpain.com path → judge by card text") emitted 30
+// bogus "events" from those (with headline-parsed dates and prices — "Messi Donates
+// €80,000" → price 80 €). FIX: the URL guard is now DEFAULT-DENY — only a listing
+// DEEPER than `/afisha/valencia/` is an event candidate; `/news/`, `/cat/` and every
+// other path are dropped. Plus the T140/T154 rule: NO parseable date → do NOT emit
+// (never fabricate). So today this normalizer correctly yields ZERO events; it emits
+// again only if the real afisha (dated `/afisha/valencia/<slug>` listings) returns.
+// Deterministic, no LLM (T140). Fail-soft + append-only (constitution I/IV): an
+// unparseable row is skipped, never throws, and EVERY processed raw row is marked
+// normalized.
 
 export const RUSSPAIN_SOURCE_KEY = "web:russpain";
 const SOURCE_URL = "https://russpain.com/afisha/valencia/";
@@ -48,16 +54,16 @@ function parseRaw(item: RawItem): RawWeb {
 }
 
 // PURE: russpain-specific non-event URL guard (in addition to the shared isJunkCard
-// keyword/shape test). Drops:
+// keyword/shape test). DEFAULT-DENY (T154): the ONLY event-candidate shape is a listing
+// DEEPER than the afisha index — `/afisha/valencia/<slug>`. Everything else is dropped:
 //   • the afisha INDEX page itself (`/afisha/valencia/` with nothing after it),
-//   • site chrome / legal / about pages (`/publishing-principles/`, `/corrections-policy/`,
-//     `/about/`, `/contacts/`, `/advertising/`, `/privacy*`, `/terms*`, `/cookies*`,
-//     `/fact-checking/`, `/ethics*`, `/masthead/`, …),
+//   • news articles (`/news/<article>/`) and category hubs (`/cat/<category>/`) — the
+//     REAL 2026-08 crawl shape after the site became an English news edition; these are
+//     headlines ("Málaga Murder Case…"), not events, however parseable they look,
+//   • site chrome / legal pages (`/publishing-principles/`, `/corrections-policy/`, …),
 //   • the language-edition redirect homepages (bare `https://russpain.com/`,
-//     russpain.ru, español.news).
-// A real listing lives DEEPER than the index (an extra slug segment), so requiring a
-// path segment after `/afisha/valencia/` is the primary positive signal; everything
-// else here is a defensive denylist. Returns true when the URL is NON-event chrome.
+//     russpain.ru, español.news) and any cross-domain URL.
+// Returns true when the URL is NOT a single-event listing.
 function isNonEventUrl(url?: string | null): boolean {
   if (!url) return true;
   let path: string;
@@ -73,44 +79,25 @@ function isNonEventUrl(url?: string | null): boolean {
   }
 
   // Language-edition redirect homepages / cross-domain (russpain.ru, español.news, …)
-  // and the bare russpain.com homepage are not Valencia listings.
+  // are not Valencia listings.
   if (host && !host.includes("russpain.com")) return true;
 
   // Normalise trailing slash for segment math.
   const clean = path.replace(/\/+$/, "");
 
-  // Bare homepage ("" or "/") → chrome.
-  if (clean === "" || clean === "/") return true;
-
-  // Site chrome / legal / about / policy pages.
-  if (
-    /\/(publishing-principles|corrections-policy|about|contacts?|advertising|privacy|terms|terms-of-use|cookies|fact-checking|ethics|ethics-policy|masthead|diversity|mission|ownership|unnamed-sources|editorial)\b/.test(
-      clean,
-    )
-  ) {
-    return true;
-  }
-
-  // The afisha index itself ("/afisha/valencia" with no listing slug after it) is the
-  // catalogue page, not a single event.
-  if (/^\/afisha\/valencia$/.test(clean)) return true;
-
-  // A real listing has a slug segment AFTER /afisha/valencia/ — require it when the URL
-  // is an afisha URL at all. (Non-afisha russpain.com paths fall through and are judged
-  // by isJunkCard on the card text.)
-  if (/^\/afisha\/valencia\//.test(clean)) {
-    return false; // a deeper /afisha/valencia/<slug> path → a real listing
-  }
-
-  // Any other russpain.com path: leave it to the text-based junk guard.
-  return false;
+  // A real listing has a slug segment AFTER /afisha/valencia/ — that is the ONLY
+  // accepted shape. The index itself (`/afisha/valencia`) and every other path
+  // (`/news/…`, `/cat/…`, chrome/legal, bare homepage) are non-events.
+  return !/^\/afisha\/valencia\/.+/.test(clean);
 }
 
 // PURE: turn pending russpain raw rows into event drafts (date/venue/address/price
 // extracted where derivable). Drops the page_snapshot (no single event identity),
-// chrome/nav cards (isNonEventUrl + shared isJunkCard), and the language-edition
-// redirect cards. Prefers a date in the URL slug (defensive — worldafisha-style),
-// else free-text RU/ES parsing. DB-free so it unit-tests without a connection.
+// every non-`/afisha/valencia/<slug>` URL (news articles, category hubs, chrome —
+// isNonEventUrl default-deny), junk cards by text/shape (shared isJunkCard), and any
+// card WITHOUT a parseable date (T140: never fabricate). Prefers a date in the URL
+// slug (defensive — worldafisha-style), else free-text RU/ES parsing. DB-free so it
+// unit-tests without a connection.
 export function buildRusspainEvents(
   rows: RawItem[],
   today: Date = new Date(),
@@ -134,6 +121,9 @@ export function buildRusspainEvents(
     const haystack = `${title} ${item.raw_text || ""}`;
     // Prefer a date encoded in the URL slug (worldafisha-style), else free RU/ES text.
     const start = dateFromUrl(item.url) ?? parseEventDate(haystack, today);
+    // T140/T154: no parseable date → do NOT emit (never fabricate; an undated card on
+    // a news-reorganised site is noise, and null-dated rows can't ship in the seed).
+    if (!start) continue;
     const { price, isFree } = parsePrice(haystack);
     const venue = parseVenue(haystack);
     const address = parseAddress(haystack);

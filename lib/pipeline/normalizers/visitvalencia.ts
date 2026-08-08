@@ -1,22 +1,40 @@
 import { sql } from "../../db";
 import { compact } from "../util";
-import { parseEventDate, runPlainNormalizer, type EventInsert } from "./shared";
+import { normTitle, parseEventDate, runPlainNormalizer, type EventInsert } from "./shared";
 import { isJunkCard } from "./valenciarusa";
 import type { RawItem } from "./types";
 
 // T112-family — visitvalencia.com (official tourist board, web source, key
 // `web:visitvalencia`, id 13, EN). The generic web parser stores each agenda listing
-// as a `link_card` row whose `title` (== `raw_text`) is JUST the listing headline —
-// there is NO body, NO meta/og:image, and crucially **NO date** anywhere (verified on
-// the 81 live rows: 0 cards carry a month name or a numeric date in text, and the URL
-// slug is descriptive — "anselm-kiefers-exhibition-comes-valencia" — not a
-// "…-YYYY-MM-DD" date slug like worldafisha). A handful of slugs/titles carry a bare
-// YEAR ("Playmobil 2026", "…-2025-…"), but that is part of the event NAME, not a
-// usable start_date — so we DO NOT fabricate one. These are evergreen exhibitions /
-// ongoing experiences / recurring tours, so `start_date` is legitimately MOSTLY NULL
-// (a wrong pin is worse than none — same convention as worldafisha/fever). On the rare
-// row that DOES carry a real "16 December"-style date in text, parseEventDate still
-// catches it.
+// as a `link_card` row whose `title` (== `raw_text`) is the listing headline, plus a
+// full `page_snapshot` row per ingest run.
+//
+// T154 REAL-DATA FINDING — the dates DO exist, in TWO places the first cut missed:
+//
+// 1. The page_snapshot `raw_text` carries a `DD/MM/YYYY` range right under almost
+//    every listing title, in three real markups (all seen live):
+//      a. inline  (pre-Aug-2026 main listing):   "Title\n From 02/07/2026 to 05/07/2026"
+//      b. split   (pre-Aug-2026 highlights):     "Title\n From \n 08/07/2026\n to 08/07/2026"
+//      c. compact (Aug-2026 redesign highlights):"Title\n 23/06/2026 - 08/08/2026"
+//    plus the occasional bare "02/07/2026" single-date line under a title.
+//    We line-scan the snapshot, pair each range with the nearest preceding title line,
+//    and key the map by normalized title — link_card titles match the snapshot titles.
+//
+// 2. Since the Aug-2026 redesign the highlight link_cards GLUE the range into the
+//    anchor text itself: title == raw_text == "Summer Amusement Park in Valencia 2026
+//    23/06/2026 - 08/08/2026". That both dirtied the stored title AND misled
+//    parseEventDate ("…you can see in August 27/07/2026 - 31/08/2026" parsed as
+//    month-first "August 27" instead of the real 27/07). We strip the trailing range
+//    off the title and use it as the highest-confidence date.
+//
+// CAUTION (verified live): the snapshot's `raw_json.event_links` pairs are OFF-BY-ONE
+// for this source (each title carries the NEXT card's URL), so event_links must NOT be
+// used to key dates by URL — title-text matching only.
+//
+// Cards with no range anywhere legitimately stay start_date=null (evergreen
+// exhibitions / ongoing experiences; a wrong pin is worse than none — we never
+// fabricate). parseEventDate on the card text remains the last-resort fallback for
+// the rare "16 December"-style headline date.
 //
 // Real row shape (live):
 //   title    = "Immersive Exhibition “The Legend of the Titanic” in Valencia"
@@ -73,6 +91,183 @@ export function isVisitvalenciaEventUrl(url?: string | null): boolean {
   return !CATEGORY_SLUGS.has(slug);
 }
 
+// ---------------------------------------------------------------------------
+// T154: date extraction (deterministic — the source publishes DD/MM/YYYY ranges)
+// ---------------------------------------------------------------------------
+
+export interface VvDateRange {
+  start: string; // ISO YYYY-MM-DD
+  end: string | null; // null when single-day / absent
+}
+
+// One strictly-numeric visitvalencia date: DD/MM/YYYY (zero-padded on the live site).
+const DMY = String.raw`(\d{2})/(\d{2})/(\d{4})`;
+
+// PURE: "23/06/2026" → "2026-06-23"; null on an implausible day/month (fail-soft —
+// better no date than a wrong one).
+export function dmyToIso(d: string, m: string, y: string): string | null {
+  const day = Number(d);
+  const month = Number(m);
+  if (day < 1 || day > 31 || month < 1 || month > 12) return null;
+  return `${y}-${m}-${d}`;
+}
+
+// PURE: normalize a (start, end) pair; end collapses to null when it equals start
+// (single-day) or precedes it (the aggregator lied — keep only the start).
+function makeRange(start: string | null, end: string | null): VvDateRange | null {
+  if (!start) return null;
+  if (!end || end <= start) return { start, end: null };
+  return { start, end };
+}
+
+// Aug-2026 redesign: highlight cards glue the range into the anchor text —
+// "Summer Amusement Park in Valencia 2026 23/06/2026 - 08/08/2026". Trailing-anchored.
+const TRAILING_RANGE = new RegExp(String.raw`\s*${DMY}\s*[-–]\s*${DMY}\s*$`);
+
+// PURE: split a card headline into the clean title + the glued trailing range (if
+// any). The range, when present, is the event's own published dates — highest
+// confidence. Real rows: source_items 2311–2316 (live, 2026-08-07 ingest).
+export function stripTrailingCardRange(title: string): { title: string; range: VvDateRange | null } {
+  const m = TRAILING_RANGE.exec(title);
+  if (!m) return { title, range: null };
+  const start = dmyToIso(m[1], m[2], m[3]);
+  const end = dmyToIso(m[4], m[5], m[6]);
+  const range = makeRange(start, end);
+  if (!range) return { title, range: null };
+  return { title: title.slice(0, m.index).trim() || title, range };
+}
+
+// Snapshot line forms (anchored to the WHOLE trimmed line so stray numbers in prose
+// never match). See the file header for the three real markups.
+const LINE_INLINE = new RegExp(String.raw`^From\s+${DMY}\s+to\s+${DMY}$`); // a
+const LINE_FROM = /^From$/; // b (split across 3 lines)
+const LINE_BARE = new RegExp(String.raw`^${DMY}$`); // b's middle line; also the rare bare single date
+const LINE_TO = new RegExp(String.raw`^to\s+${DMY}$`); // b's last line
+const LINE_COMPACT = new RegExp(String.raw`^${DMY}\s*[-–]\s*${DMY}$`); // c
+
+// Lines that are page chrome / filter-widget labels / per-block category tags — never
+// an event title. Lowercased, compared against the trimmed line. All observed live.
+const SNAPSHOT_CHROME = new Set([
+  "music", "exhibitions", "gastronomy", "show", "sport", "nature", "with children",
+  "shopping", "parties and traditions", "urban festival", "health & wellness",
+  "christmas", "fallas", "- any -", "monthly highlights", "date", "search",
+  "start date", "end date", "category", "system messages", "close popup",
+  "the best events", "plans in valencia", "back", "activities",
+]);
+
+// PURE: can this trimmed snapshot line be an event title? (non-empty, has a letter,
+// not chrome, not itself a date/From/to line)
+function isTitleLine(line: string): boolean {
+  if (!line || !/[a-zA-Zà-ÿÀ-Ÿ]/.test(line)) return false;
+  if (SNAPSHOT_CHROME.has(line.toLowerCase())) return false;
+  if (LINE_FROM.test(line) || LINE_BARE.test(line) || LINE_TO.test(line)) return false;
+  if (LINE_INLINE.test(line) || LINE_COMPACT.test(line)) return false;
+  return true;
+}
+
+// How far back (in non-empty lines) a range may look for its title. Real markups put
+// the title 1 line above the range (2 with an interleaved category tag).
+const TITLE_LOOKBACK = 4;
+
+// PURE: line-scan ONE snapshot's raw_text into normalized-title → date-range entries,
+// merged into `out` (later calls override — pass snapshots oldest→newest so the
+// freshest capture wins per title). Handles all three real markups + the bare
+// single-date line. A range with no plausible title within reach is dropped
+// (fail-soft: no date is better than somebody else's date).
+export function scanSnapshotDates(rawText: string, out: Map<string, VvDateRange>): void {
+  const lines = rawText.split("\n").map((l) => l.trim());
+  const consumed = new Set<number>(); // lines eaten by the split "From/date/to date" form
+
+  const titleBefore = (i: number): string | null => {
+    let seen = 0;
+    for (let j = i - 1; j >= 0 && seen < TITLE_LOOKBACK; j--) {
+      const l = lines[j];
+      if (!l) continue;
+      seen++;
+      if (isTitleLine(l)) return l;
+    }
+    return null;
+  };
+
+  const record = (anchor: number, range: VvDateRange | null) => {
+    if (!range) return;
+    const title = titleBefore(anchor);
+    if (!title) return;
+    const key = normTitle(title);
+    if (key) out.set(key, range);
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    if (consumed.has(i)) continue;
+    const line = lines[i];
+    if (!line) continue;
+
+    let m = LINE_INLINE.exec(line) || LINE_COMPACT.exec(line);
+    if (m) {
+      record(i, makeRange(dmyToIso(m[1], m[2], m[3]), dmyToIso(m[4], m[5], m[6])));
+      continue;
+    }
+
+    if (LINE_FROM.test(line)) {
+      // split form: "From" / "DD/MM/YYYY" / "to DD/MM/YYYY" on the next non-empty lines
+      let j = i + 1;
+      while (j < lines.length && !lines[j]) j++;
+      const md = j < lines.length ? LINE_BARE.exec(lines[j]) : null;
+      if (!md) continue;
+      let k = j + 1;
+      while (k < lines.length && !lines[k]) k++;
+      const mt = k < lines.length ? LINE_TO.exec(lines[k]) : null;
+      if (!mt) continue;
+      consumed.add(j).add(k);
+      record(i, makeRange(dmyToIso(md[1], md[2], md[3]), dmyToIso(mt[1], mt[2], mt[3])));
+      continue;
+    }
+
+    m = LINE_BARE.exec(line);
+    if (m) {
+      // rare: a bare single date directly under a title (seen live, 2026-07-02 capture)
+      record(i, makeRange(dmyToIso(m[1], m[2], m[3]), null));
+    }
+  }
+}
+
+// PURE: collect the title→range map from EVERY page_snapshot in the batch, oldest→
+// newest so the freshest capture wins per title. We deliberately read ALL snapshots
+// (not just the newest): the Aug-2026 redesign dates ONLY the six highlights, while
+// the older captures date the whole listing — an event absent from the newest
+// snapshot keeps its last published range (a real published date, never fabricated).
+export function extractVisitvalenciaDates(rows: RawItem[]): Map<string, VvDateRange> {
+  const out = new Map<string, VvDateRange>();
+  const snaps = rows
+    .filter((r) => parseRaw(r).kind === "page_snapshot" && r.raw_text)
+    .sort((a, b) => a.id - b.id);
+  for (const s of snaps) scanSnapshotDates(s.raw_text as string, out);
+  return out;
+}
+
+// PURE: look a card title up in the snapshot map. Exact normalized equality first;
+// then the conservative containment rule (one normalized title fully contains the
+// other, shorter ≥ 8 chars and ≥ 60% of the longer — mirrors shared matchEventLink
+// tier 2). No fuzzier tiers: a wrong date is worse than none.
+export function lookupSnapshotRange(
+  title: string,
+  map: Map<string, VvDateRange>,
+): VvDateRange | null {
+  const want = normTitle(title);
+  if (!want) return null;
+  const exact = map.get(want);
+  if (exact) return exact;
+  let best: { range: VvDateRange; score: number } | null = null;
+  for (const [cand, range] of map) {
+    const [shortS, longS] = want.length <= cand.length ? [want, cand] : [cand, want];
+    if (longS.includes(shortS) && shortS.length >= 8 && shortS.length / longS.length >= 0.6) {
+      const score = shortS.length / longS.length;
+      if (!best || score > best.score) best = { range, score };
+    }
+  }
+  return best ? best.range : null;
+}
+
 // PURE (T140): a best-effort category from the EN title/slug keywords. Deterministic
 // keyword match — no LLM. Falls back to the generic "culture" (this is a culture/
 // tourism agenda), which downstream tagging can refine. Order matters: more specific
@@ -89,53 +284,64 @@ export function classifyVisitvalencia(text: string): string {
 }
 
 // PURE: turn pending visitvalencia raw rows into event drafts. Keeps ONLY real
-// `/events-valencia/<slug>` detail cards; the page snapshot, site nav, `/shop/…`
-// products, guides and the category indices are dropped (isVisitvalenciaEventUrl +
-// isJunkCard). `start_date` is best-effort from text and is usually null (the source
-// carries no date — see the file header). DB-free so it unit-tests without a
-// connection.
+// `/events-valencia/<slug>` detail cards; site nav, `/shop/…` products, guides and
+// the category indices are dropped (isVisitvalenciaEventUrl + isJunkCard). The
+// page_snapshot rows are not emitted as events but ARE mined for the published
+// DD/MM/YYYY ranges (T154 — see the file header); dates resolve in confidence order:
+// (1) the range glued into the card's own text (Aug-2026 markup), (2) the snapshot
+// listing's range for the same title, (3) parseEventDate on the clean text. No hit →
+// null, never fabricated. DB-free so it unit-tests without a connection.
 export function buildVisitvalenciaEvents(
   rows: RawItem[],
   today: Date = new Date(),
 ): Array<{ draft: EventInsert; sourceItemId: number }> {
   const out: Array<{ draft: EventInsert; sourceItemId: number }> = [];
+  // T154: mine every snapshot in the batch for title → published date-range.
+  const snapshotDates = extractVisitvalenciaDates(rows);
   for (const item of rows) {
     const raw = parseRaw(item);
-    // The full-page snapshot is the index, not an event — skip it.
+    // The full-page snapshot is the index, not an event — mined above, not emitted.
     if (raw.kind === "page_snapshot") continue;
     // Keep ONLY real per-event detail URLs; nav / shop / guide / category cards drop.
     if (!isVisitvalenciaEventUrl(item.url)) continue;
 
-    const title = compact(item.title);
-    if (!title) continue;
+    const rawTitle = compact(item.title);
+    if (!rawTitle) continue;
+
+    // T154: peel the Aug-2026 glued "DD/MM/YYYY - DD/MM/YYYY" tail off the headline.
+    const { title, range: cardRange } = stripTrailingCardRange(rawTitle);
 
     // T146: drop any residual chrome / bare header line (defensive — the URL gate
     // already removes nav, but a header card that slipped through with an event-ish
     // URL is still caught here). A real listing headline is never matched.
     if (isJunkCard(title, item.raw_text, VISITVALENCIA_NAME)) continue;
 
-    const haystack = `${title} ${item.raw_text || ""}`;
-    // Best-effort only: the source almost never carries a parseable day/month, so this
-    // is null on nearly every row (header explains why we don't fabricate a date).
-    const start = parseEventDate(haystack, today);
+    // Card text with the glued range peeled too (raw_text == title on live rows).
+    const text = stripTrailingCardRange(compact(item.raw_text) ?? "").title || null;
+
+    // Confidence order: own glued range → snapshot listing range → free-text parse.
+    const range =
+      cardRange ?? lookupSnapshotRange(title, snapshotDates) ?? null;
+    const start = range?.start ?? parseEventDate(`${title} ${text || ""}`, today);
     const category = classifyVisitvalencia(`${title} ${item.url || ""}`);
 
     out.push({
       sourceItemId: item.id,
       draft: {
         title: title.slice(0, 300),
-        description: compact(item.raw_text)?.slice(0, 2000) ?? null,
+        description: text?.slice(0, 2000) ?? null,
         category,
         language: "en",
         audience: "all",
         start_date: start,
+        end_date: range?.end ?? null,
         city: "Valencia",
         country: "Spain",
         url: item.url ?? SOURCE_URL,
         image_url: raw.meta?.["og:image"] || null,
         source: VISITVALENCIA_SOURCE_KEY,
         source_url: item.url ?? SOURCE_URL,
-        raw_excerpt: compact(item.raw_text)?.slice(0, 1000) ?? null,
+        raw_excerpt: text?.slice(0, 1000) ?? null,
       },
     });
   }

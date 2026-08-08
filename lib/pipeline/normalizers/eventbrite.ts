@@ -33,11 +33,28 @@ import type { RawItem } from "./types";
 // when a same-title link_card exists, else fall back to the listing URL + the snapshot row.
 //
 // A snapshot card renders as one of two shapes:
-//   • PHYSICAL Valencia card → "<title> <date-expr>\n<venue>\nCheck ticket price on event"
+//   • PHYSICAL Valencia card → "<title> <date-expr>\n<venue>\n<price-marker>"
 //     (a venue line precedes the marker). These are the real events we emit.
-//   • ONLINE / out-of-town card → "<title> <date-expr-with-foreign-tz>\nCheck ticket price
-//     on event" — NO venue line, and the time carries a non-local tz ("GMT+1","EDT","PDT",
+//   • ONLINE / out-of-town card → "<title> <date-expr-with-foreign-tz>\n<price-marker>"
+//     — NO venue line, and the time carries a non-local tz ("GMT+1","EDT","PDT",
 //     "CDT","GMT+12"). These are global webinars / US job fairs, NOT Valencia plans → DROP.
+//
+// LOCALE BUG (T154, found on the live rows): the price-marker line is LOCALE-DEPENDENT.
+// The first scrape (row 247, 2026-06-20) rendered ENGLISH "Check ticket price on event"
+// (43×); every later scrape (rows 1114/1424/1724/2038, Jun 24 → Aug 7) renders SPANISH
+// "Comprobar el precio de la entrada en el evento" (35–38× each, EN marker 0×). Matching
+// only the EN marker made the snapshot index EMPTY for 4 of 5 runs → those runs emitted
+// nothing but undated second-pass link_cards (the observed "7 events / 61 raw" low yield
+// and the later flood of undated events). Same locale shift on the multi-session trailer:
+// "+ 1 more" → "+ 2 más". Both marker variants + both trailers are now matched. The
+// Spanish snapshots also add a "Guarda este evento: … Compartir este evento: …" chrome
+// line AFTER each marker — harmless (we anchor on the marker and look BACKWARDS).
+//
+// MULTI-SNAPSHOT (same T154 pass): a re-normalize batch can hold SEVERAL page_snapshot
+// rows (one per scrape). The old code took the FIRST and ignored the rest — wrong anchor
+// for every other run's relative dates, and their cards were lost. Now EVERY snapshot in
+// the batch is processed with ITS OWN scrape date (newest first; identical title+date
+// re-emissions are de-duped, the upsert hash de-dupes across runs).
 //
 // We de-dupe cards by normalized title (the snapshot repeats each card 2–3×). Undated real
 // events still emit (start_date null) — a wrong date is worse than none (mirrors fever/
@@ -193,11 +210,21 @@ const DATE_START = new RegExp(
 // all; only the foreign cards carry one. Matches "GMT+1", "GMT+12", "EDT", "PDT", "CDT", …
 const FOREIGN_TZ = /\b(GMT[+-]\d{1,2}|UTC[+-]\d{1,2}|[ECMP][DS]T)\b/;
 
+// The per-card price-marker line, in BOTH locales Eventbrite actually served (see the
+// LOCALE BUG note above — EN on the 2026-06-20 scrape, ES on every scrape since).
+const CARD_MARKERS = new Set([
+  "Check ticket price on event",
+  "Comprobar el precio de la entrada en el evento",
+]);
+
+// Trailing multi-session badge on the date-expr, both locales: "+ 1 more" / "+ 2 más".
+const MORE_TRAILER = /\s*\+\s*\d+\s+(?:more|m[aá]s)\s*$/i;
+
 // PURE: index the page_snapshot by normalized title → { title, dateExpr, venue, online }.
-// Each card renders as "<title> <date-expr>\n<venue>\nCheck ticket price on event" for a
-// PHYSICAL Valencia card, or "<title> <date-expr+tz>\nCheck ticket price on event" (no
-// venue line) for an ONLINE / out-of-town card. We anchor on the "Check ticket price on
-// event" marker (present on EVERY card). The title+date line is i-2 when a venue line
+// Each card renders as "<title> <date-expr>\n<venue>\n<price-marker>" for a PHYSICAL
+// Valencia card, or "<title> <date-expr+tz>\n<price-marker>" (no venue line) for an
+// ONLINE / out-of-town card. We anchor on the price-marker line (present on EVERY card,
+// locale-dependent — see CARD_MARKERS). The title+date line is i-2 when a venue line
 // sits at i-1, or i-1 when the marker follows the title directly (online). We split the
 // date-expr off the END of the title line by its leading date token; the prefix is the
 // title. Online cards (foreign tz, no venue) are indexed with `online:true` so the caller
@@ -208,7 +235,7 @@ export function buildSnapshotIndex(snapshotText?: string | null): Map<string, Sn
   const lines = snapshotText.split("\n").map((l) => l.replace(/\s+/g, " ").trim());
 
   for (let i = 0; i < lines.length; i++) {
-    if (lines[i] !== "Check ticket price on event") continue;
+    if (!CARD_MARKERS.has(lines[i])) continue;
 
     // The title+date line is i-2 (a venue line at i-1) OR i-1 (marker follows title
     // directly, i.e. an online card with no venue). Prefer i-2 when it parses as a
@@ -226,9 +253,9 @@ export function buildSnapshotIndex(snapshotText?: string | null): Map<string, Sn
 
     const title = compact(m[1]) ?? "";
     if (!title) continue;
-    // date-expr = the matched token + the remainder; trim a trailing "+ N more".
+    // date-expr = the matched token + the remainder; trim a trailing "+ N more"/"+ N más".
     const rawDateExpr = compact(`${m[2]}${m[3]}`) ?? "";
-    const dateExpr = rawDateExpr.replace(/\s*\+\s*\d+\s+more\s*$/i, "");
+    const dateExpr = rawDateExpr.replace(MORE_TRAILER, "");
     // ONLINE = no venue line AND a foreign-tz time. Both must hold: a Valencia card
     // always has a venue line, and never carries a tz suffix.
     const online = venue === null && FOREIGN_TZ.test(rawDateExpr);
@@ -288,71 +315,80 @@ export function scrapeDateOf(item?: RawItem | null): Date | null {
 // We emit ONE event per distinct snapshot card, drop online/out-of-town cards, and attach
 // the canonical `/e/` deep link when a same-title link_card exists (else the listing URL).
 // DB-free (offline unit-testable). Relative date-exprs ("hoy"/"mañana"/weekday) resolve
-// against the SNAPSHOT'S SCRAPE DATE (Bug 4) — `today` is only the fallback when the
-// snapshot carries no scrape timestamp.
+// against EACH SNAPSHOT'S OWN SCRAPE DATE (Bug 4) — `today` is only the fallback when a
+// snapshot carries no scrape timestamp. A batch can hold SEVERAL snapshots (one per
+// scrape, e.g. a historical re-normalize): ALL are processed, newest first; a same
+// title+date re-emission from an older snapshot is skipped (newest card wins), while the
+// same recurring card resolving to DIFFERENT dates across scrapes ("Pub Crawl … hoy")
+// correctly emits one event per session date.
 export function buildEventbriteEvents(
   rows: RawItem[],
   today: Date = new Date(),
 ): Array<{ draft: EventInsert; sourceItemId: number }> {
-  // Find the snapshot row (the authoritative card source) and build the lookup once.
-  let snapshot = "";
-  let snapshotId = 0;
-  let snapshotImage: string | null = null;
-  let refDate = today;
+  // Collect EVERY snapshot row (the authoritative card sources), newest first.
+  const snaps: Array<{ id: number; text: string; image: string | null; refDate: Date }> = [];
   for (const item of rows) {
     const raw = parseRaw(item);
-    if (raw.kind === "page_snapshot") {
-      snapshot = item.raw_text || "";
-      snapshotId = item.id;
-      snapshotImage = raw.meta?.["og:image"] || null;
+    if (raw.kind !== "page_snapshot") continue;
+    snaps.push({
+      id: item.id,
+      text: item.raw_text || "",
+      image: raw.meta?.["og:image"] || null,
       // Bug 4: anchor relative dates to WHEN THIS PAGE WAS SCRAPED, not run-time now.
-      refDate = scrapeDateOf(item) ?? today;
-      break;
-    }
+      refDate: scrapeDateOf(item) ?? today,
+    });
   }
-  const cards = buildSnapshotIndex(snapshot);
+  snaps.sort((a, b) => b.id - a.id); // newest first — its card wins a title+date tie
   const links = buildLinkCardIndex(rows);
 
   const out: Array<{ draft: EventInsert; sourceItemId: number }> = [];
-  const emitted = new Set<string>();
+  const emitted = new Set<string>(); // titleKeys seen in ANY snapshot (gates pass 2)
+  const emittedDrafts = new Set<string>(); // titleKey|date — cross-snapshot de-dupe
 
-  for (const [key, card] of cards) {
-    if (card.online) continue; // global webinar / out-of-town job fair → drop
-    const title = card.title;
-    // Deterministic chrome guard (shared) — catches a stray nav/badge line that slipped
-    // through the card shape (e.g. "Explore more events").
-    if (isJunkCard(title, title, EVENTBRITE_NAME)) continue;
+  for (const snap of snaps) {
+    for (const [key, card] of buildSnapshotIndex(snap.text)) {
+      if (card.online) continue; // global webinar / out-of-town job fair → drop
+      const title = card.title;
+      // Deterministic chrome guard (shared) — catches a stray nav/badge line that slipped
+      // through the card shape (e.g. "Explore more events").
+      if (isJunkCard(title, title, EVENTBRITE_NAME)) continue;
 
-    const start = parseEventbriteDate(card.dateExpr, refDate);
-    const start_time = parseEventbriteTime(card.dateExpr);
+      const start = parseEventbriteDate(card.dateExpr, snap.refDate);
+      const start_time = parseEventbriteTime(card.dateExpr);
 
-    // Attach the canonical /e/ deep link when a same-title link_card exists; otherwise
-    // attribute the event to the snapshot row and link to the listing page.
-    const link = links.get(key);
-    const url = link?.url ?? SOURCE_URL;
-    const sourceItemId = link?.sourceItemId ?? snapshotId;
-    emitted.add(key);
+      emitted.add(key);
+      const draftKey = `${key}|${start ?? ""}`;
+      if (emittedDrafts.has(draftKey)) continue; // same card+date from an older snapshot
+      emittedDrafts.add(draftKey);
 
-    out.push({
-      sourceItemId,
-      draft: {
-        title: title.slice(0, 300),
-        category: "culture",
-        language: "es",
-        audience: "all",
-        start_date: start,
-        start_time,
-        venue_name: card.venue,
-        city: "Valencia",
-        country: "Spain",
-        url,
-        image_url: snapshotImage,
-        source: EVENTBRITE_SOURCE_KEY,
-        source_url: url,
-        raw_excerpt: title.slice(0, 1000),
-      },
-    });
+      // Attach the canonical /e/ deep link when a same-title link_card exists; otherwise
+      // attribute the event to the snapshot row and link to the listing page.
+      const link = links.get(key);
+      const url = link?.url ?? SOURCE_URL;
+      const sourceItemId = link?.sourceItemId ?? snap.id;
+
+      out.push({
+        sourceItemId,
+        draft: {
+          title: title.slice(0, 300),
+          category: "culture",
+          language: "es",
+          audience: "all",
+          start_date: start,
+          start_time,
+          venue_name: card.venue,
+          city: "Valencia",
+          country: "Spain",
+          url,
+          image_url: snap.image,
+          source: EVENTBRITE_SOURCE_KEY,
+          source_url: url,
+          raw_excerpt: title.slice(0, 1000),
+        },
+      });
+    }
   }
+  const snapshotImage = snaps[0]?.image ?? null;
 
   // Second pass: an `/e/` link_card whose title has NO snapshot card still emits, undated
   // (the snapshot can be truncated or the anchor scraped without a matching listing card).

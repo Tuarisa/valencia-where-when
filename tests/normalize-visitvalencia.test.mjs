@@ -2,19 +2,25 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 // T112-family — visitvalencia.com (web:visitvalencia) normalizer. Imports the ACTUAL
-// pure functions (DB-free: buildVisitvalenciaEvents skips the page_snapshot and never
-// touches the DB). Fixtures are FAITHFUL to the real live rows observed in
-// source_items: each event card's `title` == `raw_text` (title only, NO body, NO
-// date), `raw_json` is a bare `{"kind":"link_card",...}` (no meta/og:image), and the
-// detail URL is `/en/events-valencia/<slug>` (descriptive slug, NO date). The listing
-// also spills nav / `/shop/` / `/plan-your-trip/` chrome + the `music`/`festivities`
-// category indices — those MUST be dropped.
+// pure functions (DB-free). Fixtures are FAITHFUL to the real live rows observed in
+// source_items: each event card's `title` == `raw_text` (headline only; since the
+// Aug-2026 redesign the six highlight cards glue a trailing "DD/MM/YYYY - DD/MM/YYYY"
+// range into that text), `raw_json` is a bare `{"kind":"link_card",...}`, and the
+// detail URL is `/en/events-valencia/<slug>` (descriptive slug). The listing also
+// spills nav / `/shop/` / `/plan-your-trip/` chrome + the `music`/`festivities`
+// category indices — those MUST be dropped. T154: the published dates live in the
+// page_snapshot raw_text (three real markups) — snapshot excerpts below are verbatim
+// from live rows 1807 (2026-07-05), 1574 (2026-07-02) and 2289 (2026-08-07).
 
 import {
   VISITVALENCIA_SOURCE_KEY,
   isVisitvalenciaEventUrl,
   classifyVisitvalencia,
   buildVisitvalenciaEvents,
+  stripTrailingCardRange,
+  scanSnapshotDates,
+  extractVisitvalenciaDates,
+  lookupSnapshotRange,
 } from '../lib/pipeline/normalizers/visitvalencia.ts';
 
 const BASE = 'https://www.visitvalencia.com/en/events-valencia';
@@ -145,13 +151,11 @@ test('buildVisitvalenciaEvents: empty input yields no drafts', () => {
   assert.deepEqual(buildVisitvalenciaEvents([], TODAY), []);
 });
 
-// REAL-DATA REGRESSION (measured 2026-06-21 on the live local DB): the crawled
-// `web:visitvalencia` snapshot is 81 raw rows → 56 event drafts → 0 dated. This
-// reproduces the symptom and pins the HONEST finding: the source link_cards carry
-// ONLY a headline (title == raw_text), no body, no meta, no date — and the slug is
-// descriptive (no -YYYY-MM-DD). So `start_date` is legitimately NULL on EVERY row;
-// fabricating one from a bare year would be wrong (T140 / constitution: a wrong pin
-// is worse than none). The fixture below mirrors the real chrome/event mix.
+// REAL-DATA baseline: a batch whose snapshot carries NO date lines (the very first
+// 2026-06-21 capture shape). The link_cards alone carry no parseable date, so every
+// draft is legitimately NULL-dated — we never fabricate (T140 / constitution: a wrong
+// pin is worse than none). The fixture mirrors the real chrome/event mix. (The dated
+// path — snapshot ranges + glued card ranges — is covered by the T154 tests below.)
 test('buildVisitvalenciaEvents: real-shape mix → drops chrome, keeps events, 0 dated', () => {
   const rows = [
     // 1 page snapshot (the index itself)
@@ -189,7 +193,7 @@ test('buildVisitvalenciaEvents: real-shape mix → drops chrome, keeps events, 0
   assert.equal(out.length, 6);
   const ids = out.map((o) => o.sourceItemId).sort((a, b) => a - b);
   assert.deepEqual(ids, [741, 745, 756, 763, 768, 794]);
-  // HONEST FINDING: not one survivor carries a parseable date — the data has none.
+  // HONEST FINDING: with no dated snapshot in the batch, no survivor gets a date.
   const dated = out.filter((o) => o.draft.start_date !== null);
   assert.equal(dated.length, 0);
   // every survivor still carries the city/country/source defaults so it renders.
@@ -199,4 +203,221 @@ test('buildVisitvalenciaEvents: real-shape mix → drops chrome, keeps events, 0
     assert.equal(draft.source, 'web:visitvalencia');
     assert.equal(draft.start_date, null);
   }
+});
+
+// ---------------------------------------------------------------------------
+// T154 — dates DO live in the payload (real rows, live local DB, 2026-08-08)
+// ---------------------------------------------------------------------------
+
+test('stripTrailingCardRange: peels the Aug-2026 glued range off real card titles', () => {
+  // verbatim source_items 2311 + 2315 (title == raw_text)
+  const a = stripTrailingCardRange('Summer Amusement Park in Valencia 2026 23/06/2026 - 08/08/2026');
+  assert.equal(a.title, 'Summer Amusement Park in Valencia 2026');
+  assert.deepEqual(a.range, { start: '2026-06-23', end: '2026-08-08' });
+
+  const b = stripTrailingCardRange('Discover Valencia’s Holy Grail in a unique exhibition at the Almudín 30/10/2025 - 29/10/2026');
+  assert.equal(b.title, 'Discover Valencia’s Holy Grail in a unique exhibition at the Almudín');
+  assert.deepEqual(b.range, { start: '2025-10-30', end: '2026-10-29' });
+
+  // single-day range collapses end to null (verbatim source_items 2312)
+  const c = stripTrailingCardRange('Total solar eclipse in Valencia: August 12, 2026 12/08/2026 - 12/08/2026');
+  assert.equal(c.title, 'Total solar eclipse in Valencia: August 12, 2026');
+  assert.deepEqual(c.range, { start: '2026-08-12', end: null });
+
+  // a clean headline passes through untouched
+  const d = stripTrailingCardRange("Anselm Kiefer's exhibition comes to Valencia");
+  assert.equal(d.title, "Anselm Kiefer's exhibition comes to Valencia");
+  assert.equal(d.range, null);
+});
+
+// Verbatim excerpt of live snapshot row 1807 (2026-07-05): the pre-Aug "Monthly
+// Highlights" SPLIT form ("From \n date \n to date", with a category tag line above
+// the title) followed by the main-listing INLINE form ("From X to Y" one line).
+const SNAP_1807 = `
+ Monthly Highlights
+
+ exhibitions
+
+ Anselm Kiefer's exhibition comes to Valencia
+
+ From
+ 28/04/2026
+ to 25/10/2026
+
+ Anselm Kiefer's exhibition comes to Valencia
+
+ DATE
+
+ Search
+
+ Cabaret, the musical of the Kit Kat Klub in Valencia
+
+ From 02/07/2026 to 05/07/2026
+
+ Cabaret, the musical of the Kit Kat Klub in Valencia
+
+ «Music and Mathematics» Exhibition at CaixaForum in Valencia
+
+ From 11/12/2025 to 23/08/2026
+
+ «Music and Mathematics» Exhibition at CaixaForum in Valencia
+`;
+
+// Verbatim excerpt of live snapshot row 2289 (2026-08-07 redesign): COMPACT form.
+const SNAP_2289 = `
+ Monthly Highlights
+
+ Summer Amusement Park in Valencia 2026
+
+ 23/06/2026 - 08/08/2026
+
+ Exhibitions in València: everything you can see in August
+
+ 27/07/2026 - 31/08/2026
+
+ DATE
+
+ Search
+
+ Concerts at Loco Club, Valencia's most eclectic venue
+
+ Concerts at Loco Club, Valencia's most eclectic venue
+`;
+
+// Verbatim excerpt of live snapshot row 1574 (2026-07-02): the rare BARE single-date
+// line directly under a title.
+const SNAP_1574 = `
+ Stand-up comedy and comedy nights at the July Fair in Valencia
+
+ From 02/07/2026 to 02/07/2026
+
+ Stand-up comedy and comedy nights at the July Fair in Valencia
+
+ Experience the passion of flamenco at Teatre Talia
+
+ 02/07/2026
+
+ Experience the passion of flamenco at Teatre Talia
+`;
+
+test('scanSnapshotDates: parses all three real markups + the bare single date', () => {
+  const map = new Map();
+  scanSnapshotDates(SNAP_1807, map);
+  // split form pairs with the title ABOVE it (not the category tag "exhibitions")
+  assert.deepEqual(map.get('anselm kiefers exhibition comes to valencia'),
+    { start: '2026-04-28', end: '2026-10-25' });
+  // inline form, first listing entry — "DATE"/"Search" chrome is never the title
+  assert.deepEqual(map.get('cabaret the musical of the kit kat klub in valencia'),
+    { start: '2026-07-02', end: '2026-07-05' });
+  assert.deepEqual(map.get('music and mathematics exhibition at caixaforum in valencia'),
+    { start: '2025-12-11', end: '2026-08-23' });
+
+  scanSnapshotDates(SNAP_2289, map);
+  assert.deepEqual(map.get('summer amusement park in valencia 2026'),
+    { start: '2026-06-23', end: '2026-08-08' });
+  assert.deepEqual(map.get('exhibitions in valencia everything you can see in august'),
+    { start: '2026-07-27', end: '2026-08-31' });
+  // undated listing entries below "DATE/Search" produce NO entry
+  assert.equal(map.has('concerts at loco club valencias most eclectic venue'), false);
+
+  scanSnapshotDates(SNAP_1574, map);
+  // "From X to X" single-day → end collapses to null
+  assert.deepEqual(map.get('stand up comedy and comedy nights at the july fair in valencia'),
+    { start: '2026-07-02', end: null });
+  // bare date line under a title
+  assert.deepEqual(map.get('experience the passion of flamenco at teatre talia'),
+    { start: '2026-07-02', end: null });
+});
+
+test('extractVisitvalenciaDates: later snapshot overrides an earlier range per title', () => {
+  const snap = (id, text) => ({
+    id,
+    source_key: 'web:visitvalencia',
+    raw_text: text,
+    raw_json: '{"kind":"page_snapshot","source_page":"https://www.visitvalencia.com/en/events-valencia"}',
+    url: BASE,
+  });
+  // older capture says 28/04–25/10; a (hypothetical) newer one extends to 30/11 —
+  // freshest capture must win. Rows given out of order to prove the id sort.
+  const newer = snap(2289, `\n Anselm Kiefer's exhibition comes to Valencia \n\n 28/04/2026 - 30/11/2026\n`);
+  const older = snap(1807, SNAP_1807);
+  const map = extractVisitvalenciaDates([newer, older]);
+  assert.deepEqual(map.get('anselm kiefers exhibition comes to valencia'),
+    { start: '2026-04-28', end: '2026-11-30' });
+  // titles only the OLDER snapshot dated are kept (a real published range)
+  assert.deepEqual(map.get('cabaret the musical of the kit kat klub in valencia'),
+    { start: '2026-07-02', end: '2026-07-05' });
+});
+
+test('lookupSnapshotRange: exact + conservative containment, no fuzzy overreach', () => {
+  const map = new Map();
+  scanSnapshotDates(SNAP_1807, map);
+  // exact normalized-title hit (punctuation/accents fold away)
+  assert.deepEqual(lookupSnapshotRange("Anselm Kiefer's exhibition comes to Valencia", map),
+    { start: '2026-04-28', end: '2026-10-25' });
+  // REAL miss we accept: the Aug listing renamed Playmobil's venue ("Military
+  // Historical Museum of València" vs the dated "Military History Museum in
+  // Valencia") — neither normalized title contains the other, so NO date is
+  // attached (a wrong date is worse than none).
+  assert.equal(lookupSnapshotRange('Playmobil 2026 Exhibition at the Military Historical Museum of València', map), null);
+  assert.equal(lookupSnapshotRange('A totally unrelated evergreen guide', map), null);
+});
+
+test('buildVisitvalenciaEvents: snapshot ranges date the matching cards (real shapes)', () => {
+  const rows = [
+    {
+      id: 1807,
+      source_key: 'web:visitvalencia',
+      title: 'Valencia Events | Events in Valencia | Upcoming Events',
+      raw_text: SNAP_1807,
+      raw_json: '{"kind":"page_snapshot","source_page":"https://www.visitvalencia.com/en/events-valencia"}',
+      url: BASE,
+    },
+    card(741, "Anselm Kiefer's exhibition comes to Valencia", 'anselm-kiefers-exhibition-comes-valencia'),
+    card(746, '«Music and Mathematics» Exhibition at CaixaForum in Valencia', 'music-and-mathematics-exhibition-caixaforum-valencia'),
+    // a card the snapshot never dated stays honestly null
+    card(778, '«Alegría - In A New Light» by Cirque du Soleil lands in Valencia', 'alegria-new-light-cirque-du-soleil-lands-valencia'),
+  ];
+  const out = buildVisitvalenciaEvents(rows, TODAY);
+  assert.equal(out.length, 3);
+
+  const kiefer = out.find((o) => o.sourceItemId === 741).draft;
+  assert.equal(kiefer.start_date, '2026-04-28');
+  assert.equal(kiefer.end_date, '2026-10-25');
+
+  const caixa = out.find((o) => o.sourceItemId === 746).draft;
+  assert.equal(caixa.start_date, '2025-12-11');
+  assert.equal(caixa.end_date, '2026-08-23');
+
+  const alegria = out.find((o) => o.sourceItemId === 778).draft;
+  assert.equal(alegria.start_date, null);
+  assert.equal(alegria.end_date, null);
+});
+
+// REGRESSION (live events 27450–27456, 2026-08-07 ingest): the glued trailing range
+// must (1) clean the stored title, (2) beat parseEventDate — which misread
+// "…you can see in August 27/07/2026 - 31/08/2026" as month-first "August 27".
+test('buildVisitvalenciaEvents: glued card range → clean title + correct start/end', () => {
+  const rows = [
+    // verbatim source_items 2314
+    card(2314, 'Exhibitions in València: everything you can see in August 27/07/2026 - 31/08/2026',
+      'exhibitions-valencia-everything-you-can-see-august'),
+    // verbatim source_items 2311
+    card(2311, 'Summer Amusement Park in Valencia 2026 23/06/2026 - 08/08/2026',
+      'valencia-summer-amusement-fair-returns'),
+  ];
+  const out = buildVisitvalenciaEvents(rows, new Date('2026-08-08T00:00:00Z'));
+  assert.equal(out.length, 2);
+
+  const expo = out.find((o) => o.sourceItemId === 2314).draft;
+  assert.equal(expo.title, 'Exhibitions in València: everything you can see in August');
+  assert.equal(expo.start_date, '2026-07-27'); // NOT 2026-08-27
+  assert.equal(expo.end_date, '2026-08-31');
+  // the range is peeled from description/raw_excerpt too (raw_text == title live)
+  assert.equal(expo.description, 'Exhibitions in València: everything you can see in August');
+
+  const funfair = out.find((o) => o.sourceItemId === 2311).draft;
+  assert.equal(funfair.title, 'Summer Amusement Park in Valencia 2026');
+  assert.equal(funfair.start_date, '2026-06-23');
+  assert.equal(funfair.end_date, '2026-08-08');
 });

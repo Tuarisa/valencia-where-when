@@ -316,3 +316,162 @@ test("buildEventbriteEvents: no scrape timestamp → falls back to `today` (back
   const byTitle = Object.fromEntries(events.map((e) => [e.draft.title, e.draft]));
   assert.equal(byTitle["Saturday Language Exchange & Party"].start_date, "2026-06-20");
 });
+
+// ================= T154: the SPANISH-locale snapshot (real rows 1114/1424/1724/2038) =================
+// Eventbrite switched the served locale after the first scrape: the per-card price-marker
+// became "Comprobar el precio de la entrada en el evento" (EN marker: 0 occurrences), the
+// multi-session trailer became "+ N más", and a "Guarda este evento: … Compartir este
+// evento: …" chrome line follows every marker. Matching only the EN marker made the
+// snapshot index EMPTY for 4 of 5 live runs → only undated second-pass link_cards emitted.
+// Every line below is verbatim from the live id=2038 raw_text (scraped Fri 2026-08-07).
+
+const ES_SNAPSHOT_TEXT = [
+  "Eventos, calendario y entradas en Valencia, España | Eventbrite",
+  "Explorar más eventos",
+  // physical cards: title+date / venue / marker / chrome
+  "Pub Crawl Valencia by Mad Party Crew hoy a las 22:30 + 2 más",
+  "La Cola Del Pez",
+  "Comprobar el precio de la entrada en el evento",
+  "Guarda este evento: Pub Crawl Valencia by Mad Party Crew Compartir este evento: Pub Crawl Valencia by Mad Party Crew",
+  "Jazz at Loom. Every Sunday jazz Jam session. domingo a las 20:30",
+  "LOOM VLC",
+  "Comprobar el precio de la entrada en el evento",
+  "Guarda este evento: Jazz at Loom. Every Sunday jazz Jam session. Compartir este evento: Jazz at Loom. Every Sunday jazz Jam session.",
+  "FRANK HURRICANE (EE.UU) Thu, Sep 3, 8:00 PM",
+  "Bar Centro Excursionista",
+  "Comprobar el precio de la entrada en el evento",
+  "Guarda este evento: FRANK HURRICANE (EE.UU) Compartir este evento: FRANK HURRICANE (EE.UU)",
+  "Sip & Thrift mañana a las 12:00",
+  "Monette pastisseria & café",
+  "Comprobar el precio de la entrada en el evento",
+  "Guarda este evento: Sip & Thrift Compartir este evento: Sip & Thrift",
+  // a DATELESS card (title + street address, no date-expr, no venue line) → NOT indexed
+  "MUJER BRILLANTE C/ de Cadis, 77",
+  "Comprobar el precio de la entrada en el evento",
+  "Guarda este evento: MUJER BRILLANTE Compartir este evento: MUJER BRILLANTE",
+  // repeated card (the live page renders each 2–3×) — must de-dupe by title
+  "Pub Crawl Valencia by Mad Party Crew hoy a las 22:30 + 2 más",
+  "La Cola Del Pez",
+  "Comprobar el precio de la entrada en el evento",
+  // ONLINE section: no venue line + foreign tz → dropped
+  "Online Events",
+  "Fellowship Day 2026 | Virtual Workshops mañana a las 10:00 PDT",
+  "Comprobar el precio de la entrada en el evento",
+  "Guarda este evento: Fellowship Day 2026 | Virtual Workshops Compartir este evento: Fellowship Day 2026 | Virtual Workshops",
+  "Underwater Wildlife Photography Essentials with Evie Wilderness | Online Tue, Sep 1, 6:30 PM GMT+10",
+  "Comprobar el precio de la entrada en el evento",
+  "The RECESS CRUISE on Labor Day Weekend 2026! Sat, Sep 5, 4:00 PM EDT",
+  "Comprobar el precio de la entrada en el evento",
+].join("\n");
+
+test("buildSnapshotIndex: SPANISH marker + '+ N más' trailer (locale regression)", () => {
+  const idx = buildSnapshotIndex(ES_SNAPSHOT_TEXT);
+
+  const pub = idx.get("pub crawl valencia by mad party crew");
+  assert.ok(pub, "Spanish-marker card indexed");
+  assert.equal(pub.dateExpr, "hoy a las 22:30"); // "+ 2 más" trimmed
+  assert.equal(pub.venue, "La Cola Del Pez");
+  assert.equal(pub.online, false);
+
+  const frank = idx.get("frank hurricane (ee.uu)");
+  assert.ok(frank, "EN-absolute date inside the ES page still indexed");
+  assert.equal(frank.dateExpr, "Thu, Sep 3, 8:00 PM");
+  assert.equal(frank.venue, "Bar Centro Excursionista");
+
+  // Dateless address card → no date token → not indexed (second pass may emit undated).
+  assert.equal(idx.get("mujer brillante c/ de cadis, 77"), undefined);
+  assert.equal(idx.get("mujer brillante"), undefined);
+
+  // Online cards flagged (foreign tz, no venue) — including GMT+10.
+  assert.equal(idx.get("fellowship day 2026 | virtual workshops")?.online, true);
+  assert.equal(
+    idx.get("underwater wildlife photography essentials with evie wilderness | online")?.online,
+    true,
+  );
+  assert.equal(idx.get("the recess cruise on labor day weekend 2026!")?.online, true);
+});
+
+test("buildEventbriteEvents: Spanish snapshot emits dated Valencia cards, drops online", () => {
+  const rows = [
+    {
+      id: 2038,
+      source_key: EVENTBRITE_SOURCE_KEY,
+      item_type: "snapshot",
+      title: "Eventos, calendario y entradas en Valencia, España | Eventbrite",
+      url: "https://www.eventbrite.es/d/spain--valencia/events/",
+      raw_text: ES_SNAPSHOT_TEXT,
+      raw_json: JSON.stringify({ kind: "page_snapshot" }),
+      first_seen: "2026-08-07T05:33:00Z", // real scrape day: FRIDAY 2026-08-07
+    },
+    linkCard(2040, "Pub Crawl Valencia by Mad Party Crew", "https://www.eventbrite.es/e/entradas-pub-crawl-valencia-by-mad-party-crew-1777986297879?aff=x"),
+  ];
+  const events = buildEventbriteEvents(rows, new Date(2026, 7, 8)); // run a day later
+  const byTitle = Object.fromEntries(events.map((e) => [e.draft.title, e.draft]));
+
+  assert.deepEqual(Object.keys(byTitle).sort(), [
+    "FRANK HURRICANE (EE.UU)",
+    "Jazz at Loom. Every Sunday jazz Jam session.",
+    "Pub Crawl Valencia by Mad Party Crew",
+    "Sip & Thrift",
+  ]);
+
+  // hoy → the SCRAPE Friday, not the run day.
+  assert.equal(byTitle["Pub Crawl Valencia by Mad Party Crew"].start_date, "2026-08-07");
+  assert.equal(byTitle["Pub Crawl Valencia by Mad Party Crew"].start_time, "22:30");
+  assert.ok(/\/e\//.test(byTitle["Pub Crawl Valencia by Mad Party Crew"].url), "/e/ link attached");
+  // domingo → next Sunday on/after Fri 2026-08-07 = 2026-08-09.
+  assert.equal(byTitle["Jazz at Loom. Every Sunday jazz Jam session."].start_date, "2026-08-09");
+  // mañana → Sat 2026-08-08.
+  assert.equal(byTitle["Sip & Thrift"].start_date, "2026-08-08");
+  // English absolute inside the Spanish page.
+  assert.equal(byTitle["FRANK HURRICANE (EE.UU)"].start_date, "2026-09-03");
+  assert.equal(byTitle["FRANK HURRICANE (EE.UU)"].start_time, "20:00");
+});
+
+// ============ T154: a batch with SEVERAL snapshots — each anchors to ITS OWN scrape date ============
+
+test("buildEventbriteEvents: multi-snapshot batch — per-snapshot refDate, title+date de-dupe", () => {
+  const esSnap = {
+    id: 2038,
+    source_key: EVENTBRITE_SOURCE_KEY,
+    item_type: "snapshot",
+    title: "Eventos | Eventbrite",
+    url: "https://www.eventbrite.es/d/spain--valencia/events/",
+    raw_text: ES_SNAPSHOT_TEXT,
+    raw_json: JSON.stringify({ kind: "page_snapshot" }),
+    first_seen: "2026-08-07T05:33:00Z", // Friday
+  };
+  const enSnap = {
+    id: 247,
+    source_key: EVENTBRITE_SOURCE_KEY,
+    item_type: "snapshot",
+    title: "Eventos | Eventbrite",
+    url: "https://www.eventbrite.es/d/spain--valencia/events/",
+    raw_text: SNAPSHOT_TEXT, // the English 2026-06-20 snapshot fixture
+    raw_json: JSON.stringify({ kind: "page_snapshot" }),
+    first_seen: "2026-06-20T22:28:58Z", // Saturday
+  };
+  const events = buildEventbriteEvents([esSnap, enSnap], new Date(2026, 7, 8));
+
+  // "Pub Crawl … hoy" appears in BOTH snapshots → TWO events, each on its own scrape day.
+  const pub = events.filter((e) => e.draft.title === "Pub Crawl Valencia by Mad Party Crew");
+  assert.deepEqual(pub.map((e) => e.draft.start_date).sort(), ["2026-06-20", "2026-08-07"]);
+  // …and each keeps its own snapshot's venue (newest first).
+  assert.equal(pub.find((e) => e.draft.start_date === "2026-08-07").draft.venue_name, "La Cola Del Pez");
+  assert.equal(pub.find((e) => e.draft.start_date === "2026-06-20").draft.venue_name, "Bear Club - Valencia");
+
+  // The OLD snapshot's cards were NOT lost (pre-fix: only the first-found snapshot ran).
+  const coral = events.find((e) => e.draft.title === "Música coral en directo");
+  assert.ok(coral, "older snapshot's card still emitted");
+  assert.equal(coral.draft.start_date, "2026-06-27");
+
+  // Weekday cards anchor to EACH snapshot's own scrape day: "Jazz … domingo/mañana".
+  const jazz = events.filter((e) => e.draft.title === "Jazz at Loom. Every Sunday jazz Jam session.");
+  assert.deepEqual(jazz.map((e) => e.draft.start_date).sort(), ["2026-06-21", "2026-08-09"]);
+  for (const j of jazz) assert.equal(weekday(j.draft.start_date), "Sun");
+
+  // No online card leaked from either snapshot.
+  for (const e of events) {
+    assert.ok(!/fellowship|recess cruise|underwater|career fair|pda for educators/i.test(e.draft.title));
+  }
+});

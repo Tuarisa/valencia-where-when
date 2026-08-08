@@ -287,6 +287,118 @@ async function parseHemisferic(source: any, days = 14, deadlineMs?: number): Pro
   return items;
 }
 
+// ── T201 — lacotorra FULL-TEXT detail pages ─────────────────────────────────
+// The lacotorra.io/events index renders each event with a SHORT teaser ("…"-cut),
+// while the per-event detail page (`/events/<slug>`, captured as `event_links` by
+// T190) carries the FULL article text in a fixed, deterministic shape:
+//   <h1 class="h2">Title</h1> … <section class="descr-section"><p>…</p>…</section>
+// plus an event-SPECIFIC og:image (the index og:image is one generic banner).
+// This bespoke self-fetch parser (parseHemisferic pattern) ingests the index via
+// `parseGeneric` as before, then fetches ONLY the detail pages we don't already
+// hold (`item_type='event_detail'` rows keyed by URL), bounded by a per-run cap,
+// polite pacing and the shared tick deadline (T200). The normalizer prefers the
+// detail row's full text over the index teaser. Deterministic (T140 — no LLM).
+const LACOTORRA_DETAIL_MAX_PER_RUN = 60; // index holds ~56 events; steady-state ≈ new ones only
+const LACOTORRA_DETAIL_PACE_MS = 250; // polite gap between detail fetches
+const LACOTORRA_DETAIL_TIMEOUT_MS = 10_000; // one slow article must not eat the tick
+
+const LACOTORRA_H1_RE = /<h1[^>]*>([\s\S]*?)<\/h1>/i;
+const LACOTORRA_DESCR_RE =
+  /<section[^>]*class=["'][^"']*descr-section[^"']*["'][^>]*>([\s\S]*?)<\/section>/i;
+
+const lacotorraSleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// PURE (exported for tests): extract the full article text + title + meta from a
+// lacotorra event DETAIL page. `full_text` keeps paragraph breaks (stripTags turns
+// </p> into newlines); a trailing photo-credit line ("Фото: …") is dropped — it is
+// chrome, not event description. Falls back to og:description (a summary — still
+// better than the index teaser) when the descr-section is missing.
+export function extractLacotorraDetail(html: string): {
+  title: string | null;
+  full_text: string | null;
+  meta: Record<string, string>;
+} {
+  const meta = pageMeta(html);
+  const h1 = LACOTORRA_H1_RE.exec(html);
+  const title = (h1 ? compact(stripTags(h1[1])) : null) || meta.title || null;
+  let full: string | null = null;
+  const sec = LACOTORRA_DESCR_RE.exec(html);
+  if (sec) {
+    const lines = stripTags(sec[1])
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    while (lines.length && /^Фото:/i.test(lines[lines.length - 1])) lines.pop();
+    full = lines.join("\n\n") || null;
+  }
+  if (!full) full = meta["og:description"] || meta.description || null;
+  return { title, full_text: full, meta };
+}
+
+// lacotorra self-fetch parser: index snapshot + link_cards exactly as the generic
+// web parser produced them before, PLUS one `event_detail` RawItem per newly seen
+// detail URL. Detail rows are keyed by their URL (`external_id`), so the "already
+// fetched" check is a cheap DB lookup and re-runs only fetch NEW events. A fetched
+// page that yields NO text is still stored as a stub (prevents eternal refetching);
+// network errors are NOT stored so the next run retries. Honours `deadlineMs`.
+async function parseLacotorra(source: any, deadlineMs?: number): Promise<RawItem[]> {
+  // Index page — self-fetch (no conditional GET, mirroring parseHemisferic; the
+  // dispatcher's cadence gates how often we land here).
+  const res = await fetchText(source.url, undefined, clampedFetchTimeout(deadlineMs));
+  if (res.status !== 200 || !res.body) return [];
+  const items = parseGeneric(source, res.body);
+
+  const snapshot = items.find((i) => i.raw_json?.kind === "page_snapshot");
+  const links: Array<{ title: string; url: string }> = snapshot?.raw_json?.event_links ?? [];
+  const detailUrls: string[] = [];
+  for (const l of links) {
+    try {
+      const u = new URL(l.url);
+      // Only true per-event pages (/events/<slug>) — the captured links also carry
+      // chrome (privacy-policy) and category filters.
+      if (u.host === new URL(source.url).host && /^\/events\/[^/]+$/.test(u.pathname)) {
+        if (!detailUrls.includes(l.url)) detailUrls.push(l.url);
+      }
+    } catch {
+      /* malformed href — skip */
+    }
+  }
+  if (detailUrls.length === 0) return items;
+
+  const existingRows = (await sql`SELECT external_id FROM source_items
+    WHERE source_key = ${source.key} AND item_type = 'event_detail'`) as any[];
+  const existing = new Set(existingRows.map((r) => r.external_id));
+  const missing = detailUrls
+    .filter((u) => !existing.has(u))
+    .slice(0, LACOTORRA_DETAIL_MAX_PER_RUN);
+
+  for (const url of missing) {
+    if (deadlineMs != null && Date.now() >= deadlineMs) break; // T200: stop at the tick budget
+    try {
+      const page = await fetchText(
+        url,
+        undefined,
+        Math.min(LACOTORRA_DETAIL_TIMEOUT_MS, clampedFetchTimeout(deadlineMs)),
+      );
+      if (page.status !== 200 || !page.body) continue; // transient → retry next run
+      const detail = extractLacotorraDetail(page.body);
+      items.push({
+        source_key: source.key,
+        external_id: url,
+        item_type: "event_detail",
+        title: detail.title ? detail.title.slice(0, 200) : null,
+        url,
+        raw_text: detail.full_text ? detail.full_text.slice(0, 12000) : null,
+        raw_json: { kind: "event_detail", source_page: source.url, meta: detail.meta },
+      });
+    } catch {
+      /* fail-soft per page — the URL stays missing and retries next run */
+    }
+    await lacotorraSleep(LACOTORRA_DETAIL_PACE_MS);
+  }
+  return items;
+}
+
 // Parser registry (sub-area A, research A1) — mirrors NORMALIZER_REGISTRY. Replaces
 // the hardcoded if/else parser dispatch in ingestSource so adding a source is a
 // registry entry, not a core edit ("add a source" contract, A2). A parser turns a
@@ -301,6 +413,8 @@ export interface ParserEntry {
 
 export const PARSER_REGISTRY: Map<string, ParserEntry> = new Map<string, ParserEntry>([
   ["api:hemisferic", { parse: (source, _body, deadlineMs) => parseHemisferic(source, 14, deadlineMs), selfFetch: true }],
+  // T201: bespoke lacotorra parser — index snapshot + full-text detail pages.
+  ["web:lacotorra", { parse: (source, _body, deadlineMs) => parseLacotorra(source, deadlineMs), selfFetch: true }],
   ["telegram", { parse: (source, body) => parseTelegram(source, body) }],
   ["web", { parse: (source, body) => parseGeneric(source, body) }],
   ["ticketing", { parse: (source, body) => parseGeneric(source, body) }],

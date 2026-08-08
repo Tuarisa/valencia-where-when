@@ -22,17 +22,27 @@ import type { RawItem } from "./types";
 //     i.e. "<title> en <city> <weekday> <DD> de <month> de <YYYY>". The URL slug
 //     carries ONLY a numeric id (…-1014366), never a date — so the title is the
 //     single reliable date source (UNLIKE worldafisha, whose slug ends in the date).
-//   • the undated "MÁS BUSCADOS" rows ("Quevedo - Madrid") have no parseable date;
-//     they fall through to start_date=null.
+//   • the undated "MÁS BUSCADOS" rows ("Quevedo - Madrid") have no parseable date.
+//   • T154, seen on later ticks: the ACTUAL Valencia weekend block flattens to
+//     UNDATED anchors ("Kany García en Valencia") while the same concert reappears
+//     in the dated highlights block with the SAME URL ("Kany García en Valencia
+//     viernes 3 de julio de 2026", …/kany-garcia-valencia-1014274 in both). The URL
+//     id is per-concert-instance (a "Segunda Fecha" gets its own id), so a dated
+//     twin row is a safe, deterministic date source for its undated sibling.
 //   • venue/price are NOT present in these flattened cards (raw_text == title).
 //
 // We deterministically (T140 — JS before LLM): drop nav/chrome/news/junk rows,
 // CITY-FILTER to Valencia (the page is Valencia-scoped but the highlight blocks are
 // national — a Madrid concert must not pollute a Valencia feed), parse the Spanish
-// date out of the title, and STRIP the trailing "en <city> … <YYYY>" tail so the
-// event title is just the artist/festival name. Every raw row is marked normalized
-// append-only; an unparseable draft is skipped, never thrown (constitution:
-// pipeline is fail-soft + append-only).
+// date out of the title — RECOVERING a missing date from a same-URL dated twin row
+// in the batch (never fabricated: it is this source's own printed date for the same
+// concert id) — and STRIP the trailing "en <city> … <YYYY>" date tail AND the bare
+// "en/− <Valencia-location>" tail so BOTH twins clean to the same artist/festival
+// title (identical title+date ⇒ one upsert hash ⇒ one event, not two). A row still
+// dateless after recovery is NOT emitted (T154 rule: a missing date means no event —
+// an undated draft was pure duplicate junk downstream). Every raw row is marked
+// normalized append-only; an unparseable draft is skipped, never thrown
+// (constitution: pipeline is fail-soft + append-only).
 
 export const LAGANZUA_SOURCE_KEY = "web:laganzua";
 const SOURCE_URL = "https://www.laganzua.net/conciertos/valencia/este-fin-de-semana-2026";
@@ -97,12 +107,38 @@ export function isValenciaTitle(title?: string | null): boolean {
   return VALENCIA_PROVINCE_TAIL.test(t) || VALENCIA_CITY.test(t);
 }
 
+// PURE (T154): is a title TAIL a bare Valencia-area location phrase? True for
+// "Valencia" / "València", "Torrent, Valencia", "Castellón, Valencia",
+// "Gandía, Valencia" — the exact tails the live undated weekend anchors print after
+// " en " / " - ". Deliberately strict: short, digit-free, and it must name Valencia
+// (city regex or ", València" province suffix) so an artist name or a national city
+// ("Madrid", "Segunda Fecha") is never mistaken for a strippable location.
+function isValenciaLocationTail(tail?: string | null): boolean {
+  const t = compact(tail) ?? "";
+  if (!t || t.length > 60 || /\d/.test(t)) return false;
+  return VALENCIA_CITY.test(t) || /,\s*val[èe]ncia\s*$/i.test(t);
+}
+
 // PURE: strip the trailing "en <city> … <DD> de <month> de <YYYY>" date tail off a
-// La Ganzúa title, leaving just the show/festival name. When no tail is present the
-// title is returned unchanged (compacted). Never returns empty for a non-empty input.
+// La Ganzúa title, leaving just the show/festival name. T154: ALSO strips the bare
+// (undated) location tails the real weekend-block anchors carry — "… en Valencia",
+// "… en Torrent, Valencia", "… - Valencia" — but ONLY when the tail is a
+// Valencia-area location (so "Quevedo - Madrid" and date-less artist names are
+// untouched). This makes an undated anchor clean to the SAME title as its dated
+// highlight twin ("Kany García en Valencia" ≡ "Kany García …de julio de 2026" →
+// "Kany García"), which is what lets the two rows share one event hash. When no
+// tail is present the title is returned unchanged (compacted). Never returns empty
+// for a non-empty input.
 export function cleanLaganzuaTitle(title?: string | null): string {
   const t = compact(title) ?? "";
-  const stripped = t.replace(DATE_TAIL, "").trim();
+  let stripped = t.replace(DATE_TAIL, "").trim();
+  // bare "<head> en <Valencia-location>" tail (greedy head → the LAST " en " wins)
+  const en = /^(.*\S)\s+en\s+(.+)$/i.exec(stripped);
+  if (en && isValenciaLocationTail(en[2])) stripped = en[1].trim();
+  // bare "<head> - <Valencia-location>" tail (live grammar: "Alejandro Sanz - Valencia",
+  // "El Último De La Fila - Segunda Fecha - Valencia" → strip only the last segment)
+  const dash = /^(.*\S)\s+-\s+(.+)$/.exec(stripped);
+  if (dash && isValenciaLocationTail(dash[2])) stripped = dash[1].trim();
   return stripped || t;
 }
 
@@ -118,16 +154,41 @@ function isConcertUrl(url?: string | null): boolean {
   return /\/conciertos\/[^/]+-\d{4,}\/?$/i.test(url.split(/[?#]/)[0]);
 }
 
+// PURE (T154): canonical join key for a concert listing URL (query/hash and a
+// trailing slash stripped, lowercased) — the undated weekend anchor and its dated
+// highlight twin print byte-identical hrefs, but normalize defensively anyway.
+function concertUrlKey(url?: string | null): string {
+  if (!url) return "";
+  return url.split(/[?#]/)[0].replace(/\/+$/, "").toLowerCase();
+}
+
 // PURE: turn pending La Ganzúa raw rows into Valencia event drafts. Drops the page
 // snapshot, nav/chrome/news/junk rows, non-concert URLs, and non-Valencia listings;
-// parses the Spanish date out of the title and cleans the title tail. DB-free so it
+// parses the Spanish date out of the title (falling back to a same-URL dated twin
+// row — T154) and cleans the title tail. A row still dateless after both is NOT
+// emitted (no date → no event; dates are never fabricated). DB-free so it
 // unit-tests without a connection.
 export function buildLaganzuaEvents(
   rows: RawItem[],
   today: Date = new Date(),
 ): Array<{ draft: EventInsert; sourceItemId: number }> {
+  // Deterministic order regardless of SELECT order: ascending id, so on a URL-key
+  // collision the FRESHER (higher-id) row's printed date wins the map slot.
+  const sorted = [...rows].sort((a, b) => a.id - b.id);
+
+  // PASS 1 (T154): concert URL → date printed in ANY row's title. The weekend
+  // block's undated anchor and the dated highlights card share the same per-concert
+  // URL id, so this recovers the source's OWN date for the undated sibling.
+  const dateByUrl = new Map<string, string>();
+  for (const item of sorted) {
+    if (parseRaw(item).kind === "page_snapshot") continue;
+    if (!isConcertUrl(item.url)) continue;
+    const d = parseEventDate(compact(item.title), today);
+    if (d) dateByUrl.set(concertUrlKey(item.url), d);
+  }
+
   const out: Array<{ draft: EventInsert; sourceItemId: number }> = [];
-  for (const item of rows) {
+  for (const item of sorted) {
     const raw = parseRaw(item);
     // The full-page snapshot is the index, not an event — skip it.
     if (raw.kind === "page_snapshot") continue;
@@ -148,7 +209,13 @@ export function buildLaganzuaEvents(
     // national. Keep only rows whose title names a Valencia-area city.
     if (!isValenciaTitle(rawTitle)) continue;
 
-    const start = parseEventDate(rawTitle, today);
+    // Date: from THIS title, else from a same-URL dated twin in the batch. Still
+    // nothing → drop the row (T154: an undated draft is unusable duplicate junk —
+    // and we never invent a date).
+    const start =
+      parseEventDate(rawTitle, today) ?? dateByUrl.get(concertUrlKey(item.url)) ?? null;
+    if (!start) continue;
+
     const title = cleanLaganzuaTitle(rawTitle);
     if (!title) continue;
 

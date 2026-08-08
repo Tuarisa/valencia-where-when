@@ -146,7 +146,11 @@ const NON_CV_STEMS: string[] = [
   "лас-пальмас", "пальмас", "palmas", "canaria",
   "севиль", "sevilla", "seville",
   "малаг", "málaga", "malaga",
-  "сарагос", "zaragoza", "пуэрто",
+  // NOTE (T154 real-data fix): a bare "пуэрто" used to sit here and mis-dropped the
+  // REAL CV event "Сагунто и Пуэрто-де-Сагунто отпразднуют дни святых покровителей"
+  // (Puerto de Sagunto is Valencia province). "Puerto" is far too generic for a
+  // non-CV signal — the Canary/other cases are already covered by their own stems.
+  "сарагос", "zaragoza",
 ];
 
 function hasStem(haystack: string, stems: string[]): boolean {
@@ -194,6 +198,11 @@ const HEADLINER_ALLOWLIST: string[] = [
   "сирк дю солей",
   "cirque",
   "цирк дю солей",
+  // Seen in the REAL 2026-08 index ("Концерт The Weeknd в Мадриде/Барселоне") —
+  // unambiguously a major international stadium tour, same tier as the user's
+  // examples. Latin only: the RU "уикенд" is a generic word ("weekend") and would
+  // false-keep ordinary non-CV events (conservative rule: when unsure, DROP).
+  "the weeknd",
 ];
 
 // PURE: does the title name a curated international headliner?
@@ -201,6 +210,44 @@ export function isHeadliner(title?: string | null): boolean {
   const t = (title ?? "").toLowerCase();
   if (!t) return false;
   return HEADLINER_ALLOWLIST.some((name) => t.includes(name));
+}
+
+// ── T201: full-text detail pages ────────────────────────────────────────────
+// The index snapshot only carries a "…"-cut TEASER per event (user report: prod
+// /events/28153-vr vs lacotorra.io/events/vr-vystavka-o-zatmenii-v-valensii, where
+// the detail page holds the full article). The bespoke ingest parser (ingest.ts,
+// `parseLacotorra`) stores one `item_type='event_detail'` row per detail URL with
+// the FULL text in raw_text (+ the event-specific og:image in raw_json.meta). The
+// normalizer prefers that full text over the teaser, matched by the SAME detail
+// URL that T190 already resolves per event. Deterministic (T140 — no LLM).
+export interface LacotorraDetailInfo {
+  fullText: string | null;
+  image: string | null;
+}
+
+// PURE: index the `event_detail` raws by URL, keeping the freshest (highest-id) row
+// per URL (a re-fetched article with changed text lands as a NEW append-only row).
+// Rows without any usable payload (a stored stub for a page that yielded no text)
+// are skipped — the event then simply keeps its index teaser.
+export function buildLacotorraDetailMap(
+  rows: RawItem[],
+): Map<string, LacotorraDetailInfo> {
+  const best = new Map<string, { id: number; info: LacotorraDetailInfo }>();
+  for (const r of rows) {
+    const raw = parseRaw(r);
+    if ((raw as { kind?: string }).kind !== "event_detail") continue;
+    if (!r.url) continue;
+    const fullText = (r.raw_text || "").trim() || null;
+    const image = (raw as RawWeb).meta?.["og:image"] || null;
+    if (!fullText && !image) continue;
+    const prev = best.get(r.url);
+    if (!prev || r.id > prev.id) {
+      best.set(r.url, { id: r.id, info: { fullText, image } });
+    }
+  }
+  const out = new Map<string, LacotorraDetailInfo>();
+  for (const [url, v] of best) out.set(url, v.info);
+  return out;
 }
 
 function pad(n: number): string {
@@ -271,6 +318,9 @@ function looksLikeVenue(line?: string | null): boolean {
 export function buildLacotorraEvents(
   rows: RawItem[],
   today: Date = new Date(),
+  // T201: detail URL → full text / event image, built from the `event_detail` raws
+  // (see buildLacotorraDetailMap). Absent/miss → the index teaser is kept.
+  details?: Map<string, LacotorraDetailInfo>,
 ): Array<{ draft: EventInsert; sourceItemId: number }> {
   const out: Array<{ draft: EventInsert; sourceItemId: number }> = [];
   const seen = new Set<string>(); // de-dupe identical title+date within one snapshot
@@ -360,11 +410,18 @@ export function buildLacotorraEvents(
       // wrong page — matchEventLink returns null unless confident).
       const detailUrl = matchEventLink(title, eventLinks) ?? item.url ?? SOURCE_URL;
 
+      // T201: prefer the detail page's FULL text over the index teaser; likewise the
+      // event-specific og:image over the index's one generic banner. The teaser stays
+      // in raw_excerpt (it IS the raw index excerpt).
+      const detail = details?.get(detailUrl);
+      const teaser = compact(description);
+      const fullText = detail?.fullText ?? null;
+
       out.push({
         sourceItemId: item.id,
         draft: {
           title: title.slice(0, 300),
-          description: compact(description)?.slice(0, 2000) ?? null,
+          description: (fullText ?? teaser)?.slice(0, 2000) ?? null,
           category: "culture",
           language: "ru",
           start_date: start ?? parseEventDate(lines[i], today),
@@ -376,10 +433,10 @@ export function buildLacotorraEvents(
           price,
           is_free: isFree,
           url: detailUrl,
-          image_url: img,
+          image_url: detail?.image || img,
           source: LACOTORRA_SOURCE_KEY,
           source_url: detailUrl,
-          raw_excerpt: compact(description)?.slice(0, 1000) ?? null,
+          raw_excerpt: teaser?.slice(0, 1000) ?? null,
         },
       });
     }
@@ -395,9 +452,19 @@ export function buildLacotorraEvents(
 export async function normalizeLacotorra(
   { exec = sql }: { exec?: typeof sql } = {},
 ): Promise<{ created: number; updated: number; processed: number }> {
+  // T201: load ALL detail rows for the source (not just pending ones — details are
+  // fetched once and marked normalized on their first pass, yet every later
+  // re-normalize of a fresh snapshot must still see their full text). The explicit
+  // column list keeps this query distinct from the orchestrator's pending-row
+  // SELECT * (also relied on by the injected-exec test).
+  const detailRows = (await exec`
+    SELECT id, source_key, url, raw_text, raw_json FROM source_items
+    WHERE source_key = ${LACOTORRA_SOURCE_KEY} AND item_type = 'event_detail'
+  `) as unknown as RawItem[];
+  const details = buildLacotorraDetailMap(detailRows);
   return runPlainNormalizer({
     sourceKey: LACOTORRA_SOURCE_KEY,
-    build: buildLacotorraEvents,
+    build: (rows, today) => buildLacotorraEvents(rows, today, details),
     exec,
   });
 }

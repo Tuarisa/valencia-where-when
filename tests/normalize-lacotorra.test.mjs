@@ -5,10 +5,12 @@ import {
   LACOTORRA_SOURCE_KEY,
   parseLacotorraDate,
   buildLacotorraEvents,
+  buildLacotorraDetailMap,
   normalizeLacotorra,
   isValenciaRegion,
   isHeadliner,
 } from "../lib/pipeline/normalizers/lacotorra.ts";
+import { extractLacotorraDetail } from "../lib/pipeline/ingest.ts";
 
 // Fixtures faithful to the REAL shape observed on the live local DB (source_items
 // for web:lacotorra): the events live in a SINGLE `page_snapshot` row whose raw_text
@@ -297,6 +299,23 @@ test("isValenciaRegion: drops other Spanish cities even when the city column def
   assert.equal(isValenciaRegion("Barcelona", null, "Фестиваль Grec в Барселоне"), false);
 });
 
+test("isValenciaRegion (T154 real-data fix): Puerto de Sagunto is Valencia province — KEPT", () => {
+  // REAL title from the live 2026-08 snapshot (id 2137). A bare "пуэрто" stem in
+  // NON_CV_STEMS used to poison "Пуэрто-де-Сагунто" and mis-drop this CV event.
+  assert.equal(
+    isValenciaRegion("Valencia", null, "Сагунто и Пуэрто-де-Сагунто отпразднуют дни святых покровителей"),
+    true,
+  );
+});
+
+test("isHeadliner (T154): The Weeknd kept from the REAL index; generic 'уикенд' events are not", () => {
+  // REAL titles from the live 2026-08 snapshot.
+  assert.equal(isHeadliner("Концерт The Weeknd в Мадриде"), true);
+  assert.equal(isHeadliner("Концерт The Weeknd в Барселоне"), true);
+  // The RU word "уикенд" alone must NOT trigger the allowlist (generic word).
+  assert.equal(isHeadliner("Гастрономический уикенд в Мадриде"), false);
+});
+
 test("isHeadliner: matches curated international acts, not generic events", () => {
   assert.equal(isHeadliner("Концерты Linkin Park в Мадриде"), true);
   assert.equal(isHeadliner("Концерт группы BTS в Мадриде"), true);
@@ -343,6 +362,159 @@ test("buildLacotorraEvents (T170): Valencia kept, small Madrid dropped, Madrid h
     !titles.some((t) => t.includes("Сальвадора Дали")),
     "small Madrid event dropped (excluded from feed)",
   );
+});
+
+// ── T201: full-text detail pages ─────────────────────────────────────────────
+// USER report (2026-08-08): descriptions were the index page's "…"-cut teasers while
+// the detail page (`/events/<slug>`) holds the FULL article. Fixtures below are
+// VERBATIM from the LIVE site + the live local DB (snapshot id 2137, lines 234–238,
+// and https://lacotorra.io/events/vr-vystavka-o-zatmenii-v-valensii fetched
+// 2026-08-08) — real strings, not synthetic (project lesson: aggregators lie).
+
+const VR_DETAIL_URL = "https://lacotorra.io/events/vr-vystavka-o-zatmenii-v-valensii";
+
+// Trimmed but VERBATIM segments of the live detail page: head metas, h1, teaser p,
+// and the full descr-section (incl. the trailing photo-credit paragraph).
+const VR_DETAIL_HTML = `<!DOCTYPE html>
+<html lang="ru"><head>
+<title>VR-выставка о затмении проходит в Валенсии с 20 июля</title>
+<meta name="description" content="Иммерсивная выставка с VR и ИИ позволит пережить солнечное затмение 12 августа как космонавт. Las Naves в Валенсии, с 20 июля по 31 августа, вход свободный">
+<meta property="og:description" content="Иммерсивная выставка с VR и ИИ позволит пережить солнечное затмение 12 августа как космонавт. Las Naves в Валенсии, с 20 июля по 31 августа, вход свободный">
+<meta property="og:image" content="https://lacotorra.io/uploads/afisha/A_VR_exhibition_eclipse_Valencia.jpg">
+</head><body>
+<main class="main container">
+<div class="event-description inner-event"><div class="text-box"><div class="align-m">
+<h1 class="h2">VR-выставка о затмении в Валенсии</h1>
+<p>Выставка совмещает VR и ИИ, вход свободный</p>
+</div></div></div>
+<div class="sticky-nav-bar"><p class="h4">О мероприятии</p></div>
+<section class="descr-section">
+<p>С 20 июля по 31 августа 2026 года в Валенсии, в Centro de Innovación Social y Urbana Las Naves, будет работать иммерсивная выставка о солнечном затмении. Проект подготовила мэрия Валенсии через программу Valencia Innovation Capital. Выставка сочетает виртуальную реальность и искусственный интеллект и превращает посетителей в космонавтов.</p>
+<p>Благодаря симуляции гости смогут увидеть, как выглядит выравнивание Солнца, Земли и Луны и почему возникает эффект затмения, а также рассмотреть явления, почти незаметные с поверхности Земли: солнечную корону, «бриллиантовое кольцо» и Четки Бейли. Выставка расскажет и о том, как затмение выглядело в Валенсии в 1905 году (&nbsp;в последний раз, когда город наблюдал это явление),&nbsp;и с какими метеорологическими трудностями тогда столкнулись астрономы.</p>
+<p>Выставка рассчитана на любую аудиторию, включая семьи, молодежь и организованные группы. Вход свободный.</p>
+<p>Адрес: calle Joan Verdeguer, 16, Валенсия. Часы работы: с 10:30 до 18:30.</p>
+<p><em>Фото:&nbsp;shutterstock.com</em></p>
+</section>
+</main></body></html>`;
+
+test("extractLacotorraDetail (T201): full descr-section text, photo credit dropped, event og:image", () => {
+  const d = extractLacotorraDetail(VR_DETAIL_HTML);
+  assert.equal(d.title, "VR-выставка о затмении в Валенсии");
+  assert.ok(d.full_text, "full text extracted");
+  // Full article, NOT the 45-char teaser: all 4 real paragraphs survive.
+  assert.ok(d.full_text.length > 900, `full text is long (got ${d.full_text.length})`);
+  assert.ok(d.full_text.startsWith("С 20 июля по 31 августа 2026 года в Валенсии"));
+  assert.ok(d.full_text.includes("«бриллиантовое кольцо» и Четки Бейли"));
+  assert.ok(d.full_text.includes("Адрес: calle Joan Verdeguer, 16, Валенсия"));
+  // Paragraph breaks preserved (blank line between real <p> blocks).
+  assert.ok(d.full_text.includes("\n\n"), "paragraph breaks kept");
+  // The trailing photo-credit paragraph is chrome, not description.
+  assert.ok(!d.full_text.includes("Фото:"), "photo credit dropped");
+  assert.ok(!d.full_text.includes("shutterstock"), "photo credit dropped fully");
+  // Event-SPECIFIC og:image (the index page serves one generic banner for all).
+  assert.equal(d.meta["og:image"], "https://lacotorra.io/uploads/afisha/A_VR_exhibition_eclipse_Valencia.jpg");
+});
+
+test("extractLacotorraDetail (T201): no descr-section → falls back to og:description", () => {
+  const html = `<html><head>
+<meta property="og:description" content="Иммерсивная выставка с VR и ИИ позволит пережить солнечное затмение 12 августа как космонавт. Las Naves в Валенсии, с 20 июля по 31 августа, вход свободный">
+</head><body><h1 class="h2">VR-выставка о затмении в Валенсии</h1></body></html>`;
+  const d = extractLacotorraDetail(html);
+  assert.ok(d.full_text.startsWith("Иммерсивная выставка с VR и ИИ"));
+});
+
+// Real-shaped `event_detail` raw rows (what parseLacotorra upserts into source_items).
+const VR_DETAIL_ROW = {
+  id: 3001,
+  source_key: LACOTORRA_SOURCE_KEY,
+  item_type: "event_detail",
+  external_id: VR_DETAIL_URL,
+  url: VR_DETAIL_URL,
+  raw_text:
+    "С 20 июля по 31 августа 2026 года в Валенсии, в Centro de Innovación Social y Urbana Las Naves, будет работать иммерсивная выставка о солнечном затмении. Проект подготовила мэрия Валенсии через программу Valencia Innovation Capital. Выставка сочетает виртуальную реальность и искусственный интеллект и превращает посетителей в космонавтов.\n\nВыставка рассчитана на любую аудиторию, включая семьи, молодежь и организованные группы. Вход свободный.",
+  raw_json: JSON.stringify({
+    kind: "event_detail",
+    source_page: "https://lacotorra.io/events",
+    meta: { "og:image": "https://lacotorra.io/uploads/afisha/A_VR_exhibition_eclipse_Valencia.jpg" },
+  }),
+};
+
+test("buildLacotorraDetailMap (T201): keyed by URL, freshest row wins, stubs skipped", () => {
+  const older = {
+    ...VR_DETAIL_ROW,
+    id: 2900,
+    raw_text: "Устаревший текст прошлой выгрузки",
+  };
+  const stub = {
+    id: 3002,
+    source_key: LACOTORRA_SOURCE_KEY,
+    item_type: "event_detail",
+    url: "https://lacotorra.io/events/kakoe-to-sobytie-bez-teksta",
+    raw_text: null,
+    raw_json: JSON.stringify({ kind: "event_detail", meta: {} }),
+  };
+  const map = buildLacotorraDetailMap([older, VR_DETAIL_ROW, stub, ...CHROME_ROWS]);
+  assert.equal(map.size, 1, "only the real detail row indexed (stub + chrome skipped)");
+  const info = map.get(VR_DETAIL_URL);
+  assert.ok(info.fullText.startsWith("С 20 июля по 31 августа 2026 года"), "freshest text wins");
+  assert.equal(info.image, "https://lacotorra.io/uploads/afisha/A_VR_exhibition_eclipse_Valencia.jpg");
+});
+
+// The REAL VR block exactly as it sits in live snapshot id 2137 (lines 234–238)
+// plus the REAL captured event_link for it.
+const VR_SNAPSHOT_ROW = {
+  id: 2137,
+  source_key: LACOTORRA_SOURCE_KEY,
+  title: "Мероприятия Валенсии. Афиша для всей семьи.",
+  url: "https://lacotorra.io/events",
+  raw_text: [
+    "VR-выставка о затмении в Валенсии",
+    "Валенсия",
+    "Выставка совмещает VR и ИИ, вход свободный...",
+    "20 Jul 2026, 10:00 - 31 Aug 2026, 00:00",
+    "Centro de Innovación Social y Urbana Las Naves",
+  ].join("\n"),
+  raw_json: JSON.stringify({
+    kind: "page_snapshot",
+    meta: { "og:image": "https://lacotorra.io/uploads/OG-image.png" },
+    event_links: [
+      { title: "VR-выставка о затмении в Валенсии", url: VR_DETAIL_URL },
+    ],
+  }),
+};
+
+test("buildLacotorraEvents (T201): detail full text preferred over the index teaser", () => {
+  const details = buildLacotorraDetailMap([VR_DETAIL_ROW]);
+  const events = buildLacotorraEvents([VR_SNAPSHOT_ROW], REF, details);
+  assert.equal(events.length, 1);
+  const vr = events[0].draft;
+  assert.equal(vr.title, "VR-выставка о затмении в Валенсии");
+  // Description is the FULL article (not the "…"-cut 45-char teaser).
+  assert.ok(vr.description.startsWith("С 20 июля по 31 августа 2026 года"), "full text used");
+  assert.ok(vr.description.length > 400, `full text length (got ${vr.description.length})`);
+  assert.ok(!vr.description.endsWith("..."), "not the truncated teaser");
+  // The teaser remains as the raw index excerpt.
+  assert.equal(vr.raw_excerpt, "Выставка совмещает VR и ИИ, вход свободный...");
+  // Event-specific image beats the index's generic OG banner.
+  assert.equal(vr.image_url, "https://lacotorra.io/uploads/afisha/A_VR_exhibition_eclipse_Valencia.jpg");
+  // T190 URL wiring untouched.
+  assert.equal(vr.url, VR_DETAIL_URL);
+  assert.equal(vr.source_url, VR_DETAIL_URL);
+  // Date parsing untouched (multi-day → time dropped per Bug 3).
+  assert.equal(vr.start_date, "2026-07-20");
+  assert.equal(vr.end_date, "2026-08-31");
+  assert.equal(vr.start_time, null);
+});
+
+test("buildLacotorraEvents (T201): no detail row → index teaser kept (graceful fallback)", () => {
+  // No details map at all (legacy call) AND an empty map: both keep the teaser.
+  for (const details of [undefined, new Map()]) {
+    const events = buildLacotorraEvents([VR_SNAPSHOT_ROW], REF, details);
+    assert.equal(events.length, 1);
+    const vr = events[0].draft;
+    assert.equal(vr.description, "Выставка совмещает VR и ИИ, вход свободный...");
+    assert.equal(vr.image_url, "https://lacotorra.io/uploads/OG-image.png");
+  }
 });
 
 test("normalizeLacotorra: idempotent over injected exec, marks every row normalized", async () => {
