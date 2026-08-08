@@ -95,6 +95,15 @@ function parseTelegram(source: any, html: string): RawItem[] {
 // the next anchor's title), giving a deterministic title→href map. The map is stashed on
 // the page_snapshot's `raw_json.event_links` so the snapshot-driven normalizers can point
 // each parsed event at its OWN page instead of the aggregator index (T140 — no LLM).
+//
+// T203 — a third card shape (visitvalencia): the detail anchor is the LAST element of
+// the card and WRAPS the title text itself (`<h3 class="card__heading">TITLE</h3> …
+// <a class="visually-hidden card__link" href="/detail">TITLE</a>`). The
+// «first-title-after-the-anchor» window then lands on the NEXT card's heading, so every
+// title got paired with the neighbouring card's URL (off-by-one, verified on live
+// source_items row 1807). Fix: when the anchor carries usable inner text of its own,
+// that text IS the pairing — use it and never window-scan across the card boundary.
+// Image-only anchors (lacotorra/cac) keep the follow-window fallback.
 const A_OPEN_RE = /<a\b[^>]*href=["']([^"']+)["'][^>]*>/gi;
 const TITLE_EL_RE =
   /<(?:p|span|div)[^>]*class=["'][^"']*(?:event-title|card-title|entry-title|post-title)[^"']*["'][^>]*>([\s\S]*?)<\/(?:p|span|div)>|<h[1-4][^>]*>([\s\S]*?)<\/h[1-4]>/i;
@@ -114,7 +123,9 @@ function isDetailHref(href: string, baseHost: string): boolean {
   if (!path || path === "") return false;
   const lower = path.toLowerCase();
   if (
-    ["/tag/", "/category/", "/author/", "/feed", "/wp-", "/page", "/cookies", "/privacidad", "/aviso", "/contacto"].some(
+    // T203: "/privacy", "/terms", "/about-us" added — hyphenated legal/meta slugs used
+    // to slip through and (now that self-titled anchors pair) would emit chrome pairs.
+    ["/tag/", "/category/", "/author/", "/feed", "/wp-", "/page", "/cookies", "/privacidad", "/aviso", "/contacto", "/privacy", "/terms", "/about-us"].some(
       (p) => lower.includes(p),
     )
   )
@@ -136,7 +147,7 @@ export function extractEventLinks(html: string, baseUrl: string): Array<{ title:
   } catch {
     return [];
   }
-  const anchors: Array<{ href: string; end: number }> = [];
+  const anchors: Array<{ href: string; end: number; ownTitle: string | null }> = [];
   let m: RegExpExecArray | null;
   A_OPEN_RE.lastIndex = 0;
   while ((m = A_OPEN_RE.exec(html)) !== null) {
@@ -146,20 +157,44 @@ export function extractEventLinks(html: string, baseUrl: string): Array<{ title:
     } catch {
       continue;
     }
-    if (isDetailHref(href, baseHost)) anchors.push({ href, end: m.index + m[0].length });
+    if (!isDetailHref(href, baseHost)) continue;
+    const end = m.index + m[0].length;
+    // T203: the anchor's own inner content (up to its `</a>`; anchors don't nest). A
+    // plausible title inside the anchor beats any window scan — it can't be attributed
+    // to the wrong card. Prefer a marked-up title element INSIDE the anchor (ticketbest
+    // wraps `<h1 class='category_title'>` plus an event-count span — whole-text would
+    // drag the counter into the title); fall back to the anchor's whole inner text
+    // (visitvalencia's `card__link` is plain text). Reject read-more-style stubs
+    // (isNoiseLink) so they fall back to the window scan instead of consuming the href
+    // with a junk title.
+    const seg = html.slice(end, end + 3000);
+    const closeM = /<\/a\b/i.exec(seg);
+    const inner = closeM ? seg.slice(0, closeM.index) : "";
+    const im = TITLE_EL_RE.exec(inner);
+    const innerTitleText = im ? compact(stripTags(im[1] || im[2] || "")) : null;
+    const ownText = innerTitleText ?? compact(stripTags(inner));
+    const ownTitle =
+      ownText && ownText.length >= 8 && ownText.length <= 220 && !isNoiseLink(href, ownText)
+        ? ownText
+        : null;
+    anchors.push({ href, end, ownTitle });
   }
 
   const out: Array<{ title: string; url: string }> = [];
   const seen = new Set<string>();
   for (let i = 0; i < anchors.length; i++) {
     const a = anchors[i];
-    // Window: from just after this anchor up to the next detail anchor (so a title is
-    // attributed to the card it belongs to, not the following card).
-    const winEnd = i + 1 < anchors.length ? anchors[i + 1].end : Math.min(html.length, a.end + 2500);
-    const win = html.slice(a.end, winEnd + 200);
-    const tm = TITLE_EL_RE.exec(win);
-    if (!tm) continue;
-    const title = compact(stripTags(tm[1] || tm[2] || ""));
+    let title = a.ownTitle;
+    if (!title) {
+      // Image-only anchor (lacotorra/cac card shape) — window: from just after this
+      // anchor up to the next detail anchor (so a title is attributed to the card it
+      // belongs to, not the following card).
+      const winEnd = i + 1 < anchors.length ? anchors[i + 1].end : Math.min(html.length, a.end + 2500);
+      const win = html.slice(a.end, winEnd + 200);
+      const tm = TITLE_EL_RE.exec(win);
+      if (!tm) continue;
+      title = compact(stripTags(tm[1] || tm[2] || ""));
+    }
     if (!title || title.length < 4 || title.length > 220) continue;
     const key = a.href;
     if (seen.has(key)) continue;

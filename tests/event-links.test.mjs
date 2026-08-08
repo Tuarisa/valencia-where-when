@@ -91,6 +91,118 @@ test("extractEventLinks: cac Elementor cards → title→detail-page map", () =>
   );
 });
 
+// T203 — faithful to the live visitvalencia card markup (cut from the live listing,
+// 2026-08-08): the h3 heading sits in `card__body` and the detail anchor is the LAST
+// element of the card, wrapping the title text itself (`visually-hidden card__link`).
+// The pre-fix «first title AFTER the anchor» window paired every title with the
+// NEIGHBOURING card's URL (verified on live source_items row 1807).
+const VISITVALENCIA_HTML = `
+<div class="col--card col-lg-6">
+<div  data-history-node-id="86802" about="/en/events-valencia/sonido-de-valencia-festival" class="card card--horizontal card--shadow card--event card--tile">
+    <div  class="card__top">
+      <div class="field field--name-field-teaser-image field--type-entity-reference field--label-hidden field__item"><div>
+        <div class="field field--name-field-media-image field--type-image field--label-hidden field__item">    <picture>
+          <source srcset="/sites/default/files/styles/filtered_portrait_tablet/public/media/media-images/images/sonido.jpg.webp?itok=x 1x" media="all and (min-width: 992px)" type="image/webp" width="745" height="425"/>
+          <img loading="lazy" width="355" height="265" src="/sites/default/files/styles/filtered_teaser/public/media/media-images/images/sonido.jpg.webp?itok=x" alt="Sonido Valencia" typeof="foaf:Image" />
+        </picture>
+        </div>
+      </div></div>
+    </div>
+    <div  class="card__body">
+      <div>
+<h3   class="card__heading card__heading--link card__heading--sub">
+      “Sonido de Valencia” Festival
+    </h3>
+      </div>
+      <div  class="card__date text--small">
+      </div>
+    </div>
+    <a class="visually-hidden card__link" href="/en/events-valencia/sonido-de-valencia-festival">“Sonido de Valencia” Festival </a>
+</div>
+</div>
+<div class="col--card col-lg-6">
+<div  data-history-node-id="90076" about="/en/events-valencia/descanso-entrevinas-getaway-bodegas-nodus" class="card card--horizontal card--shadow card--event card--tile">
+    <div  class="card__top">
+      <div class="field field--name-field-teaser-image field--type-entity-reference field--label-hidden field__item"><div>
+        <div class="field field--name-field-media-image field--type-image field--label-hidden field__item">    <picture>
+          <source srcset="/sites/default/files/styles/filtered_portrait_tablet/public/media/media-images/images/alegal.jpg.webp?itok=y 1x" media="all and (min-width: 992px)" type="image/webp" width="745" height="425"/>
+          <img loading="lazy" width="355" height="265" src="/sites/default/files/styles/filtered_teaser/public/media/media-images/images/alegal.jpg.webp?itok=y" alt="Viernes y sábados en el Restaurante Alegal de València" typeof="foaf:Image" />
+        </picture>
+        </div>
+      </div></div>
+    </div>
+    <div  class="card__body">
+      <div>
+<h3   class="card__heading card__heading--link card__heading--sub">
+      "Descanso Entreviñas" Getaway by Bodegas Nodus
+    </h3>
+      </div>
+      <div  class="card__date text--small">
+      </div>
+    </div>
+    <a class="visually-hidden card__link" href="/en/events-valencia/descanso-entrevinas-getaway-bodegas-nodus">&quot;Descanso Entreviñas&quot; Getaway by Bodegas Nodus</a>
+</div>
+</div>
+`;
+
+test("extractEventLinks: visitvalencia title-wrapping card__link anchors — no off-by-one (T203)", () => {
+  const links = extractEventLinks(
+    VISITVALENCIA_HTML,
+    "https://www.visitvalencia.com/en/events-valencia",
+  );
+  assert.equal(links.length, 2);
+  const byTitle = Object.fromEntries(links.map((l) => [l.title, l.url]));
+  // pre-fix this paired «Descanso…» (card 2's h3) with card 1's URL and dropped card 2
+  assert.equal(
+    byTitle["“Sonido de Valencia” Festival"],
+    "https://www.visitvalencia.com/en/events-valencia/sonido-de-valencia-festival",
+  );
+  assert.equal(
+    byTitle['"Descanso Entreviñas" Getaway by Bodegas Nodus'],
+    "https://www.visitvalencia.com/en/events-valencia/descanso-entrevinas-getaway-bodegas-nodus",
+  );
+});
+
+// T203 — faithful to the live ticketbest.eu compilation-card markup: the anchor wraps
+// an `<h1 class='category_title'>` PLUS an event-count span («6 üritust»). The marked-up
+// title inside the anchor must win over the anchor's whole inner text (no counter glued
+// onto the title — the stored DB row 2253 pairs stay byte-identical).
+const TICKETBEST_HTML = `
+<div class='categories'>
+<a class="category" href="/compilations/muzyka-bridzherton-kontsertnyi-tur"><img class="category_image" src="/uploads/compilation/image/8/crop_Bridgerton_600%D1%85150.jpg" />
+<div class='category_text'>
+<h1 class='category_title'>Bridgertoni muusika: kontserttuur</h1>
+<span class='category_count'>
+6
+üritust
+</span>
+</div>
+</a><a class="category" href="/compilations/muzyka-ennio-morrikone-kontsertnyi-tur"><img class="category_image" src="/uploads/compilation/image/9/crop_Ennio-Morricone-600%D1%85150.jpg" />
+<div class='category_text'>
+<h1 class='category_title'>Ennio Morricone muusika: kontserttuur</h1>
+<span class='category_count'>
+7
+üritust
+</span>
+</div>
+</a>
+</div>
+`;
+
+test("extractEventLinks: ticketbest anchors wrapping a title element — inner title wins over whole text", () => {
+  const links = extractEventLinks(TICKETBEST_HTML, "https://www.ticketbest.eu");
+  assert.equal(links.length, 2);
+  const byTitle = Object.fromEntries(links.map((l) => [l.title, l.url]));
+  assert.equal(
+    byTitle["Bridgertoni muusika: kontserttuur"],
+    "https://www.ticketbest.eu/compilations/muzyka-bridzherton-kontsertnyi-tur",
+  );
+  assert.equal(
+    byTitle["Ennio Morricone muusika: kontserttuur"],
+    "https://www.ticketbest.eu/compilations/muzyka-ennio-morrikone-kontsertnyi-tur",
+  );
+});
+
 test("extractEventLinks: ignores chrome anchors (index/category/section)", () => {
   const html = `
     <a href="/events">Все события</a>

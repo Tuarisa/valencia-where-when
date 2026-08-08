@@ -1,6 +1,6 @@
 import { sql } from "../../db";
 import { compact, nowIso } from "../util";
-import { parseEventDate, upsertPlainEvent, type EventInsert } from "./shared";
+import { parseEventDate, postDateOf, upsertPlainEvent, type EventInsert } from "./shared";
 import { parsePrice, parseVenue, parseAddress, isJunkCard } from "./valenciarusa";
 import { postTitle, looksLikeEvent } from "./vidacultural";
 import type { RawItem } from "./types";
@@ -30,6 +30,52 @@ interface RawTelegram {
   media_urls?: string[];
 }
 
+// T207 — year inference must be anchored to the POST date, never to "now" at
+// normalize time. parseEventDate resolves a year-less "7 июля" to the next
+// occurrence on/after its `today` anchor, so re-normalizing the SAME post after the
+// date had passed rolled it a year forward and re-emitted the event under a new
+// dedup_hash (2026-07-07 + 2027-07-07 twins, same source — dedup correctly refuses
+// same-source merges). The post date (published_at → first_seen → last_seen, the
+// T152 postDateOf) is stable across runs, so the inferred year is too.
+//
+// Roll-forward guard: with a post-date anchor a roll can still happen — when the
+// post mentions a day/month BEFORE its own date (a recap / pinned-notice /
+// "сегодня было" card, or a post first scraped weeks after the tour). For this
+// channel that is a PAST excursion — history, not next year's event — so the roll
+// is undone back to the post's own year. The ONLY legitimate roll is the Dec→Jan
+// window ("3 января" posted 28 декабря): a real announcement lands within weeks,
+// so a roll is kept only when it puts the date within ROLL_HORIZON_DAYS of the
+// post (the channel announces at most a few weeks ahead; every observed fabricated
+// roll landed 330+ days out).
+const ROLL_HORIZON_DAYS = 60;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+// PURE: does the text carry its own year? Then parseEventDate used it (T171) and
+// no inference happened — trust the result as-is. Mirrors the forms parseEventDate
+// reads a year from: a standalone 4-digit 20xx, or a numeric DD.MM.YY(YY) date.
+function hasExplicitYear(text: string): boolean {
+  return (
+    /(?<!\d)20\d{2}(?!\d)/.test(text) ||
+    /(?<![\d.,])\b\d{1,2}[.\/-]\d{1,2}[.\/-]\d{2,4}\b/.test(text)
+  );
+}
+
+// PURE (T207): parseEventDate anchored to the post date, with the roll-forward
+// guard above. `today` is only the fallback anchor for a raw row missing every
+// timestamp (shouldn't happen for telegram rows).
+function anchoredExcursionDate(body: string, item: RawItem, today: Date): string | null {
+  const anchor = postDateOf(item) ?? today;
+  const iso = parseEventDate(body, anchor);
+  if (!iso || hasExplicitYear(body)) return iso;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m || Number(m[1]) !== anchor.getFullYear() + 1) return iso; // no roll happened
+  const rolled = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  if (rolled.getTime() - anchor.getTime() <= ROLL_HORIZON_DAYS * MS_PER_DAY) return iso;
+  // A rolled date far beyond the announcement horizon = a past excursion the
+  // inference pushed into next year. Keep the post's own year: history, not future.
+  return `${anchor.getFullYear()}-${m[2]}-${m[3]}`;
+}
+
 function parseRaw(item: RawItem): RawTelegram {
   try {
     const r = JSON.parse(item.raw_json || "{}");
@@ -43,7 +89,9 @@ function parseRaw(item: RawItem): RawTelegram {
 // without a connection. Every kept post is a DATED excursion: we require a parsed start
 // date (an excursion without its own date is an announcement / "save the schedule" teaser
 // that would mis-pin the calendar) AND an event shape (looksLikeEvent), and we drop
-// channel chrome / header / media-meta cards up front (isJunkCard). Mirrors
+// channel chrome / header / media-meta / pinned-service cards up front. Dates are
+// anchored to each row's POST date (T207 — `today` is only the last-resort fallback for
+// a row with no timestamps), so re-normalizing is stable across runs. Mirrors
 // buildVidaculturalEvents' telegram field access; sets category 'excursion' + language
 // 'ru' + Valencia/Spain defaults.
 export function buildRutatutaEvents(
@@ -58,7 +106,11 @@ export function buildRutatutaEvents(
     // Drop channel-header / "pinned a photo" / media-only meta cards (deterministic — a
     // real excursion post is never matched), then require a date + an event shape.
     if (isJunkCard(item.title, body, RUTATUTA_NAME)) continue;
-    const start = parseEventDate(body, today);
+    // T207: "<channel> pinned « … »" is a telegram SERVICE card quoting an excerpt of
+    // the pinned post — chrome, not content; the pinned post itself arrives as its own
+    // row, so keeping the card duplicates the excursion under a second title.
+    if (body.trimStart().startsWith(`${RUTATUTA_NAME} pinned`)) continue;
+    const start = anchoredExcursionDate(body, item, today);
     // An excursion is only useful when it has its OWN date; an undated announcement /
     // "save the upcoming schedule" teaser is chatter → drop it.
     if (!start) continue;

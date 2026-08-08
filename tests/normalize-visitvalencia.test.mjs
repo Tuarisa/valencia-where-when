@@ -15,6 +15,8 @@ import assert from 'node:assert/strict';
 import {
   VISITVALENCIA_SOURCE_KEY,
   isVisitvalenciaEventUrl,
+  isVisitvalenciaGuideCard,
+  isFullYearPlaceholder,
   classifyVisitvalencia,
   buildVisitvalenciaEvents,
   stripTrailingCardRange,
@@ -181,18 +183,18 @@ test('buildVisitvalenciaEvents: real-shape mix → drops chrome, keeps events, 0
     card(745, 'Immersive Exhibition “The Legend of the Titanic” in Valencia', 'immersive-exhibition-legend-titanic-valencia'),
     card(763, 'Playmobil 2026 Exhibition at the Military History Museum in Valencia', 'playmobil-2026-exhibition-military-history-museum-valencia'),
     card(794, 'Macromascletà Universal de Benicalap 2026: gunpowder, DJs and open-air party', 'macromascleta-universal-de-benicalap-2026-gunpowder-djs-and-open-air-party'),
-    // borderline "ongoing experience / listicle" cards — these ARE real agenda
-    // entries on the official events page (evergreen), so they are KEPT, not chrome.
+    // guide/listicle ARTICLES wearing event URLs (real live rows) — dropped as
+    // NON-events since T206 (they bridged false contain-merges in T202).
     card(756, 'The Best Spas in Valencia to Disconnect and Recharge', 'best-spas-valencia-disconnect-and-recharge'),
     card(768, 'Three ways to enjoy live jazz in Valencia', 'three-ways-enjoy-live-jazz-valencia'),
   ];
 
   const out = buildVisitvalenciaEvents(rows, TODAY);
-  // 6 real event cards survive (741, 745, 763, 794, 756, 768); the snapshot, the 6
-  // chrome rows and the 2 category indices are all dropped.
-  assert.equal(out.length, 6);
+  // 4 real event cards survive (741, 745, 763, 794); the snapshot, the 6 chrome
+  // rows, the 2 category indices and the 2 guide articles are all dropped.
+  assert.equal(out.length, 4);
   const ids = out.map((o) => o.sourceItemId).sort((a, b) => a - b);
-  assert.deepEqual(ids, [741, 745, 756, 763, 768, 794]);
+  assert.deepEqual(ids, [741, 745, 763, 794]);
   // HONEST FINDING: with no dated snapshot in the batch, no survivor gets a date.
   const dated = out.filter((o) => o.draft.start_date !== null);
   assert.equal(dated.length, 0);
@@ -228,6 +230,13 @@ test('stripTrailingCardRange: peels the Aug-2026 glued range off real card title
   const d = stripTrailingCardRange("Anselm Kiefer's exhibition comes to Valencia");
   assert.equal(d.title, "Anselm Kiefer's exhibition comes to Valencia");
   assert.equal(d.range, null);
+
+  // REGRESSION pin (verbatim source_items 2314): the glued range beats the month-first
+  // misparse of "…in August 27/07/2026" (was read as "August 27"). The card itself is a
+  // guide article and never becomes an event (T206), but the peel must stay correct.
+  const e = stripTrailingCardRange('Exhibitions in València: everything you can see in August 27/07/2026 - 31/08/2026');
+  assert.equal(e.title, 'Exhibitions in València: everything you can see in August');
+  assert.deepEqual(e.range, { start: '2026-07-27', end: '2026-08-31' });
 });
 
 // Verbatim excerpt of live snapshot row 1807 (2026-07-05): the pre-Aug "Monthly
@@ -396,10 +405,13 @@ test('buildVisitvalenciaEvents: snapshot ranges date the matching cards (real sh
 
 // REGRESSION (live events 27450–27456, 2026-08-07 ingest): the glued trailing range
 // must (1) clean the stored title, (2) beat parseEventDate — which misread
-// "…you can see in August 27/07/2026 - 31/08/2026" as month-first "August 27".
+// "…you can see in August 27/07/2026 - 31/08/2026" as month-first "August 27" (that
+// misparse is now pinned at the stripTrailingCardRange level: since T206 the August
+// roundup ARTICLE itself never becomes an event at all).
 test('buildVisitvalenciaEvents: glued card range → clean title + correct start/end', () => {
   const rows = [
-    // verbatim source_items 2314
+    // verbatim source_items 2314 — the monthly roundup ARTICLE: even with its real
+    // glued range it is a guide, not an event → dropped entirely (T206)
     card(2314, 'Exhibitions in València: everything you can see in August 27/07/2026 - 31/08/2026',
       'exhibitions-valencia-everything-you-can-see-august'),
     // verbatim source_items 2311
@@ -407,17 +419,157 @@ test('buildVisitvalenciaEvents: glued card range → clean title + correct start
       'valencia-summer-amusement-fair-returns'),
   ];
   const out = buildVisitvalenciaEvents(rows, new Date('2026-08-08T00:00:00Z'));
-  assert.equal(out.length, 2);
-
-  const expo = out.find((o) => o.sourceItemId === 2314).draft;
-  assert.equal(expo.title, 'Exhibitions in València: everything you can see in August');
-  assert.equal(expo.start_date, '2026-07-27'); // NOT 2026-08-27
-  assert.equal(expo.end_date, '2026-08-31');
-  // the range is peeled from description/raw_excerpt too (raw_text == title live)
-  assert.equal(expo.description, 'Exhibitions in València: everything you can see in August');
+  assert.equal(out.length, 1);
+  assert.equal(out.find((o) => o.sourceItemId === 2314), undefined);
 
   const funfair = out.find((o) => o.sourceItemId === 2311).draft;
   assert.equal(funfair.title, 'Summer Amusement Park in Valencia 2026');
   assert.equal(funfair.start_date, '2026-06-23');
   assert.equal(funfair.end_date, '2026-08-08');
+  // the range is peeled from description/raw_excerpt too (raw_text == title live)
+  assert.equal(funfair.description, 'Summer Amusement Park in Valencia 2026');
+});
+
+// ---------------------------------------------------------------------------
+// T206 — guide/listicle articles are NOT events; full-year placeholders are not dates
+// ---------------------------------------------------------------------------
+
+test('isVisitvalenciaGuideCard: real live guide titles are classified as guides', () => {
+  const guide = (title, slug) => isVisitvalenciaGuideCard(title, `${BASE}/${slug}`);
+  // every pair below is a verbatim live source_items title+slug
+  assert.equal(guide('Best places to enjoy flamenco in Valencia', 'best-places-enjoy-flamenco-valencia'), true);
+  assert.equal(guide('The Best Spas in Valencia to Disconnect and Recharge', 'best-spas-valencia-disconnect-and-recharge'), true);
+  assert.equal(guide('The Best Spas for a Relaxing Day in Valencia', 'best-spas-relaxing-day-valencia'), true);
+  assert.equal(guide('Must-see immersive exhibitions this spring in Valencia', 'must-see-immersive-exhibitions-spring-valencia'), true);
+  assert.equal(guide('Where to Watch the FIFA World Cup in Valencia', 'where-watch-fifa-world-cup-valencia'), true);
+  assert.equal(guide('Where to have a late breakfast near the sea in València', 'where-have-late-breakfast-near-sea-valencia'), true);
+  assert.equal(guide('Three ways to enjoy live jazz in Valencia', 'three-ways-enjoy-live-jazz-valencia'), true);
+  assert.equal(guide('Exhibitions in València: everything you can see in August', 'exhibitions-valencia-everything-you-can-see-august'), true);
+  // slug catch (live): the card was RETITLED "…2026 Calendar 2026" but its slug kept
+  // the guide shape — the slug check still classifies it.
+  assert.equal(guide('Valencia’s Circuit Ricardo Tormo 2026 Calendar 2026', 'must-see-racing-events-ricardo-tormo-circuit'), true);
+  // the "…guide" title shape (no live row yet — T206 names it explicitly)
+  assert.equal(guide('Valencia comedy guide', 'valencia-comedy-guide'), true);
+});
+
+test('isVisitvalenciaGuideCard: real event titles never match (mid-title "best" etc.)', () => {
+  const guide = (title, slug) => isVisitvalenciaGuideCard(title, `${BASE}/${slug}`);
+  // mid-title "best" belongs to real events/experiences — must be KEPT
+  assert.equal(guide('The Champions Burger: Taste the best burgers in Valencia', 'champions-burger-valencia'), false);
+  assert.equal(guide('Discover the San José Caves, the best-kept underground secret near Valencia', 'san-jose-caves-excursion-valencia'), false);
+  assert.equal(guide('Enjoy the best live flamenco!', 'enjoy-best-live-flamenco'), false);
+  // "guided tours" are real experiences — \bguides?\b must not match "guided"
+  assert.equal(guide('Guided tours of San Juan del Hospital', 'guided-tours-san-juan-del-hospital'), false);
+  assert.equal(guide('Guided tours to discover the secrets of the Palau de Les Arts', 'guided-tours-discover-secrets-palau-de-les-arts'), false);
+  // a dated fair programme is an event, not a listicle
+  assert.equal(guide('Stand-up comedy and comedy nights at the July Fair in Valencia', 'stand-comedy-and-comedy-nights-july-fair-valencia'), false);
+  assert.equal(guide('Watch Valencia CF matches at Mestalla', 'watch-best-soccer-matches-live-mestalla-stadium'), false);
+  assert.equal(isVisitvalenciaGuideCard('Rod Stewart concert in València', null), false);
+});
+
+test('isFullYearPlaceholder: same-year 01/01→31/12 only', () => {
+  assert.equal(isFullYearPlaceholder('2026-01-01', '2026-12-31'), true);
+  assert.equal(isFullYearPlaceholder('2027-01-01', '2027-12-31'), true);
+  // cross-year and genuine ranges are NOT placeholders
+  assert.equal(isFullYearPlaceholder('2026-01-01', '2027-12-31'), false);
+  assert.equal(isFullYearPlaceholder('2025-10-30', '2026-10-29'), false);
+  assert.equal(isFullYearPlaceholder('2026-06-25', '2026-12-31'), false);
+  assert.equal(isFullYearPlaceholder('2026-01-01', '2026-06-30'), false);
+});
+
+test('stripTrailingCardRange: a glued full-year placeholder cleans the title, yields NO range', () => {
+  const a = stripTrailingCardRange('Mestalla Forever Tour: Experience Valencia CF from the Inside 01/01/2026 - 31/12/2026');
+  assert.equal(a.title, 'Mestalla Forever Tour: Experience Valencia CF from the Inside');
+  assert.equal(a.range, null);
+  // a garbage tail still leaves the title untouched (start implausible)
+  const b = stripTrailingCardRange('Some event 45/13/2026 - 99/99/2026');
+  assert.equal(b.title, 'Some event 45/13/2026 - 99/99/2026');
+  assert.equal(b.range, null);
+});
+
+// Verbatim excerpt of live snapshot row 1807 (2026-07-05): the evergreen experiences
+// carry the site's full-year placeholder "From 01/01/2026 to 31/12/2026" in BOTH the
+// split and the inline markup; real ranges (incl. one that merely ENDS on 31/12) sit
+// right next to them.
+const SNAP_1807_PLACEHOLDER = `
+ Discover Valencia’s Holy Grail in a unique exhibition at the Almudín
+
+ From
+ 30/10/2025
+ to 29/10/2026
+
+ Discover Valencia’s Holy Grail in a unique exhibition at the Almudín
+
+ exhibitions
+
+ “The Light of San Nicolás”: an immersive experience in Valencia
+
+ From
+ 01/01/2026
+ to 31/12/2026
+
+ “The Light of San Nicolás”: an immersive experience in Valencia
+
+ Must-see immersive exhibitions this spring in Valencia
+
+ From 25/06/2026 to 31/12/2026
+
+ Three different tourist buses to explore Valencia
+
+ From 01/01/2026 to 31/12/2026
+
+ Three different tourist buses to explore Valencia
+
+ Mestalla Forever Tour: Experience Valencia CF from the Inside
+
+ From 01/01/2026 to 31/12/2026
+
+ Mestalla Forever Tour: Experience Valencia CF from the Inside
+`;
+
+test('scanSnapshotDates: full-year placeholders record NO range; real neighbours survive', () => {
+  const map = new Map();
+  scanSnapshotDates(SNAP_1807_PLACEHOLDER, map);
+  // placeholders (split AND inline forms) → no entry at all
+  assert.equal(map.has('the light of san nicolas an immersive experience in valencia'), false);
+  assert.equal(map.has('three different tourist buses to explore valencia'), false);
+  assert.equal(map.has('mestalla forever tour experience valencia cf from the inside'), false);
+  // a real cross-year range right above them is untouched
+  assert.deepEqual(map.get('discover valencias holy grail in a unique exhibition at the almudin'),
+    { start: '2025-10-30', end: '2026-10-29' });
+  // a range that merely ENDS on 31/12 but starts mid-year is REAL — kept
+  assert.deepEqual(map.get('must see immersive exhibitions this spring in valencia'),
+    { start: '2026-06-25', end: '2026-12-31' });
+});
+
+test('buildVisitvalenciaEvents: placeholder-dated evergreens emit with honest null dates', () => {
+  const rows = [
+    {
+      id: 1807,
+      source_key: 'web:visitvalencia',
+      title: 'Valencia Events | Events in Valencia | Upcoming Events',
+      raw_text: SNAP_1807_PLACEHOLDER,
+      raw_json: '{"kind":"page_snapshot","source_page":"https://www.visitvalencia.com/en/events-valencia"}',
+      url: BASE,
+    },
+    // live evergreen cards whose only "date" is the full-year placeholder
+    card(801, 'Mestalla Forever Tour: Experience Valencia CF from the Inside', 'mestalla-forever-tour-experience-valencia-cf-inside'),
+    card(802, 'Three different tourist buses to explore Valencia', 'three-different-tourist-buses-explore-valencia'),
+    // a real cross-year exhibition from the same snapshot keeps its published range
+    card(803, 'Discover Valencia’s Holy Grail in a unique exhibition at the Almudín', 'discover-valencias-holy-grail-unique-exhibition-almudin'),
+  ];
+  const out = buildVisitvalenciaEvents(rows, TODAY);
+  assert.equal(out.length, 3);
+
+  const mestalla = out.find((o) => o.sourceItemId === 801).draft;
+  assert.equal(mestalla.start_date, null); // NOT 2026-01-01 — the placeholder is not a date
+  assert.equal(mestalla.end_date, null);
+
+  const buses = out.find((o) => o.sourceItemId === 802).draft;
+  assert.equal(buses.start_date, null);
+  assert.equal(buses.end_date, null);
+
+  const grail = out.find((o) => o.sourceItemId === 803).draft;
+  assert.equal(grail.start_date, '2025-10-30');
+  assert.equal(grail.end_date, '2026-10-29');
 });

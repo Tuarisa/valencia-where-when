@@ -51,6 +51,31 @@ import type { RawItem } from "./types";
 // segment that is not a bare category. Everything else is dropped. Every raw row is
 // marked normalized append-only; an unparseable draft is skipped, never thrown
 // (constitution: pipeline is fail-soft + append-only). Deterministic, no LLM (T140).
+//
+// T206 REAL-DATA FINDING — two more lies hid INSIDE `/events-valencia/<slug>`:
+//
+// 1. GUIDE/LISTICLE ARTICLES live on the events listing with event-shaped URLs
+//    ("Best places to enjoy flamenco in Valencia", "The Best Spas in Valencia to
+//    Disconnect and Recharge", "Must-see immersive exhibitions this spring in
+//    Valencia", "Where to Watch the FIFA World Cup in Valencia", "Three ways to
+//    enjoy live jazz in Valencia", "Exhibitions in València: everything you can see
+//    in August" — all live rows). They are roundup ARTICLES, not events (two of the
+//    T202 residual false contain-merges bridged through them). We classify them by
+//    deterministic title/slug shapes and DROP them (not routed to places — kept a
+//    small diff on purpose). An article stays an article even when the site dates it
+//    (the monthly "everything you can see in …" roundups carry real ranges).
+//
+// 2. Evergreen experiences carry the site's FULL-YEAR placeholder "From 01/01/YYYY
+//    to 31/12/YYYY" (12 live drafts: guided tours, permanent exhibitions, tourist
+//    buses…). That is the CMS way of saying "open all year", not a start date.
+//    Claiming start=Jan-1 lies everywhere downstream: score.ts reads a long-past
+//    start (−40) plus ≥120-day duration (−26, and −12 more for this source), the
+//    calendar draws a year-long exposition bar (isExposition), and rebake-seed would
+//    bake the lie into prod. The feed keeps null-dated rows (unknown ≠ past) and the
+//    seed bake excludes them — exactly how this normalizer's other evergreen cards
+//    already behave. So the least-lying representation is NO date: a same-year
+//    01/01→31/12 range is treated as "no published date" (нет даты → не эмитим её);
+//    the event itself is still emitted. start=today would fabricate — forbidden.
 
 export const VISITVALENCIA_SOURCE_KEY = "web:visitvalencia";
 const SOURCE_URL = "https://www.visitvalencia.com/en/events-valencia";
@@ -92,6 +117,47 @@ export function isVisitvalenciaEventUrl(url?: string | null): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// T206: guide/listicle classification (deterministic — title + slug shapes)
+// ---------------------------------------------------------------------------
+
+// Title shapes of the guide/listicle ARTICLES observed live (matched against the
+// normTitle-folded headline, so punctuation/accents/hyphens are already spaces):
+//   ^best / ^the best        "Best places to enjoy flamenco…", "The Best Spas…"
+//   ^must see                "Must-see immersive exhibitions this spring…"
+//   ^where to                "Where to Watch the FIFA World Cup…"
+//   ^top N                   future-proof listicle shape (none live yet)
+//   places to / ways to      "…places to enjoy…", "Three ways to enjoy live jazz…"
+//   everything you can see   "Exhibitions in València: everything you can see in August"
+//   guide(s) as its own word "…guide" per T206 (never matches "guided tours" — real
+//                            experiences like "Guided tours of San Juan del Hospital")
+// Deliberately NOT matched (real rows kept as events): mid-title "best" ("The
+// Champions Burger: Taste the best burgers…" is a real food festival, "Discover the
+// San José Caves, the best-kept underground secret…" a real excursion, "Enjoy the
+// best live flamenco!" plausibly a real show), and dated fair programmes ("Stand-up
+// comedy and comedy nights at the July Fair…" — venue+date pair, not a listicle).
+const GUIDE_TITLE_RE =
+  /^(?:the )?best\b|^must see\b|^where to\b|^top \d+\b|\bplaces to\b|\bways to\b|\beverything you can (?:see|do)\b|\bguides?\b/;
+
+// The slug mirrors the title but ELIDES stopwords ("where-watch-fifa-world-cup…",
+// "three-ways-enjoy-live-jazz…"), so its anchors are looser. Belt-and-braces: catches
+// a retitled card whose slug stays guide-shaped.
+const GUIDE_SLUG_RE =
+  /^(?:the )?best\b|^must see\b|^where\b|^top \d+\b|\bways\b|\beverything you can (?:see|do)\b|\bguides?\b/;
+
+// PURE (T206): is this card a guide/listicle ARTICLE rather than an event? Checked on
+// the CLEAN title (glued range already peeled) and on the `/events-valencia/<slug>`
+// slug. Conservative on purpose: a false drop loses a real event, a false keep only
+// re-admits an article — so only the shapes proven on live rows match.
+export function isVisitvalenciaGuideCard(title: string, url?: string | null): boolean {
+  if (GUIDE_TITLE_RE.test(normTitle(title))) return true;
+  if (!url) return false;
+  const m = /\/events-valencia\/([^/?#]+)/.exec(url.split(/[?#]/)[0]);
+  if (!m) return false;
+  const slug = normTitle(decodeURIComponent(m[1]));
+  return slug ? GUIDE_SLUG_RE.test(slug) : false;
+}
+
+// ---------------------------------------------------------------------------
 // T154: date extraction (deterministic — the source publishes DD/MM/YYYY ranges)
 // ---------------------------------------------------------------------------
 
@@ -112,10 +178,24 @@ export function dmyToIso(d: string, m: string, y: string): string | null {
   return `${y}-${m}-${d}`;
 }
 
+// PURE (T206): the site's evergreen placeholder — 01/01 → 31/12 of the SAME year
+// ("From 01/01/2026 to 31/12/2026", verbatim in live snapshots for guided tours /
+// permanent exhibitions / tourist buses). It means "open all year", not a start date.
+export function isFullYearPlaceholder(start: string, end: string): boolean {
+  return (
+    start.slice(4) === "-01-01" &&
+    end.slice(4) === "-12-31" &&
+    start.slice(0, 4) === end.slice(0, 4)
+  );
+}
+
 // PURE: normalize a (start, end) pair; end collapses to null when it equals start
-// (single-day) or precedes it (the aggregator lied — keep only the start).
+// (single-day) or precedes it (the aggregator lied — keep only the start). A same-year
+// full-year placeholder yields NO range at all (T206 — see the file header: null dates
+// are the least-lying representation for "open all year"; we never claim start=Jan-1).
 function makeRange(start: string | null, end: string | null): VvDateRange | null {
   if (!start) return null;
+  if (end && isFullYearPlaceholder(start, end)) return null;
   if (!end || end <= start) return { start, end: null };
   return { start, end };
 }
@@ -131,10 +211,13 @@ export function stripTrailingCardRange(title: string): { title: string; range: V
   const m = TRAILING_RANGE.exec(title);
   if (!m) return { title, range: null };
   const start = dmyToIso(m[1], m[2], m[3]);
+  // Implausible start → the tail is garbage numbers: leave the title untouched.
+  if (!start) return { title, range: null };
   const end = dmyToIso(m[4], m[5], m[6]);
-  const range = makeRange(start, end);
-  if (!range) return { title, range: null };
-  return { title: title.slice(0, m.index).trim() || title, range };
+  // A plausible tail is ALWAYS peeled off the title — it is display noise either way;
+  // makeRange decides whether it is also a usable date (a full-year placeholder tail
+  // cleans the title but yields NO range, T206).
+  return { title: title.slice(0, m.index).trim() || title, range: makeRange(start, end) };
 }
 
 // Snapshot line forms (anchored to the WHOLE trimmed line so stray numbers in prose
@@ -285,12 +368,15 @@ export function classifyVisitvalencia(text: string): string {
 
 // PURE: turn pending visitvalencia raw rows into event drafts. Keeps ONLY real
 // `/events-valencia/<slug>` detail cards; site nav, `/shop/…` products, guides and
-// the category indices are dropped (isVisitvalenciaEventUrl + isJunkCard). The
-// page_snapshot rows are not emitted as events but ARE mined for the published
-// DD/MM/YYYY ranges (T154 — see the file header); dates resolve in confidence order:
-// (1) the range glued into the card's own text (Aug-2026 markup), (2) the snapshot
-// listing's range for the same title, (3) parseEventDate on the clean text. No hit →
-// null, never fabricated. DB-free so it unit-tests without a connection.
+// the category indices are dropped (isVisitvalenciaEventUrl + isJunkCard), and
+// guide/listicle ARTICLES with event-shaped URLs drop too (isVisitvalenciaGuideCard,
+// T206 — even when dated: an article is not an event). The page_snapshot rows are
+// not emitted as events but ARE mined for the published DD/MM/YYYY ranges (T154 —
+// see the file header); dates resolve in confidence order: (1) the range glued into
+// the card's own text (Aug-2026 markup), (2) the snapshot listing's range for the
+// same title, (3) parseEventDate on the clean text. No hit → null, never fabricated;
+// the same-year 01/01→31/12 placeholder counts as no hit (T206). DB-free so it
+// unit-tests without a connection.
 export function buildVisitvalenciaEvents(
   rows: RawItem[],
   today: Date = new Date(),
@@ -315,6 +401,10 @@ export function buildVisitvalenciaEvents(
     // already removes nav, but a header card that slipped through with an event-ish
     // URL is still caught here). A real listing headline is never matched.
     if (isJunkCard(title, item.raw_text, VISITVALENCIA_NAME)) continue;
+
+    // T206: guide/listicle ARTICLES wear event URLs on this listing — drop them
+    // (checked on the CLEAN title so a glued date range can't disguise a roundup).
+    if (isVisitvalenciaGuideCard(title, item.url)) continue;
 
     // Card text with the glued range peeled too (raw_text == title on live rows).
     const text = stripTrailingCardRange(compact(item.raw_text) ?? "").title || null;
