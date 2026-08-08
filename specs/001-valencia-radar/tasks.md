@@ -711,13 +711,25 @@ exist, raw layer still append-only.
   Real-data measure: 709 raw → 367 events, 239 dated (65%). GOOD: palau 10/10, ticketmaster 28/28.
   Quality issues → T154.)*
 
-- [ ] T154 [A] **Fix the suspicious new normalizers (real-data quality)** (T144-norms finding). The 10
+- [x] T154 [A] **Fix the suspicious new normalizers (real-data quality)** (T144-norms finding). The 10
   new normalizers pass synthetic tests but several misbehave on REAL data (adversarial verify died on the
   session limit): **visitvalencia** 56 events / 0 dated (dates not parsed), **lacotorra** 8 raw → 56 events
   (explosion?), **laganzua** 1/47 (over-filter), **eventbrite** 7/61 (low yield), **elcontacto** 0/3 +
   **russpain** 0/4 (RU sites, 0 events). Diagnose each on live `source_items` + fix the parser
   deterministically; drop chrome, parse real dates, don't fabricate. Then re-measure + adversarial-verify.
   (songkick 8-dated/26 + hoyvalencia 38/76 have plausible explanations — verify if time permits.)
+  *(DONE 2026-08-08 (night shift) — 6 agents, each vs REAL rows: **visitvalencia** bug-fixed 6%→68%
+  dated (dates lived in page_snapshot DD/MM/YYYY ranges + glued into card titles since the Aug
+  redesign; fixed a real "August 27/07" month-first misparse; snapshot event_links are OFF-BY-ONE for
+  this source — worked around, recorded as T203). **lacotorra** mixed: "8→56" is NOT an explosion
+  (54 date-anchored blocks on the real index; gap = T170 Madrid/BCN drops) but 2 real bugs fixed —
+  bare stem "пуэрто" wrongly dropped Puerto-de-Sagunto (CV), The Weeknd added to headliner allowlist;
+  T201 done (see below). **laganzua** mixed: twins now share a hash, 8/8 dated. **eventbrite**
+  bug-fixed: ES-locale card markers ("+ N más") — +33 dated events, 53 dated total. **elcontacto**
+  legit-no-fix: source URL 404s (chrome only) → T204. **russpain** bug-fixed the other way: the site
+  has NO afisha (news homepage); normalizer now drops news links, 30 bogus news-"events" DELETED from
+  the local DB → T205 (dead source; prod check needed). Tests: +23 across 6 files, all fixtures
+  verbatim from live rows; gate 548/548.)*
 
 - [ ] T155 [C] **Verify dedup post strongMatchKey-fix — no under-merge** (user, `backlog:`). After the
   bake found strongMatchKey over-merging multi-event-per-page sources (lacotorra 56→1) and the key was
@@ -1378,8 +1390,55 @@ additional issues the agent is NOT handling.)
   Response surfaces `deferred_sources` + `budget.cutAt:"ingest"`. Per-request aborts already existed
   (verified, unchanged). Tests: +6 injected-clock (16/16 in dispatch-materialize; tsc clean).)*
 
-- [ ] T201 [A] **lacotorra: description is a short teaser, source page has the FULL text** (user,
+- [x] T201 [A] **lacotorra: description is a short teaser, source page has the FULL text** (user,
   2026-08-08: prod `/events/28153-vr` vs `https://lacotorra.io/events/vr-vystavka-o-zatmenii-v-valensii`).
   The normalizer takes the index-page snippet instead of the event detail page's full description.
   Fix deterministically: ingest/parse the detail page (the per-event URL is already known post-T190)
   and prefer its full description; verify on live `source_items`. Fold into the T154 lacotorra pass.
+  *(DONE 2026-08-08 (night shift) — `parseLacotorra` self-fetch parser (hemisferic pattern) in
+  PARSER_REGISTRY: index via unchanged parseGeneric + detail pages fetched ONLY when not already
+  held (`item_type='event_detail'` keyed by URL, cap 60/run, 250ms pacing, 10s/page, honours the
+  T200 `deadlineMs`); pure `extractLacotorraDetail` parses descr-section full text + event og:image
+  (stub on empty 200 → no eternal refetch). Normalizer prefers detail full text over the index
+  teaser (teaser → raw_excerpt) + per-event image over the generic banner. Local result: avg
+  description 63→1392 chars, 0 teasers, 27/27 own images; user's example 27577 (prod 28153-vr)
+  45→968 chars. Prod's first backfill tick self-heals across ticks under the budget. 21/21 tests.)*
+
+- [ ] T203 [A] **`extractEventLinks` off-by-one for visitvalencia snapshots** (T154 finding, verified
+  on live row 1807): each title is paired with the NEXT card's URL. visitvalencia.ts works around it
+  (never uses event_links); fix in ingest.ts properly + check other snapshot sources for the same skew.
+
+- [ ] T204 [A] **elcontacto source URL is dead** — `/valencia/events` 404s live; every tick collects
+  3 chrome rows, 0 events possible. `/valencia/` (200) is a classifieds board, not an afisha. Decide:
+  repoint or disable the source (sources seed change → needs user OK).
+
+- [ ] T205 [A] **russpain is dead as an events source** (English news edition, no afisha) — normalizer
+  now correctly drops news links (T154), 30 bogus news-"events" deleted locally. Decide: lower cadence
+  or disable (seed change → user OK). PROD check: the same bogus events may exist on Neon via the
+  materialize tick — verify/clean `events WHERE source='web:russpain'` (night-shift orchestrator does
+  the check; result recorded here). Also: 2 baked seed events (26935, 26969) carry russpain /news/
+  URLs in metadata sources — clears on the next user-approved re-bake.
+
+- [x] T202 [C] **Containment dedup pass over-merges — venue tokens, null-date bridges, digest-post
+  hubs** (T155 verification side finding, 2026-08-08). Live DB: survivor 26969 holds **76 losers
+  from 12 sources** (`match_method='contain'`); 26515 → 29; «Кровосток» absorbed unrelated excursions
+  + Dimash + «Корова на льду». From-scratch replay of CURRENT code: containment collapses **448 of
+  1049** candidates incl. a 377-member transitive blob. Three mechanisms in `titlesContain`/
+  `containmentGroups` (`lib/pipeline/dedup.ts`): (1) venue tokens ≥6 chars (olympia, auditorio,
+  caixaforum) satisfy the distinctive-name-overlap rule → unrelated events at the same venue merge;
+  (2) null date on either side SKIPS the date-window guard → undated rows bridge anything;
+  (3) multi-artist digest posts (tg "Hola amig@s… novedades") become union-find hubs chaining
+  clusters transitively. FIX deterministically + tests; then REPAIR the local DB (reset wrongly
+  `contain`-merged duplicates → re-run fixed dedup, T173-style) before the next re-bake. T155 итог:
+  PASS (no under-merge; idempotent; lacotorra 46 survive).
+  *(DONE 2026-08-08 (night shift) — all 3 mechanisms fixed in `containmentGroups`/`shareTokenOfLen`
+  ONLY (strong/fuzzy/tier passes byte-identical, verified by serialized-signature diff on a frozen
+  1019-row snapshot): (1) containment now requires non-null epochDay BOTH sides; (2) new
+  `NON_IDENTITY_TOKENS` (venue words olympia/auditorio/marina/…, framing plurals conciertos/tributo/…,
+  RU month genitives avgusta/iyunya) excluded in `shareTokenOfLen` only — NOT in TITLE_STOPWORDS so
+  titleSignature unchanged; (3) hub detection: a node with ≥3 mutually-unrelated containment partners
+  (CONTAINMENT_HUB_MIN, K=3 — K=2 dissolves the genuine Мумий-Тролль cluster) is excluded from
+  unions. Replay: collapses 435→24, biggest cluster 366→4; tier pass RECOVERED 1 swallowed group;
+  15 genuine-merge spot-checks all survive. +7 tests (dedup 59/59). DB repair (reset contain-losers →
+  re-run fixed dedup) done by the orchestrator post-integration. Residual (out of scope, recorded):
+  non-Valencia rows with identical `city` can still glue (Garbage 4-cluster, feria lineup pair).)*
