@@ -110,6 +110,11 @@ const NON_IDENTITY_TOKENS = new Set<string>([
   // "Abbamania (tributo a ABBA)" vs "Candlelight: Tributo a Ludovico Einaudi" share
   // only "tributo"; identity lives in the tributee's name, never the framing.
   "conciertos", "tributo", "musica", "directo", "guiada", "cultural", "summer",
+  // …post-repair residuals (T202 repair run): "Bachata Nights" ← horchata
+  // workshops via "workshops"; "Fuckup Nights" ← comedy listicle via "nights";
+  // Sagunto concert ← "Best places to enjoy flamenco" guide via "flamenco" —
+  // genre/format words, never an event's identity.
+  "workshops", "workshop", "nights", "flamenco",
   // RU month genitives (translit) — "15 августа" vs "14 августа" proves shared
   // MONTH, not shared event (the date-window guard owns dates). The ambiguous
   // marta/maya (also person names) are deliberately NOT listed.

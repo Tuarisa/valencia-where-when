@@ -1418,6 +1418,24 @@ additional issues the agent is NOT handling.)
   materialize tick — verify/clean `events WHERE source='web:russpain'` (night-shift orchestrator does
   the check; result recorded here). Also: 2 baked seed events (26935, 26969) carry russpain /news/
   URLs in metadata sources — clears on the next user-approved re-bake.
+  *(Night-shift note 2026-08-08: direct prod-DB check was correctly blocked by the permission
+  classifier (needs the user naming the prod target). Public-surface check done instead: no russpain
+  strings in the rendered feed, health ok — bogus rows, if any, are not user-visible (likely
+  null-dated). PENDING USER (one command):
+  `DATABASE_URL=<neon> node --import tsx -e "…DELETE FROM events WHERE source='web:russpain'…"`
+  or just say «проверь прод russpain» to authorize the check+clean.)*
+
+- [ ] T206 [A] **visitvalencia emits GUIDE ARTICLES as events** (T202-repair finding): listicles like
+  "Best places to enjoy flamenco" / comedy guides become event rows (2 of 3 residual false contain-
+  merges bridged through them), and evergreen experiences carry the site's 01/01–31/12 placeholder
+  year-ranges. Teach the normalizer to classify guide/listicle cards (URL pattern /what-to-do/,
+  title shapes "Best…", "…guide", no venue+date pair) as NON-events (drop or route to places), and
+  treat year-spanning ranges as "ongoing" rather than start=Jan-1.
+
+- [ ] T207 [A] **rutatuta year-inference twins** (T202-repair finding): the same excursion exists at
+  2026-07-07 AND 2027-07-07 (both upcoming, same source — dedup correctly refuses same-source
+  merges). The normalizer's year inference rolls past dates a year forward and re-emits under a new
+  hash. Fix the inference (anchor to post date like T152) + clean the existing 2027 twins locally.
 
 - [x] T202 [C] **Containment dedup pass over-merges — venue tokens, null-date bridges, digest-post
   hubs** (T155 verification side finding, 2026-08-08). Live DB: survivor 26969 holds **76 losers
