@@ -187,6 +187,92 @@ export function dateFromUrl(url?: string | null): string | null {
 }
 
 // ---------------------------------------------------------------------------
+// Relative ES dates anchored to the post date (T152)
+// ---------------------------------------------------------------------------
+
+// A resolved relative phrase: a concrete start day plus an optional window end
+// ("este fin de semana" → Sat..Sun; "este mes" → post day..month end).
+export interface RelativeDateRange {
+  start: string;
+  end: string | null;
+}
+
+function isoOf(d: Date): string {
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+// PURE (T152): the POST date of a raw row, as a local-midnight Date — the only valid
+// anchor for relative phrases ("este fin de semana" means the weekend of the week the
+// post was WRITTEN, not of whenever the normalizer happens to run, which can be weeks
+// later). `published_at` is the actual telegram post timestamp (the embed's
+// <time datetime>); the scrape timestamps are fallbacks. Calendar-date components →
+// local Date (same reasoning as eventbrite's scrapeDateOf: avoids a UTC→local −1
+// slip). Null when nothing usable — the caller must then NOT resolve relative dates.
+export function postDateOf(item?: RawItem | null): Date | null {
+  const iso =
+    item?.published_at || (item?.first_seen as string) || item?.last_seen || null;
+  if (!iso) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso));
+  if (!m) return null;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+}
+
+// PURE (T152, deterministic — T140): resolve a relative Spanish date phrase against
+// the post date. Supported:
+//   • "hoy" → post day; "mañana" → post day + 1 (NOT when preceded by "la"/"esta" —
+//     "por la mañana" is the morning, not tomorrow);
+//   • "este/el fin de semana" / "finde" → the Sat–Sun of the Mon-based week CONTAINING
+//     the post date (so a Sunday post still points at the in-progress weekend);
+//   • "próximo fin de semana" / "finde" → the following week's Sat–Sun;
+//   • "este mes" → post day .. last day of that month (start is the POST day, not the
+//     1st: claiming it began before the post was written would be an invented date).
+// When several phrases occur the FIRST in the text wins (same rule as parseEventDate).
+// `postDate` is REQUIRED: with no post date there is nothing to anchor to and the
+// answer is null — relative dates must never resolve against "now" at normalize time.
+export function parseRelativeEsDate(
+  text?: string | null,
+  postDate?: Date | null,
+): RelativeDateRange | null {
+  const t = compact(text);
+  if (!t || !postDate) return null;
+  // lowercase + fold accents so "próximo"/"mañana" match as "proximo"/"manana"
+  const lower = t.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+
+  const base = new Date(postDate.getFullYear(), postDate.getMonth(), postDate.getDate());
+  const shift = (days: number) =>
+    new Date(base.getFullYear(), base.getMonth(), base.getDate() + days);
+  const monIdx = (base.getDay() + 6) % 7; // Mon=0 … Sun=6
+
+  let best: { index: number; range: RelativeDateRange } | null = null;
+  const consider = (m: RegExpExecArray | null, make: () => RelativeDateRange) => {
+    if (m && (!best || m.index < best.index)) best = { index: m.index, range: make() };
+  };
+
+  // this weekend = the Saturday/Sunday of the week containing the post date
+  consider(/\b(?:este|el)\s+(?:fin\s+de\s+semana|finde)\b/.exec(lower), () => ({
+    start: isoOf(shift(5 - monIdx)),
+    end: isoOf(shift(6 - monIdx)),
+  }));
+  // next weekend = the following week's Saturday/Sunday
+  consider(/\b(?:el\s+)?proximo\s+(?:fin\s+de\s+semana|finde)\b/.exec(lower), () => ({
+    start: isoOf(shift(12 - monIdx)),
+    end: isoOf(shift(13 - monIdx)),
+  }));
+  // month window: post day .. last calendar day of the post's month
+  consider(/\beste\s+mes\b/.exec(lower), () => ({
+    start: isoOf(base),
+    end: isoOf(new Date(base.getFullYear(), base.getMonth() + 1, 0)),
+  }));
+  consider(/\bhoy\b/.exec(lower), () => ({ start: isoOf(base), end: null }));
+  consider(/(?<!\bla\s)(?<!\besta\s)\bmanana\b/.exec(lower), () => ({
+    start: isoOf(shift(1)),
+    end: null,
+  }));
+
+  return best ? (best as { index: number; range: RelativeDateRange }).range : null;
+}
+
+// ---------------------------------------------------------------------------
 // Per-event link matching (T190)
 // ---------------------------------------------------------------------------
 

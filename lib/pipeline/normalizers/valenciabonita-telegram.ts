@@ -1,6 +1,12 @@
 import { sql } from "../../db";
 import { compact, nowIso } from "../util";
-import { parseEventDate, upsertPlainEvent, type EventInsert } from "./shared";
+import {
+  parseEventDate,
+  parseRelativeEsDate,
+  postDateOf,
+  upsertPlainEvent,
+  type EventInsert,
+} from "./shared";
 import { parsePrice, parseVenue, parseAddress } from "./valenciarusa";
 import { postTitle, looksLikeEvent } from "./vidacultural";
 import type { RawItem } from "./types";
@@ -81,7 +87,12 @@ export function buildValenciabonitaTgEvents(
   for (const item of rows) {
     const raw = parseRaw(item);
     const body = item.raw_text || "";
-    const start = parseEventDate(body, today);
+    const explicit = parseEventDate(body, today);
+    // T152: no explicit date → resolve relative ES phrases ("este fin de semana",
+    // "este mes", "hoy"/"mañana") against the POST date (published_at). A post with
+    // no post date stays unresolved — never anchored to normalize-time "now".
+    const rel = explicit ? null : parseRelativeEsDate(body, postDateOf(item));
+    const start = explicit ?? rel?.start ?? null;
     if (!looksLikeEvent(body, start != null)) continue;
 
     const title = postTitle(body, item.title);
@@ -100,6 +111,7 @@ export function buildValenciabonitaTgEvents(
         category: deriveCategory(`${title} ${body}`),
         language: detectLang(body),
         start_date: start,
+        end_date: rel?.end ?? null,
         venue_name: venue,
         address,
         city: "Valencia",
