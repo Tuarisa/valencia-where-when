@@ -109,16 +109,16 @@ export function selectSeriesForExport(seriesRows, occurrenceRows, today) {
   return { series, occurrences };
 }
 
-// PURE: the seed loader's per-table conflict clause. Most tables are keyed by
-// their explicit seed ids -> `ON CONFLICT (id) DO NOTHING`. event_series /
-// event_occurrences ALSO carry a UNIQUE dedup_hash (the live pipeline's
-// upsertSeries identity), so a re-seeded row conflicts on id AND dedup_hash —
-// and a targeted ON CONFLICT only absorbs its named constraint. Bare
-// `ON CONFLICT DO NOTHING` absorbs both, keeping db:setup idempotent. Updates
-// stay owned by the live pipeline (upsertSeries), never by the seeder.
-export function seedConflictClause(table) {
-  if (table === "event_series" || table === "event_occurrences") {
-    return "ON CONFLICT DO NOTHING";
-  }
-  return "ON CONFLICT (id) DO NOTHING";
+// PURE: the seed loader's per-table conflict clause — bare `ON CONFLICT DO
+// NOTHING` for EVERY table. Rationale: every content table carries TWO uniques
+// (id pkey + dedup_hash), and a targeted ON CONFLICT (id) only absorbs its
+// named constraint. That bit us twice: first event_series/occurrences (dual
+// uniques at load), then — after T198 made PROD materialize events itself —
+// the month-refresh db:setup crashed on events_dedup_hash_key: prod had created
+// the SAME event (same dedup_hash) under its OWN sequence id, so the seed row
+// conflicted on dedup_hash, not id. The seeder's semantic is "insert if absent,
+// never touch live rows" — bare DO NOTHING is exactly that for any unique.
+// Updates stay owned by the live pipeline (upsert*), never by the seeder.
+export function seedConflictClause() {
+  return "ON CONFLICT DO NOTHING";
 }

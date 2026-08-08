@@ -100,9 +100,12 @@ test("selectSeriesForExport: empty inputs -> empty export (rebake guard then abo
   assert.deepEqual(out, { series: [], occurrences: [] });
 });
 
-test("seedConflictClause: series tables absorb ANY unique conflict (id + dedup_hash); others key on id", () => {
-  assert.equal(seedConflictClause("event_series"), "ON CONFLICT DO NOTHING");
-  assert.equal(seedConflictClause("event_occurrences"), "ON CONFLICT DO NOTHING");
-  assert.equal(seedConflictClause("events"), "ON CONFLICT (id) DO NOTHING");
-  assert.equal(seedConflictClause("sources"), "ON CONFLICT (id) DO NOTHING");
+test("seedConflictClause: EVERY table absorbs ANY unique conflict (id + dedup_hash)", () => {
+  // After T198 prod materializes events itself: the same event (same dedup_hash) can
+  // exist under a different live id, so a targeted ON CONFLICT (id) crashes db:setup
+  // on events_dedup_hash_key (hit at the 2026-08-07 month-refresh). Bare DO NOTHING
+  // is the seeder's semantic for every table: insert-if-absent, never touch live rows.
+  for (const t of ["event_series", "event_occurrences", "events", "sources", "places"]) {
+    assert.equal(seedConflictClause(t), "ON CONFLICT DO NOTHING");
+  }
 });
