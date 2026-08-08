@@ -67,13 +67,13 @@ export default async function PlacePage({ params }: { params: { id: string } }) 
 
   return (
     <main className="detail-page detail-shell">
-      <Link className="back-link" href="/">← назад к ленте</Link>
+      <Link className="back-link" href="/places">← к каталогу мест</Link>
       <article className="detail-card">
         <p className="eyebrow">Место</p>
         <h1>{row.name}</h1>
         <div className="meta-grid">
           <div><strong>Где</strong><span>{placeLocationLabel(row)}</span></div>
-          <div><strong>Категория</strong><span>{row.category || "place"}</span></div>
+          <div><strong>Категория</strong><span>{row.category || "место"}</span></div>
           <div><strong>Источник</strong><span>{row.source || "—"}</span></div>
           <div><strong>Координаты</strong><span>{coords}</span></div>
         </div>

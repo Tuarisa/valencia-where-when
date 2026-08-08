@@ -201,7 +201,6 @@ function FeedCard({ item, today }: { item: SiteEvent; today: string }) {
           {item.is_series && item.occurrence_count > 0 && (
             <span>{item.occurrence_count} {pluralSeans(item.occurrence_count)}</span>
           )}
-          <span>score {item.score ?? "—"}</span>
         </div>
         <p>{item.excerpt || "Описание подтянем позже."}</p>
         <div className="tags-row">
@@ -237,10 +236,18 @@ function TagCloud({
   const min = Math.min(...counts);
   const max = Math.max(...counts);
   const sizeFor = (count: number) => {
-    // Map count → [0.82rem, 1.5rem] linearly (flat 1.05rem when all counts are equal).
-    if (max === min) return 1.05;
+    // Map count → [0.82rem, 1.2rem] linearly (flat 1rem when all counts are equal).
+    // Capped at 1.2rem so the biggest chip stays below the panel headings.
+    if (max === min) return 1;
     const t = (count - min) / (max - min);
-    return 0.82 + t * (1.5 - 0.82);
+    return 0.82 + t * (1.2 - 0.82);
+  };
+  // Quantize to the Manrope faces we actually load (400/500/700/800) — fractional
+  // weights like 850 make browsers synthesize a fake bold.
+  const weightFor = (count: number) => {
+    if (max === min) return 500;
+    const t = (count - min) / (max - min);
+    return t < 0.4 ? 500 : t < 0.8 ? 700 : 800;
   };
   return (
     <div className="tag-cloud">
@@ -250,7 +257,7 @@ function TagCloud({
           <button
             key={tag}
             className={`tag-cloud-chip${isActive ? " is-active" : ""}`}
-            style={{ fontSize: `${sizeFor(count).toFixed(2)}rem`, fontWeight: 500 + Math.round(((count - min) / Math.max(1, max - min)) * 350) }}
+            style={{ fontSize: `${sizeFor(count).toFixed(2)}rem`, fontWeight: weightFor(count) }}
             onClick={() => onSelect(isActive ? "" : tag)}
             title={`${humanizeTag(tag)} · ${count}`}
           >
@@ -559,6 +566,7 @@ function MapPanel({
       for (const e of events) {
         if (e.lat == null || e.lng == null) continue;
         L.circleMarker([e.lat, e.lng], {
+          // #00a296 = var(--accent) in globals.css — keep in sync if the palette moves.
           radius: 7, color: "#00a296", fillColor: "#00a296", fillOpacity: 0.9,
         }).addTo(map).bindPopup(eventPopupHtml(e));
       }

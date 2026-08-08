@@ -89,7 +89,7 @@ export default async function PlacesPage({ searchParams }: { searchParams: SP })
       <header className="panel">
         <Link className="back-link" href="/">← назад к ленте</Link>
         <p className="eyebrow">каталог</p>
-        <h2>Места Валенсии</h2>
+        <h1>Места Валенсии</h1>
         <p className="panel-note">
           {filtered.length} из {places.length} мест
           {(category || area || tag || q) ? " · по фильтру" : ""}

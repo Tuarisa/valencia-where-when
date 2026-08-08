@@ -12,6 +12,7 @@ import {
   usableImageUrl,
 } from "@/lib/format";
 import { cleanTags } from "@/lib/tags";
+import { canonicalCategory, categoryLabelRu } from "@/lib/categories";
 import { RichText, LinkButtons } from "../../detail-helpers";
 
 export const dynamic = "force-dynamic";
@@ -149,8 +150,8 @@ export default async function EventPage({ params }: { params: { id: string } }) 
         <div className="meta-grid">
           <div><strong>Когда</strong><span>{formatDateLabel(row.start_date, row.end_date, row.start_time)}</span></div>
           <div><strong>Где</strong><span>{eventLocationLabel(row)}</span></div>
-          <div><strong>Категория</strong><span>{row.category || "other"}</span></div>
-          <div><strong>Score</strong><span>{row.score ?? "—"}</span></div>
+          <div><strong>Категория</strong><span>{categoryLabelRu(canonicalCategory(row.category || "other"))}</span></div>
+          <div><strong>Рейтинг</strong><span>{row.score ?? "—"}</span></div>
         </div>
         <div className="tags-row">
           {tags.map((t) => <span key={t} className="tag">{humanizeTag(t)}</span>)}
@@ -211,8 +212,8 @@ function SeriesDetail({
         <div className="meta-grid">
           <div><strong>Когда</strong><span>{formatDateLabel(series.start_date, series.end_date, null)}</span></div>
           <div><strong>Где</strong><span>{eventLocationLabel(series)}</span></div>
-          <div><strong>Категория</strong><span>{series.category || "other"}</span></div>
-          <div><strong>Score</strong><span>{series.score ?? "—"}</span></div>
+          <div><strong>Категория</strong><span>{categoryLabelRu(canonicalCategory(series.category || "other"))}</span></div>
+          <div><strong>Рейтинг</strong><span>{series.score ?? "—"}</span></div>
         </div>
         <div className="tags-row">
           {tags.map((t) => <span key={t} className="tag">{humanizeTag(t)}</span>)}
