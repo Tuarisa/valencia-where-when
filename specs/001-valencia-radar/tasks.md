@@ -1437,6 +1437,13 @@ additional issues the agent is NOT handling.)
   merges). The normalizer's year inference rolls past dates a year forward and re-emits under a new
   hash. Fix the inference (anchor to post date like T152) + clean the existing 2027 twins locally.
 
+- [ ] T208 [H] **Telegram place-crawler name dedup is accent/variant-blind** (logunespa night crawl,
+  2026-08-08): «El Molinón»≠«El Molinon», «Tránsito Bar»≠«Transito Bar» slip past `normName` (it
+  keeps letters as-is → ó≠o), and venue variants («El Hachazo Ruzafa (Tiro de Hacha…)» / «El Hachazo
+  Tiro de Hacha» ×3) coexist. Fix `normName` in scripts/crawl-telegram.mjs: NFD-strip diacritics;
+  add a containment check for name variants. Then one-off dedup pass over places-logunespa.json
+  (keep the record with maps_url/photo; crawl is append-only so clean BEFORE the next db:setup).
+
 - [x] T202 [C] **Containment dedup pass over-merges — venue tokens, null-date bridges, digest-post
   hubs** (T155 verification side finding, 2026-08-08). Live DB: survivor 26969 holds **76 losers
   from 12 sources** (`match_method='contain'`); 26515 → 29; «Кровосток» absorbed unrelated excursions
@@ -1459,4 +1466,10 @@ additional issues the agent is NOT handling.)
   unions. Replay: collapses 435→24, biggest cluster 366→4; tier pass RECOVERED 1 swallowed group;
   15 genuine-merge spot-checks all survive. +7 tests (dedup 59/59). DB repair (reset contain-losers →
   re-run fixed dedup) done by the orchestrator post-integration. Residual (out of scope, recorded):
-  non-Valencia rows with identical `city` can still glue (Garbage 4-cluster, feria lineup pair).)*
+  non-Valencia rows with identical `city` can still glue (Garbage 4-cluster, feria lineup pair).
+  REPAIR EXECUTED same night: **337 contain-losers reset** (incl. blob 26969's 70 + 26515's 29 + 55
+  orphans of russpain-purged survivors), stale sources[]/provenance stripped, 12 bogus T185-inherited
+  end_dates reverted; fixed dedup re-ran → 35 GENUINE re-merges, RUN2 fixed point. + follow-up:
+  workshops/nights/flamenco tokens (a166be4) + 3 residual pairs unstitched (2 more polluted
+  end_dates found+reverted). Final local DB: **931 upcoming / 193 duplicate / 19 filtered**, dedup
+  0/0 idempotent. The next user-approved re-bake inherits a far cleaner dataset.)*
