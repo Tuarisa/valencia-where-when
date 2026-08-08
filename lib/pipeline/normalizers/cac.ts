@@ -2,6 +2,8 @@ import { sql } from "../../db";
 import { compact } from "../util";
 import {
   parseEventDate,
+  postDateOf,
+  undoFarRollForward,
   runPlainNormalizer,
   readEventLinks,
   matchEventLink,
@@ -332,6 +334,17 @@ export function buildCacEvents(
     const sourceUrl = SOURCE_URL_BY_KEY[sourceKey] ?? item.url ?? "https://cac.es/";
     const img = raw.meta?.["og:image"] || null;
     const exhibitionDefault = EXPO_SOURCES.has(sourceKey);
+    // T209 (T207 sibling): the title-embedded date path («OBSERVACIÓN SOLAR. 21 DE
+    // JULIO») carries no year — anchor its inference to the snapshot's SCRAPE date
+    // (postDateOf: first_seen of the snapshot row), not to normalize-time "now", so
+    // re-normalizing the same snapshot is stable across runs. AND apply the T207
+    // roll-forward guard: cac leaves a finished activity's year-less title on the
+    // page for weeks (live twin 27631 was born from a FRESH Aug-07 snapshot still
+    // advertising «21 DE JULIO» — a scrape-date anchor alone re-fabricates 2027), so
+    // a roll far beyond the announcement horizon is undone back to the scrape year:
+    // stale programming is history, not next year's event. The Dec→Jan announcement
+    // window survives (a real near-term roll lands within the horizon).
+    const anchor = postDateOf(item) ?? today;
     // T190: per-event detail links (title→/exposiciones|conferencias/<slug>) captured at
     // ingest; used to point each block at its own cac.es page instead of the listing.
     const eventLinks: EventLink[] = readEventLinks(raw);
@@ -343,7 +356,8 @@ export function buildCacEvents(
       if (isCacPromo(title)) continue; // shop promo (gift voucher / golden ticket), not real programming
 
       // Determine start date: a block date wins; else a date embedded in the title.
-      const start = block.start ?? dateFromTitle(title, today);
+      const start =
+        block.start ?? undoFarRollForward(dateFromTitle(title, anchor), title, anchor);
       if (!start) continue; // never invent a date (T140 / constitution)
 
       // Is this an exhibition? The pure Exposiciones source defaults yes; otherwise a

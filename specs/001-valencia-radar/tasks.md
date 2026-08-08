@@ -1449,13 +1449,33 @@ additional issues the agent is NOT handling.)
 
   *(DONE 2026-08-08 (night tail) — crawler `normName`: NFD+strip marks → RU→Latin translit (inline map mirroring dedup.ts) → c→k fold (Биопарк↔BIOPARC, Океанографик↔Oceanogràfic meet); seen-guard indexes parenthetical aliases + bidirectional containment ≥6. One-off file cleanup: 154→139 places, 10 groups merged (Океанографик ×5→1, Биопарк ×2→1, Hachazo ×3→1, консульство caught by identical maps_url), keep-rank maps_url>photo>real-address>desc, 1 photo grafted; Norauto pair deliberately kept apart; siblings places*.json clean; ids/dedup_hash now unique (weren't!).)*
 
-- [ ] T209 [A] **Systemic tail of T207: any normalizer calling `parseEventDate` with normalize-time
+- [x] T209 [A] **Systemic tail of T207: any normalizer calling `parseEventDate` with normalize-time
   "now" can roll past dates forward on re-normalize** (T207 agent finding). Audit sibling normalizers
   (grep parseEventDate callers) and switch year-anchoring to `postDateOf(item)` where the source has
   a post date; consider fixing `inferYear` semantics in shared.ts properly (with the byte-identical
   test-mirror discipline). Also: visitvalencia.ts still carries its T203 workaround (event_links
   deliberately unused) — now that extractEventLinks is fixed, let it consume event_links and drop
   the workaround comment.
+
+  *(DONE 2026-08-08 — audit: 16 callers. Fix: rutatuta's T207 guard extracted into shared
+  `anchoredPostDate(body, item, today, horizon=60)` (+`hasExplicitYear`/`undoFarRollForward`;
+  parseEventDate/inferYear semantics UNTOUCHED — fever/eventbrite/worldafisha legitimately rely on
+  next-occurrence; the only parseEventDate test mirror needed NO sync, diff empty). 13 normalizers
+  switched to post-date anchors; cac additionally guards title-embedded dates from FRESH snapshots
+  still advertising finished events (live twin 27631 proved scrape-anchor alone insufficient).
+  visitvalencia consumes event_links again (T203 workaround dropped) via defensive per-pair trust —
+  stored pre-fix skewed pairs auto-reject, self-heals as fresh snapshots land. DB: 5 fabricated
+  2027 rows deleted (entity_sources repointed first); kept 3 genuine 2026 twins-survivors + likely-
+  legit fever 2027-03 gig. +11 regression tests, targeted 375/375, gate 573/573. Side finding →
+  T210.)*
+
+- [ ] T210 [C/E] **valenciabonita drift pairs: enrichment-rewritten rows vs frozen dedup_hash**
+  (T209 forced re-offer surfaced 33 PRE-EXISTING pairs; proven old-code-identical, NOT a T209
+  regression): old enriched rows (dates rewritten by enrichment, e.g. 26125 start=null
+  end=2026-07-31) coexist with new correctly-dated rows for the same post. Old rows carry title_ru
+  content, new rows carry correct dates. Reconcile T202-style: merge/repoint enrichment onto the
+  dated survivor, retire the relic. Mostly past-dated (seed-bake excluded) but a few current (28024
+  @ 2026-08-08) show as feed duplicates of enriched digests until reconciled.
 
 - [x] T202 [C] **Containment dedup pass over-merges — venue tokens, null-date bridges, digest-post
   hubs** (T155 verification side finding, 2026-08-08). Live DB: survivor 26969 holds **76 losers

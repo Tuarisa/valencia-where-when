@@ -150,3 +150,25 @@ test("spainCity returns the matched city, not a blanket Valencia", () => {
   assert.equal(spainCity("концерт в Валенсии"), "Valencia");
   assert.equal(spainCity("nothing here"), null);
 });
+
+// ---------------------------------------------------------------------------
+// T209 (T207 sibling, preventive) — year inference is anchored to the POST date,
+// not to normalize time: a re-offered year-less RU date must not roll a year
+// forward on re-normalize (the mechanics that produced live twins for the
+// vidacultural sibling; concerten has none yet only because the Spain gate keeps
+// few posts).
+// ---------------------------------------------------------------------------
+
+test("T209: «21 июня» published 2026-06-18 stays 2026-06-21 when re-normalized after the date passed", () => {
+  const body = "Концерт Земфиры в Валенсии\n21 июня\nPalau de la Música\nот 35 €";
+  const mk = () => {
+    const item = tgItem(900, "concerten", "900", body);
+    item.published_at = "2026-06-18T10:00:00+00:00";
+    return [item];
+  };
+  const before = buildConcertenEvents(mk(), new Date("2026-06-19T00:00:00Z"));
+  const after = buildConcertenEvents(mk(), new Date("2026-08-07T21:43:34Z"));
+  assert.equal(before.length, 1, "Spain post is kept");
+  assert.equal(before[0].draft.start_date, "2026-06-21", "post-date anchor");
+  assert.deepEqual(before, after, "normalize time must not change the draft (hash stability)");
+});

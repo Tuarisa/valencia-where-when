@@ -2,6 +2,7 @@ import { sql } from "../../db";
 import { compact } from "../util";
 import {
   parseEventDate,
+  postDateOf,
   dateFromUrl,
   runPlainNormalizer,
   type EventInsert,
@@ -142,7 +143,10 @@ export function buildElcontactoEvents(
 
     const haystack = `${title} ${item.raw_text || ""}`;
     // The board text carries the date in RU/ES; prefer a trailing slug date if present.
-    const start = dateFromUrl(item.url) ?? parseEventDate(haystack, today);
+    // T209: year inference anchored to the row's scrape date (postDateOf → first_seen),
+    // not normalize-time "now" — a re-offered year-less card must not roll a year
+    // forward and twin under a new dedup_hash (the T207 mechanics).
+    const start = dateFromUrl(item.url) ?? parseEventDate(haystack, postDateOf(item) ?? today);
     const { price, isFree } = parsePrice(haystack);
     const venue = parseVenue(haystack);
     const address = parseAddress(haystack);

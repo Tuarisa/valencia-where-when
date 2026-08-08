@@ -187,6 +187,75 @@ export function dateFromUrl(url?: string | null): string | null {
 }
 
 // ---------------------------------------------------------------------------
+// Post-date-anchored year inference (T207 → generalized T209)
+// ---------------------------------------------------------------------------
+
+// T207 — year inference must be anchored to the POST date, never to "now" at
+// normalize time. parseEventDate resolves a year-less "7 июля" to the next
+// occurrence on/after its `today` anchor, so re-normalizing the SAME raw row after
+// the date had passed rolled it a year forward and re-emitted the event under a new
+// dedup_hash (2026-07-07 + 2027-07-07 twins, same source — dedup correctly refuses
+// same-source merges). The post date (published_at → first_seen → last_seen, the
+// T152 postDateOf) is stable across runs, so the inferred year is too.
+//
+// Roll-forward guard: with a post-date anchor a roll can still happen — when the
+// post mentions a day/month BEFORE its own date (a recap / digest / pinned-notice /
+// "сегодня было" card, or a post first scraped weeks after the event). For a
+// telegram channel that is a PAST event — history, not next year's event — so the
+// roll is undone back to the post's own year. The ONLY legitimate roll is the
+// Dec→Jan window ("3 января" posted 28 декабря): a real announcement lands within
+// weeks, so a roll is kept only when it puts the date within `horizonDays` of the
+// post (these channels announce at most a few weeks ahead; every observed
+// fabricated roll landed 330+ days out).
+const ROLL_HORIZON_DAYS = 60;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+// PURE: does the text carry its own year? Then parseEventDate used it (T171) and
+// no inference happened — trust the result as-is. Mirrors the forms parseEventDate
+// reads a year from: a standalone 4-digit 20xx, or a numeric DD.MM.YY(YY) date.
+export function hasExplicitYear(text: string): boolean {
+  return (
+    /(?<!\d)20\d{2}(?!\d)/.test(text) ||
+    /(?<![\d.,])\b\d{1,2}[.\/-]\d{1,2}[.\/-]\d{2,4}\b/.test(text)
+  );
+}
+
+// PURE: the roll-forward guard itself, usable by callers that parse their date
+// through a bespoke path (cac's dateFromTitle) rather than parseEventDate-on-body.
+// `iso` is the already-parsed date, `text` the text it came from (for the
+// explicit-year check), `anchor` the post/scrape date the parse was anchored to.
+export function undoFarRollForward(
+  iso: string | null,
+  text: string,
+  anchor: Date,
+  horizonDays: number = ROLL_HORIZON_DAYS,
+): string | null {
+  if (!iso || hasExplicitYear(text)) return iso;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m || Number(m[1]) !== anchor.getFullYear() + 1) return iso; // no roll happened
+  const rolled = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  if (rolled.getTime() - anchor.getTime() <= horizonDays * MS_PER_DAY) return iso;
+  // A rolled date far beyond the announcement horizon = a past event the
+  // inference pushed into next year. Keep the post's own year: history, not future.
+  return `${anchor.getFullYear()}-${m[2]}-${m[3]}`;
+}
+
+// PURE (T207, extracted from rutatuta's anchoredExcursionDate in T209 — behavior
+// identical — so every telegram normalizer shares the exact same year semantics):
+// parseEventDate anchored to the raw row's post date, with the roll-forward guard
+// above. `today` is only the fallback anchor for a raw row missing every timestamp
+// (shouldn't happen for telegram rows).
+export function anchoredPostDate(
+  body: string,
+  item: RawItem,
+  today: Date,
+  horizonDays: number = ROLL_HORIZON_DAYS,
+): string | null {
+  const anchor = postDateOf(item) ?? today;
+  return undoFarRollForward(parseEventDate(body, anchor), body, anchor, horizonDays);
+}
+
+// ---------------------------------------------------------------------------
 // Relative ES dates anchored to the post date (T152)
 // ---------------------------------------------------------------------------
 

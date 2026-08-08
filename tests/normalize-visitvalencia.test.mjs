@@ -573,3 +573,71 @@ test('buildVisitvalenciaEvents: placeholder-dated evergreens emit with honest nu
   assert.equal(grail.start_date, '2025-10-30');
   assert.equal(grail.end_date, '2026-10-29');
 });
+
+// ---------------------------------------------------------------------------
+// T209 — event_links are consumed again (T203 workaround dropped), DEFENSIVELY:
+// a url→title pair is trusted only when its title independently matches the
+// card's own title; stored PRE-FIX snapshots carry off-by-one pairs (verified
+// live on snapshot 2289: each title glued to the NEXT card's URL) which never
+// clear the bar and must not hijack dates.
+// ---------------------------------------------------------------------------
+
+// A snapshot whose listing dates two events, with event_links attached.
+const snapWithLinks = (id, eventLinks) => ({
+  id,
+  source_key: 'web:visitvalencia',
+  title: 'Valencia Events | Events in Valencia | Upcoming Events',
+  raw_text: [
+    '',
+    'Immersive Exhibition The Legend of the Titanic in Valencia',
+    'From 27/02/2026 to 16/08/2026',
+    '',
+    'Free DJ Sessions on Summer Nights at Radio City',
+    'From 03/07/2026 to 28/08/2026',
+    '',
+  ].join('\n'),
+  raw_json: JSON.stringify({
+    kind: 'page_snapshot',
+    source_page: 'https://www.visitvalencia.com/en/events-valencia',
+    event_links: eventLinks,
+  }),
+  url: BASE,
+});
+
+test('T209: a TRUSTED event_links pair unlocks the URL-keyed snapshot date for a drifted card title', () => {
+  const rows = [
+    snapWithLinks(2400, [
+      // sane pair (post-T203 extractor): the link title matches the card's own
+      // content, though the CARD headline drifted (word order) — title matching
+      // alone (exact/containment) cannot bridge it, the URL join can.
+      {
+        title: 'Immersive Exhibition The Legend of the Titanic in Valencia',
+        url: `${BASE}/immersive-exhibition-legend-titanic-valencia`,
+      },
+    ]),
+    card(2401, 'Titanic. The Legend Immersive Exhibition', 'immersive-exhibition-legend-titanic-valencia'),
+  ];
+  const out = buildVisitvalenciaEvents(rows, TODAY);
+  assert.equal(out.length, 1);
+  const titanic = out.find((o) => o.sourceItemId === 2401).draft;
+  assert.equal(titanic.start_date, '2026-02-27', 'date resolved via the trusted url→title pair');
+  assert.equal(titanic.end_date, '2026-08-16');
+});
+
+test('T209: a SKEWED (off-by-one) stored pair is rejected — it must not hijack a neighbour date', () => {
+  const rows = [
+    snapWithLinks(2402, [
+      // the live pre-fix shape: the NEXT card's title glued to THIS card's URL
+      {
+        title: 'Free DJ Sessions on Summer Nights at Radio City',
+        url: `${BASE}/tardeos-hotel-las-arenas-valencia`,
+      },
+    ]),
+    card(2403, 'Tardeos at Hotel Las Arenas in Valencia', 'tardeos-hotel-las-arenas-valencia'),
+  ];
+  const out = buildVisitvalenciaEvents(rows, TODAY);
+  assert.equal(out.length, 1);
+  const tardeos = out.find((o) => o.sourceItemId === 2403).draft;
+  assert.equal(tardeos.start_date, null, 'the skewed pair is distrusted; no date is better than a wrong one');
+  assert.equal(tardeos.end_date, null);
+});

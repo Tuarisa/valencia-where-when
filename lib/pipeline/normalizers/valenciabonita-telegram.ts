@@ -1,7 +1,7 @@
 import { sql } from "../../db";
 import { compact, nowIso } from "../util";
 import {
-  parseEventDate,
+  anchoredPostDate,
   parseRelativeEsDate,
   postDateOf,
   upsertPlainEvent,
@@ -87,7 +87,12 @@ export function buildValenciabonitaTgEvents(
   for (const item of rows) {
     const raw = parseRaw(item);
     const body = item.raw_text || "";
-    const explicit = parseEventDate(body, today);
+    // T209 (T207 sibling): the explicit branch is year-anchored to the POST date via
+    // the shared helper — telegram embed re-shows old posts (last_seen bumps →
+    // re-offer) and a year-less date rolled a year forward on re-normalize (live
+    // orphan 26129: the San Juan digest published 2026-06-24 rolled to 2027-06-22).
+    // The roll-forward guard keeps a digest's just-passed date in the post's own year.
+    const explicit = anchoredPostDate(body, item, today);
     // T152: no explicit date → resolve relative ES phrases ("este fin de semana",
     // "este mes", "hoy"/"mañana") against the POST date (published_at). A post with
     // no post date stays unresolved — never anchored to normalize-time "now".

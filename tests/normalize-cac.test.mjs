@@ -351,3 +351,73 @@ test("cacNormalizerFor: returns a no-arg normalizer bound to its source key", ()
   assert.equal(typeof fn, "function");
   assert.equal(fn.length, 0); // no-arg, registry-shaped
 });
+
+// ---------------------------------------------------------------------------
+// T209 (T207 sibling) — the title-embedded date path is year-anchored to the
+// snapshot's SCRAPE date (postDateOf → first_seen) with the roll-forward guard.
+// Live evidence: «OBSERVACIÓN SOLAR. 21 DE JULIO» produced twins 25919
+// (2026-07-21) / 27631 (2027-07-21) — the second born from a FRESH 2026-08-07
+// snapshot still advertising the finished July activity, so a scrape-date anchor
+// alone is not enough: the far roll must be undone (history, not next year).
+// ---------------------------------------------------------------------------
+
+// A minimal agenda snapshot whose only block carries its date INSIDE the title
+// (no date line) — the exact shape that fabricated twin 27631.
+const solarSnapshot = (id, firstSeen) => ({
+  id,
+  source_key: "web:cac_agenda",
+  title: "Agenda - LA CIUTAT",
+  url: "https://cac.es/agenda/",
+  first_seen: firstSeen,
+  last_seen: firstSeen,
+  raw_text: [
+    "Agenda - LA CIUTAT",
+    "Menú",
+    "Agenda",
+    "OBSERVACIÓN SOLAR. 21 DE JULIO",
+    "Recinto:",
+    "Museu de les Ciències",
+    "Observa el Sol con telescopios y monitores especializados junto al Museu.",
+    "Ver más",
+  ].join("\n"),
+  raw_json: JSON.stringify({ kind: "page_snapshot", meta: {} }),
+});
+
+test("T209: title-embedded date anchors to the snapshot's scrape date — stable across normalize times", () => {
+  // Scraped 2026-07-05, when July 21 was upcoming.
+  const rows = [solarSnapshot(2020, "2026-07-05T03:06:03Z")];
+  const before = buildCacEvents(rows, new Date("2026-07-05T03:07:00Z"));
+  // Re-offered (last_seen bump) and re-normalized after the date passed:
+  const after = buildCacEvents(rows, new Date("2026-08-07T21:44:00Z"));
+  assert.equal(before.length, 1);
+  assert.equal(before[0].draft.start_date, "2026-07-21", "scrape-date anchor");
+  assert.deepEqual(before, after, "normalize time must not change the draft (hash stability)");
+});
+
+test("T209: a FRESH snapshot still advertising a finished activity does NOT roll it a year forward", () => {
+  // Verbatim live timing of source_item 2033 (first_seen 2026-08-07): July 21 had
+  // passed at scrape time → inference alone says 2027-07-21 → the guard undoes it.
+  const rows = [solarSnapshot(2033, "2026-08-07T21:40:48Z")];
+  const out = buildCacEvents(rows, new Date("2026-08-07T21:44:55Z"));
+  assert.equal(out.length, 1);
+  assert.equal(out[0].draft.start_date, "2026-07-21", "stale programming is history, not next year's event");
+});
+
+test("T209: the legitimate Dec→Jan cross-year announcement window is KEPT", () => {
+  const rows = [{
+    ...solarSnapshot(2050, "2026-12-28T10:00:00Z"),
+    raw_text: [
+      "Agenda - LA CIUTAT",
+      "Menú",
+      "Agenda",
+      "CONCIERTO DE AÑO NUEVO. 3 DE ENERO",
+      "Recinto:",
+      "Museu de les Ciències",
+      "Concierto especial para celebrar la llegada del nuevo año en la Ciutat.",
+      "Ver más",
+    ].join("\n"),
+  }];
+  const out = buildCacEvents(rows, new Date("2026-12-28T12:00:00Z"));
+  assert.equal(out.length, 1);
+  assert.equal(out[0].draft.start_date, "2027-01-03", "6 days ahead across New Year → next year");
+});

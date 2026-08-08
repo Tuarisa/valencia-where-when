@@ -1,6 +1,6 @@
 import { sql } from "../../db";
 import { compact, nowIso } from "../util";
-import { parseEventDate, upsertPlainEvent, type EventInsert } from "./shared";
+import { anchoredPostDate, upsertPlainEvent, type EventInsert } from "./shared";
 import { parsePrice, parseVenue, parseAddress } from "./valenciarusa";
 import { isSpainEvent, hasNonSpainSignal, hasSpainSignal } from "./spain-filter";
 import { postTitle } from "./vidacultural";
@@ -95,7 +95,11 @@ export function buildConcertenEvents(
     const title = postTitle(body, item.title);
     if (!title) continue;
 
-    const start = parseEventDate(haystack, today);
+    // T209 (T207 sibling, preventive): year inference anchored to the POST date via
+    // the shared helper — same telegram re-offer mechanics as vidacultural (year-less
+    // RU dates + date-bearing dedup_hash), no live twins yet only because the Spain
+    // gate keeps few posts.
+    const start = anchoredPostDate(haystack, item, today);
     const { price, isFree } = parsePrice(body);
     const venue = parseVenue(body);
     const address = parseAddress(body);

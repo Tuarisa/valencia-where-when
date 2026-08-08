@@ -2,7 +2,7 @@ import { sql } from "../../db";
 import { compact } from "../util";
 import { markRawItem } from "./types";
 import type { RawItem } from "./types";
-import { upsertPlainEvent, type EventInsert } from "./shared";
+import { postDateOf, upsertPlainEvent, type EventInsert } from "./shared";
 
 // T151 — feverup.com Valencia (web/ticketing source, key `web:fever`, id 12). The
 // generic web parser stores each Fever listing card as a `link_card` row whose
@@ -214,7 +214,12 @@ export function buildFeverEvents(
     const { venue, title } = splitFeverVenue(head);
     if (!title) continue;
 
-    const { start, end } = parseFeverDates(rawTitle, today);
+    // T209: year inference anchored to the card's scrape date (postDateOf →
+    // first_seen), not normalize-time "now" — Fever cells never carry a year, so a
+    // re-offered stale card must not roll a year forward and twin under a new
+    // dedup_hash (the T207 mechanics). The scrape-date anchor preserves the
+    // next-occurrence-at-capture semantics this source genuinely relies on.
+    const { start, end } = parseFeverDates(rawTitle, postDateOf(item) ?? today);
     const price = parseFeverPrice(rawTitle);
 
     out.push({

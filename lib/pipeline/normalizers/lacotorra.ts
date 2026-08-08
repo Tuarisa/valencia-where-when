@@ -2,6 +2,7 @@ import { sql } from "../../db";
 import { compact } from "../util";
 import {
   parseEventDate,
+  postDateOf,
   runPlainNormalizer,
   readEventLinks,
   matchEventLink,
@@ -263,8 +264,13 @@ const EN_MONTHS: Record<string, number> = {
 // `start_date` reuses the shared `parseEventDate` (it returns the FIRST date = the
 // range start) for parity with the sibling normalizers; the end date + start time
 // come from this line's own regex. Returns nulls when the line is not a date line.
+// T209 hygiene: `today` threads the caller's anchor into the parseEventDate fallback
+// (previously anchorless = real "now"). Behaviorally inert — DATE_LINE requires an
+// explicit 4-digit year, so year inference never fires on a matched line — but no
+// call site may depend on normalize-time "now" (the T207 mechanics).
 export function parseLacotorraDate(
   line?: string | null,
+  today: Date = new Date(),
 ): { start: string | null; end: string | null; startTime: string | null } {
   const t = compact(line);
   if (!t) return { start: null, end: null, startTime: null };
@@ -278,7 +284,7 @@ export function parseLacotorraDate(
     start = `${m[3]}-${pad(startMon)}-${pad(startDay)}`;
   }
   // Fall back to the shared parser if our strict regex somehow disagrees.
-  if (!start) start = parseEventDate(t);
+  if (!start) start = parseEventDate(t, today);
 
   let end: string | null = null;
   if (m[5] && m[6] && m[7]) {
@@ -335,12 +341,16 @@ export function buildLacotorraEvents(
     const text = item.raw_text || "";
     const lines = text.split("\n").map((s) => s.trim()).filter(Boolean);
     const img = raw.meta?.["og:image"] || null;
+    // T209 hygiene: anchor date parsing to the snapshot's scrape date (postDateOf →
+    // first_seen), not normalize-time "now" — inert today (lacotorra dates always
+    // print a 4-digit year) but keeps the T207 anchor rule uniform across siblings.
+    const anchor = postDateOf(item) ?? today;
     // T190: per-event detail links captured at ingest (title→/events/<slug>). Used to
     // point each event at its OWN page instead of the lacotorra index.
     const eventLinks: EventLink[] = readEventLinks(raw);
 
     for (let i = 0; i < lines.length; i++) {
-      const { start, end, startTime } = parseLacotorraDate(lines[i]);
+      const { start, end, startTime } = parseLacotorraDate(lines[i], anchor);
       if (!start && !DATE_LINE.test(lines[i])) continue; // not a date-anchored block
       if (!DATE_LINE.test(lines[i])) continue;
 
@@ -424,7 +434,7 @@ export function buildLacotorraEvents(
           description: (fullText ?? teaser)?.slice(0, 2000) ?? null,
           category: "culture",
           language: "ru",
-          start_date: start ?? parseEventDate(lines[i], today),
+          start_date: start ?? parseEventDate(lines[i], anchor),
           end_date: end,
           start_time: startTime,
           venue_name: venue,

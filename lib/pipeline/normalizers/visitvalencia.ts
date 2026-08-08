@@ -1,6 +1,14 @@
 import { sql } from "../../db";
 import { compact } from "../util";
-import { normTitle, parseEventDate, runPlainNormalizer, type EventInsert } from "./shared";
+import {
+  normTitle,
+  parseEventDate,
+  postDateOf,
+  matchEventLink,
+  readEventLinks,
+  runPlainNormalizer,
+  type EventInsert,
+} from "./shared";
 import { isJunkCard } from "./valenciarusa";
 import type { RawItem } from "./types";
 
@@ -27,9 +35,17 @@ import type { RawItem } from "./types";
 //    month-first "August 27" instead of the real 27/07). We strip the trailing range
 //    off the title and use it as the highest-confidence date.
 //
-// CAUTION (verified live): the snapshot's `raw_json.event_links` pairs are OFF-BY-ONE
-// for this source (each title carries the NEXT card's URL), so event_links must NOT be
-// used to key dates by URL — title-text matching only.
+// T209 (drops the T203 workaround): the snapshot's `raw_json.event_links` pairing is
+// FIXED at ingest (T203: the anchor's own inner title is read first, so a title can no
+// longer glue to the next card's URL) — but every STORED pre-fix snapshot still carries
+// the skewed pairs (verified live on snapshot 2289: each title paired with the NEXT
+// card's URL). So event_links ARE consumed now, DEFENSIVELY per pair: a url→title pair
+// is trusted only when its title independently matches the link_card's own title for
+// that URL (shared matchEventLink confidence tiers). A skewed pair names the adjacent,
+// unrelated card and never clears the bar → auto-rejected; post-fix pairs match and
+// unlock an exact URL-keyed snapshot-date lookup (fuzzy title containment stays as the
+// fallback). Chosen over "only trust fresh snapshots" because a snapshot row carries no
+// extractor-version marker — this self-heals with no data migration as new ingests land.
 //
 // Cards with no range anywhere legitimately stay start_date=null (evergreen
 // exhibitions / ongoing experiences; a wrong pin is worse than none — we never
@@ -328,6 +344,33 @@ export function extractVisitvalenciaDates(rows: RawItem[]): Map<string, VvDateRa
   return out;
 }
 
+// PURE (T209, T203 fix follow-up): url → snapshot-card title from every snapshot's
+// `event_links`, oldest→newest so the freshest capture wins per URL. Only real
+// event-detail URLs are kept; a glued trailing range is peeled off the link title
+// (the snapshot renders the same glued highlight text inside the anchor). NOTE the
+// map alone is NOT trusted — stored pre-fix snapshots carry off-by-one pairs, so the
+// caller must verify each pair against the card's own title before use (see the
+// header comment).
+export function collectVisitvalenciaLinkTitles(rows: RawItem[]): Map<string, string> {
+  const out = new Map<string, string>();
+  const snaps = rows
+    .filter((r) => parseRaw(r).kind === "page_snapshot")
+    .sort((a, b) => a.id - b.id);
+  for (const s of snaps) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(s.raw_json || "{}");
+    } catch {
+      parsed = {};
+    }
+    for (const l of readEventLinks(parsed)) {
+      if (!isVisitvalenciaEventUrl(l.url)) continue;
+      out.set(l.url.split(/[?#]/)[0], stripTrailingCardRange(l.title).title);
+    }
+  }
+  return out;
+}
+
 // PURE: look a card title up in the snapshot map. Exact normalized equality first;
 // then the conservative containment rule (one normalized title fully contains the
 // other, shorter ≥ 8 chars and ≥ 60% of the longer — mirrors shared matchEventLink
@@ -373,8 +416,10 @@ export function classifyVisitvalencia(text: string): string {
 // T206 — even when dated: an article is not an event). The page_snapshot rows are
 // not emitted as events but ARE mined for the published DD/MM/YYYY ranges (T154 —
 // see the file header); dates resolve in confidence order: (1) the range glued into
-// the card's own text (Aug-2026 markup), (2) the snapshot listing's range for the
-// same title, (3) parseEventDate on the clean text. No hit → null, never fabricated;
+// the card's own text (Aug-2026 markup), (2) the snapshot listing's range via the
+// TRUSTED event_links pair for the card's URL (T209), (3) the snapshot listing's
+// range for the same title, (4) parseEventDate on the clean text (scrape-date
+// anchored, T209). No hit → null, never fabricated;
 // the same-year 01/01→31/12 placeholder counts as no hit (T206). DB-free so it
 // unit-tests without a connection.
 export function buildVisitvalenciaEvents(
@@ -384,6 +429,8 @@ export function buildVisitvalenciaEvents(
   const out: Array<{ draft: EventInsert; sourceItemId: number }> = [];
   // T154: mine every snapshot in the batch for title → published date-range.
   const snapshotDates = extractVisitvalenciaDates(rows);
+  // T209: url → snapshot-card title from event_links (per-pair trust checked below).
+  const linkTitles = collectVisitvalenciaLinkTitles(rows);
   for (const item of rows) {
     const raw = parseRaw(item);
     // The full-page snapshot is the index, not an event — mined above, not emitted.
@@ -409,10 +456,29 @@ export function buildVisitvalenciaEvents(
     // Card text with the glued range peeled too (raw_text == title on live rows).
     const text = stripTrailingCardRange(compact(item.raw_text) ?? "").title || null;
 
-    // Confidence order: own glued range → snapshot listing range → free-text parse.
+    // T209: the event_links pair for THIS card's URL, trusted only when its title
+    // independently matches the card's own title (shared matchEventLink tiers) —
+    // stored pre-fix snapshots carry off-by-one pairs that name the ADJACENT card
+    // and never clear the bar (see the header comment). A trusted pair unlocks an
+    // exact URL-keyed lookup in the snapshot date map.
+    const linkTitle = item.url ? linkTitles.get(item.url.split(/[?#]/)[0]) ?? null : null;
+    const trustedLinkTitle =
+      linkTitle && item.url && matchEventLink(title, [{ title: linkTitle, url: item.url }]) === item.url
+        ? linkTitle
+        : null;
+
+    // Confidence order: own glued range → snapshot range via the trusted event_link
+    // title (exact, URL-keyed) → snapshot range by title matching → free-text parse.
     const range =
-      cardRange ?? lookupSnapshotRange(title, snapshotDates) ?? null;
-    const start = range?.start ?? parseEventDate(`${title} ${text || ""}`, today);
+      cardRange ??
+      (trustedLinkTitle ? snapshotDates.get(normTitle(trustedLinkTitle)) ?? null : null) ??
+      lookupSnapshotRange(title, snapshotDates) ??
+      null;
+    // T209: the free-text fallback's year inference is anchored to the card's scrape
+    // date (postDateOf → first_seen), not normalize-time "now" — a re-offered
+    // year-less headline must not roll a year forward and twin under a new
+    // dedup_hash (the T207 mechanics).
+    const start = range?.start ?? parseEventDate(`${title} ${text || ""}`, postDateOf(item) ?? today);
     const category = classifyVisitvalencia(`${title} ${item.url || ""}`);
 
     out.push({

@@ -286,3 +286,33 @@ test("RU-language event post is KEPT and tagged ru", () => {
   assert.equal(out[0].draft.language, "ru");
   assert.equal(out[0].draft.start_date, "2026-06-21");
 });
+
+// ---------------------------------------------------------------------------
+// T209 (T207 sibling) — the explicit-date branch is year-anchored to the POST
+// date, with the roll-forward guard. Fixture is the VERBATIM live digest row
+// (source_items 1047) whose «desde el pasado 22 de junio» — a PAST date at post
+// time — rolled to 2027-06-22 (orphan event 26129).
+// ---------------------------------------------------------------------------
+
+const SAN_JUAN_DIGEST =
+  'Hola amig@s. Feliz miércoles, día de San Juan. Os traemos las novedades que hemos publicado. ⛔️ El Ayuntamiento limita el acceso desde el pasado 22 de junio al rincón natural yatovense para preservarlo del incivismo y los actos vandálicos de las últimas visitas. Más información en https://wp.me/p6uTWT-TVm 👈';
+
+test("T209: a digest's just-passed «22 de junio» (published 2026-06-24) keeps the post's own year — no roll to 2027", () => {
+  const rows = [
+    tgItem(1047, "valenciabonitatelegram", "4213", SAN_JUAN_DIGEST, [], "2026-06-24T11:24:29+00:00"),
+  ];
+  // 2026-06-24T21:33 = the live first-normalize moment that fabricated 2027-06-22.
+  const out = buildValenciabonitaTgEvents(rows, new Date("2026-06-24T21:33:48Z"));
+  assert.equal(out.length, 1, "digest post with a date is kept");
+  assert.equal(out[0].draft.start_date, "2026-06-22", "history, not next year");
+});
+
+test("T209: stable across normalize times — same digest post, same draft weeks later", () => {
+  const rows = [
+    tgItem(1047, "valenciabonitatelegram", "4213", SAN_JUAN_DIGEST, [], "2026-06-24T11:24:29+00:00"),
+  ];
+  const before = buildValenciabonitaTgEvents(rows, new Date("2026-06-24T21:33:48Z"));
+  const after = buildValenciabonitaTgEvents(rows, new Date("2026-08-07T21:43:34Z"));
+  assert.deepEqual(before, after, "normalize time must not change the draft (hash stability)");
+  assert.equal(before[0].draft.start_date, "2026-06-22");
+});

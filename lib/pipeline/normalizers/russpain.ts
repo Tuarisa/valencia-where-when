@@ -2,6 +2,7 @@ import { sql } from "../../db";
 import { compact, nowIso } from "../util";
 import {
   parseEventDate,
+  postDateOf,
   dateFromUrl,
   upsertPlainEvent,
   type EventInsert,
@@ -120,7 +121,10 @@ export function buildRusspainEvents(
 
     const haystack = `${title} ${item.raw_text || ""}`;
     // Prefer a date encoded in the URL slug (worldafisha-style), else free RU/ES text.
-    const start = dateFromUrl(item.url) ?? parseEventDate(haystack, today);
+    // T209: year inference anchored to the row's scrape date (postDateOf → first_seen),
+    // not normalize-time "now" (the T207 mechanics) — dormant while the default-deny
+    // URL guard emits zero events, correct if the real afisha ever returns.
+    const start = dateFromUrl(item.url) ?? parseEventDate(haystack, postDateOf(item) ?? today);
     // T140/T154: no parseable date → do NOT emit (never fabricate; an undated card on
     // a news-reorganised site is noise, and null-dated rows can't ship in the seed).
     if (!start) continue;

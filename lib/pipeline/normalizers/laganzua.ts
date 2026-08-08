@@ -2,6 +2,7 @@ import { sql } from "../../db";
 import { compact } from "../util";
 import {
   parseEventDate,
+  postDateOf,
   runPlainNormalizer,
   type EventInsert,
 } from "./shared";
@@ -183,7 +184,10 @@ export function buildLaganzuaEvents(
   for (const item of sorted) {
     if (parseRaw(item).kind === "page_snapshot") continue;
     if (!isConcertUrl(item.url)) continue;
-    const d = parseEventDate(compact(item.title), today);
+    // T209: year inference anchored to each row's scrape date (postDateOf →
+    // first_seen), not normalize-time "now" — a re-offered year-less title must not
+    // roll a year forward and twin under a new dedup_hash (the T207 mechanics).
+    const d = parseEventDate(compact(item.title), postDateOf(item) ?? today);
     if (d) dateByUrl.set(concertUrlKey(item.url), d);
   }
 
@@ -213,7 +217,9 @@ export function buildLaganzuaEvents(
     // nothing → drop the row (T154: an undated draft is unusable duplicate junk —
     // and we never invent a date).
     const start =
-      parseEventDate(rawTitle, today) ?? dateByUrl.get(concertUrlKey(item.url)) ?? null;
+      parseEventDate(rawTitle, postDateOf(item) ?? today) ??
+      dateByUrl.get(concertUrlKey(item.url)) ??
+      null;
     if (!start) continue;
 
     const title = cleanLaganzuaTitle(rawTitle);

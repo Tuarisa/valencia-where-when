@@ -1,6 +1,6 @@
 import { sql } from "../../db";
 import { compact, nowIso } from "../util";
-import { parseEventDate, upsertPlainEvent, type EventInsert } from "./shared";
+import { anchoredPostDate, upsertPlainEvent, type EventInsert } from "./shared";
 import { parsePrice, parseVenue, parseAddress, isJunkCard } from "./valenciarusa";
 import type { RawItem } from "./types";
 
@@ -98,7 +98,13 @@ export function buildVidaculturalEvents(
     // T146: drop channel-header / "pinned a photo" / bare-@handle meta posts up front
     // (deterministic — a real event post is never matched), then apply the event gate.
     if (isJunkCard(item.title, body, VIDACULTURAL_NAME)) continue;
-    const start = parseEventDate(body, today);
+    // T209 (T207 sibling): year inference anchored to the POST date via the shared
+    // helper — this channel re-shows old posts in the telegram embed (last_seen bumps
+    // → re-offer), and its year-less RU/UK dates rolled a year forward on
+    // re-normalize, inserting 2027 twins under new hashes (live 26522/26578,
+    // 26583/26969). The roll-forward guard also keeps a recap's past date («вже
+    // завтра, 23 червня» re-seen in July) in the post's own year.
+    const start = anchoredPostDate(body, item, today);
     if (!looksLikeEvent(body, start != null)) continue;
 
     const title = postTitle(body, item.title);

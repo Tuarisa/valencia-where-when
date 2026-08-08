@@ -3,6 +3,7 @@ import { compact, nowIso } from "../util";
 import { isSpainEvent, hasNonSpainSignal } from "./spain-filter";
 import {
   parseEventDate,
+  postDateOf,
   dateFromUrl,
   deriveCityFor,
   upsertPlainEvent,
@@ -99,7 +100,10 @@ export function buildWorldafishaEvents(
 
     // T150: the slug carries the exact date (raw_text is title-only); prefer it,
     // fall back to free-text parsing only when the URL has no date.
-    const start = dateFromUrl(item.url) ?? parseEventDate(haystack, today);
+    // T209: the fallback's year inference is anchored to the row's scrape date
+    // (postDateOf → first_seen), not normalize-time "now" — a re-offered year-less
+    // card («ДЕК 11») must not roll a year forward and twin under a new dedup_hash.
+    const start = dateFromUrl(item.url) ?? parseEventDate(haystack, postDateOf(item) ?? today);
     const cancelled = isCancelledTitle(title);
     // T172: derive the real city from title/text/URL slug instead of hard-coding
     // "Valencia" — many worldafisha listings are Alicante/Barcelona tours.

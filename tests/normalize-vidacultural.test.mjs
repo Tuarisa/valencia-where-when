@@ -15,13 +15,18 @@ import { isJunkCard } from '../lib/pipeline/normalizers/valenciarusa.ts';
 
 const VC = 'Культурне життя Валенсії/Vida Cultural de Valencia';
 
-const post = (id, raw_text, media = []) => ({
+// `opts` lets a T209 fixture carry the live row's published_at/first_seen/last_seen
+// (the post-date anchor); absent → postDateOf is null and the `today` param anchors.
+const post = (id, raw_text, media = [], opts = {}) => ({
   id,
   source_key: 'tg:vidacultural_Valencia',
   title: (raw_text || '').split('\n')[0] || null,
   raw_text,
   raw_json: JSON.stringify({ kind: 'telegram_post', post_ref: `vidacultural_Valencia/${id}`, media_urls: media }),
   url: `https://t.me/vidacultural_Valencia/${id}`,
+  published_at: opts.published_at ?? null,
+  first_seen: opts.first_seen ?? undefined,
+  last_seen: opts.last_seen ?? undefined,
 });
 
 test('T146 isJunkCard: bare channel-header post is JUNK', () => {
@@ -97,4 +102,53 @@ test('T196 postTitle: a promo-prefixed post yields a clean (non-promo) title', (
   const title = postTitle(promo);
   assert.ok(!/У нас для Вас/i.test(title), 'title no longer leads with promo ad copy');
   assert.match(title, /спецпоказ фільму «ТИ - КОСМОС»/);
+});
+
+// ---------------------------------------------------------------------------
+// T209 (T207 sibling) — year inference is anchored to the POST date, not to
+// normalize time. Fixtures are VERBATIM raw_text/timestamps from the live DB rows
+// that produced the fabricated 2027 dates (source_items 1057 → twins 26522/26578,
+// 1054 → orphan roll 26516).
+// ---------------------------------------------------------------------------
+
+// Live row 1057 (published 2026-06-24): «26 червня … спецпоказ фільму „ТИ - КОСМОС"»
+// was re-offered (telegram embed re-shows old posts → last_seen bumped to 2026-07-05)
+// and re-normalized AFTER June 26 had passed → rolled to 2027-06-26, inserting twin
+// 26578 next to the correct 26522 under a new dedup_hash.
+const KOSMOS_BODY = 'Валенсія 🚩 У нас для Вас просто космічні новини 🪐 26 червня у Валенсії відбудеться спецпоказ фільму «ТИ - КОСМОС». Це українська кіноперлина, яка ще до прем’єри здобула 13 міжнародних нагород та 9 номінацій. Це той фільм, який варто дивитись саме на великому екрані кінотеатру 🪐 У центрі історії - український космічний далекобійник Андрій, який після вибуху Землі залишається єдиною людиною у Всесвіті. Його єдиний контакт із життям - загадкова француженка Катрін, заради якої він вирушає у небезпечну подорож крізь космос. 📍 ВАЛЕНСІЯ 📆 26 ЧЕРВНЯ | ПʼЯТНИЦЯ | 19:30 🎥 Кінотеатр: Cines MN4 (Centro Comercial y de Ocio MN4) 🎟️ Квитки: https://billetto.es/en/e/-entradas-1956684 Не пропустіть цю подорож у космос! 🚀 ~ Культурне життя Валенсії ~';
+const KOSMOS_OPTS = {
+  published_at: '2026-06-24T10:53:14+00:00',
+  first_seen: '2026-06-24T21:31:02Z',
+  last_seen: '2026-07-05T03:03:37Z',
+};
+
+test('T209: year anchors to the POST date — «26 червня» published 2026-06-24 stays 2026 when re-normalized after the date passed', () => {
+  const rows = [post(1057, KOSMOS_BODY, [], KOSMOS_OPTS)];
+  // 2026-07-05T03:07 = the live re-normalize moment that fabricated twin 26578.
+  const out = buildVidaculturalEvents(rows, new Date('2026-07-05T03:07:02Z'));
+  assert.equal(out.length, 1, 'dated event should be kept');
+  assert.equal(out[0].draft.start_date, '2026-06-26', 'post-date anchor, no roll to 2027');
+});
+
+test('T209: stable across normalize times — same post, before vs after the event date, same draft', () => {
+  const rows = [post(1057, KOSMOS_BODY, [], KOSMOS_OPTS)];
+  const before = buildVidaculturalEvents(rows, new Date('2026-06-24T21:33:00Z'));
+  const after = buildVidaculturalEvents(rows, new Date('2026-07-05T03:07:02Z'));
+  assert.deepEqual(before, after, 'normalize time must not change the draft (hash stability)');
+  assert.equal(before[0].draft.start_date, '2026-06-26');
+});
+
+// Live row 1054 (published 2026-06-22): the San Juan post «вже завтра, 23 червня» was
+// re-normalized on 2026-07-05 and rolled to 2027-06-23 (orphan 26516). With the post
+// anchor «23 червня» resolves against 2026-06-22 → 2026-06-23, at any normalize time.
+test('T209: «вже завтра, 23 червня» published 2026-06-22 resolves to 2026-06-23 even re-normalized weeks later', () => {
+  const body = '🔥 Святкування San Juan у колі українців у Валенсії — вже завтра, 23 червня! Чекаємо всіх на пляжі з 17:00 💃 🔥 🕺🏻 📍 Локація зустрічі: https://maps.app.goo.gl/Uow3bEJArqtrtNGJ9?g_st=iw 💙 ОРІЄНТИР — український прапор 🇺🇦 ❓ Що на вас чекає: 🤝 Весела атмосфера у дружньому колі українців 🇺🇦 🏐 Пляжний волейбол 🎸 Музика, танці та гітара 🔥 Стрибки через вогнище 🌊 Нічне купання у морі 🌙 🎉 Свято до самого ранку Не пропустіть найяскравішу подію літа ! 🔥 ~ Культурне життя Валенсії ~';
+  const rows = [post(1054, body, [], {
+    published_at: '2026-06-22T09:04:15+00:00',
+    first_seen: '2026-06-24T21:31:02Z',
+    last_seen: '2026-07-05T03:03:37Z',
+  })];
+  const out = buildVidaculturalEvents(rows, new Date('2026-07-05T03:07:02Z'));
+  assert.equal(out.length, 1);
+  assert.equal(out[0].draft.start_date, '2026-06-23', 'the post-time tomorrow, not next year');
 });

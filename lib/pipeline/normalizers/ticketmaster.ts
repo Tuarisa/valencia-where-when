@@ -2,6 +2,7 @@ import { sql } from "../../db";
 import { compact } from "../util";
 import {
   parseEventDate,
+  postDateOf,
   runPlainNormalizer,
   type EventInsert,
 } from "./shared";
@@ -177,7 +178,10 @@ export function buildTicketmasterEvents(
     const { title, venue } = parseTicketmasterHead(rawTitle);
     if (!title) continue;
 
-    const start = parseEventDate(rawTitle, today);
+    // T209: year inference anchored to the row's scrape date (postDateOf → first_seen),
+    // not normalize-time "now" — defense-in-depth: both live card shapes carry an
+    // explicit year today, but a year-less shape would silently expose the T207 roll.
+    const start = parseEventDate(rawTitle, postDateOf(item) ?? today);
     const startTime = parseTicketmasterTime(rawTitle);
     const { price, isFree } = parsePrice(rawTitle);
 

@@ -1,6 +1,6 @@
 import { sql } from "../../db";
 import { compact, nowIso } from "../util";
-import { parseEventDate, upsertPlainEvent, deriveCityFor, type EventInsert } from "./shared";
+import { parseEventDate, postDateOf, upsertPlainEvent, deriveCityFor, type EventInsert } from "./shared";
 import type { RawItem } from "./types";
 
 // T111 — valenciarusa.es (web source, key `web:valenciarusa`, id 7). The most
@@ -218,7 +218,10 @@ export function buildValenciarusaEvents(
     if (isJunkCard(title, item.raw_text, VALENCIARUSA_NAME)) continue;
 
     const haystack = `${title} ${item.raw_text || ""}`;
-    const start = parseEventDate(haystack, today);
+    // T209: year inference anchored to the row's scrape date (postDateOf → first_seen),
+    // not normalize-time "now" — a re-offered year-less listing must not roll a year
+    // forward and twin under a new dedup_hash (the T207 mechanics).
+    const start = parseEventDate(haystack, postDateOf(item) ?? today);
     const { price, isFree } = parsePrice(haystack);
     const venue = parseVenue(haystack);
     const address = parseAddress(haystack);
