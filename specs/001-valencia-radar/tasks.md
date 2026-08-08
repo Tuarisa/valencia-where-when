@@ -558,10 +558,21 @@ exist, raw layer still append-only.
   17,50 €"→price. Drops nav anchors / snapshot / gift-card+waitlist. Live: 45 events emitted / 35 dated.
   13/13 tests. Idempotent ON CONFLICT(dedup_hash).)*
 
-- [ ] T152 [A] **Relative-date parsing for ES telegram (`este fin de semana`, `este mes`)** (T141 finding).
+- [x] T152 [A] **Relative-date parsing for ES telegram (`este fin de semana`, `este mes`)** (T141 finding).
   valenciabonitatelegram posts use relative Spanish dates ("este fin de semana", "este finde", "este mes",
   "hoy"/"mañana") → 15/17 null-dated. Optionally resolve them against the post date (source_item `last_seen`)
   to a concrete weekend/month start. Fuzzy; lower priority than T150/T151.
+  *(DONE 2026-08-08 — deterministic (T140) `parseRelativeEsDate` + `postDateOf` in `normalizers/shared.ts`,
+  wired into valenciabonita-telegram (explicit `parseEventDate` hit still wins). Anchor = the POST date:
+  `published_at` (the embed's `<time datetime>`) preferred over the brief's `last_seen` (last_seen shifts on
+  every re-scrape while the post stays in the t.me/s/ window; fallback chain published_at → first_seen →
+  last_seen). NO anchor → null, never run-time "now" (a wrong anchor fabricates dates). Semantics:
+  hoy → post day; mañana → +1 (guarded: "la/esta mañana" = morning); este/el fin de semana|finde →
+  Sat–Sun of the week CONTAINING the post (Sunday post → in-progress weekend); próximo finde → next
+  week's Sat–Sun; este mes → post day .. month end (start = post day, not the 1st — no invented past).
+  First-in-text wins, mirroring parseEventDate. `end_date` window now emitted. 19/19 tests
+  (mid-week/Sat/Sun anchors, month end, no-post-date → dropped); parseEventDate untouched so the
+  worldafisha test mirror stays byte-identical.)*
 
 - [x] T153 [A] **spain-filter: recognise Latin-transliterated city slugs** (T150 finding, HIGH for
   worldafisha yield). `spain-filter.ts` matches Latin `madrid`/`malaga` + Cyrillic, but NOT the Latin
@@ -778,7 +789,10 @@ exist, raw layer still append-only.
   a crawler; could be a small `data/seed/places-recommendations.json` + a `source` row, or a simple add-place
   helper. Pairs with the place-mining / map surface work.)
 
-- [ ] T160 [E] **Re-bake the seed to capture the parsePrice/parseEventDate fixes** (T142 follow-up).
+- [x] T160 [E] **Re-bake the seed to capture the parsePrice/parseEventDate fixes** (T142 follow-up).
+  *(DONE — closed 2026-08-08: the 2026-08-07 month-refresh ritual (user-approved «обновим») re-baked
+  the seed with the fixed parsers in place: 52/148 seed events now carry prices («€ 24.00», «Free»…),
+  148/148 dated. Nothing further to bake for this task.)*
   T142 fixed two shared helpers (`parsePrice` trailing-`\b` dropped all `€10`/`25 евро` prices; `parseEventDate`
   numeric branch misread durations as dates) that the already-baked 239 derived seed events were normalized
   WITHOUT. A re-bake (reset source_items → normalize→dedup→score→tag→geo→enrich → re-export) would add the
@@ -1345,7 +1359,7 @@ additional issues the agent is NOT handling.)
   — visitor counts now recorded (Hobby-free). Gate 502/502 green. REMAINING (user): Search Console
   verify + submit sitemap; custom-domain decision.)*
 
-- [ ] T200 [A] **Dispatch tick hit the Hobby 60s wall despite the 45s soft budget** — runtime logs
+- [x] T200 [A] **Dispatch tick hit the Hobby 60s wall despite the 45s soft budget** — runtime logs
   2026-08-07 23:59:45 UTC: `POST /api/cron/dispatch` → **504 "Task timed out after 60 seconds"**
   (an adjacent tick returned 200; also only 2 of the expected 4 `*/15` dispatches appear in the
   retained hour). Hypothesis: the budget deadline is checked BETWEEN stages/sources, so one slow
@@ -1353,6 +1367,16 @@ additional issues the agent is NOT handling.)
   timeout vs budget interplay, `budget.cutAt` telemetry in recent responses; consider lowering
   DEFAULT_BUDGET_MS or adding an in-stage deadline for the ingest pool. Fail-soft means no data
   loss (next tick retries), but 504s waste ticks and mask real errors.
+  *(DONE 2026-08-08 (night shift) — ROOT CAUSE confirmed in code: the 45s budget was only passed to
+  `materializeTick()`; the INGEST pool running first had ZERO deadline checks — batches of 5 via
+  `Promise.allSettled`, each bounded only by the per-request 30s fetch timeout (2 slow batches ≈ 60s
+  alone). Worst offender `api:hemisferic`: up to 14 SEQUENTIAL day-fetches × 30s each. FIX: one
+  deadline for the WHOLE tick — `runIngestPool()` (exported, injectable deps) checks it before each
+  batch and returns un-started sources as `deferred` (cadence untouched → next tick retries);
+  `clampedFetchTimeout()` clamps every source fetch to the remaining budget (1s floor; no deadline →
+  legacy 30s, local rituals untouched); `parseHemisferic` breaks its day-loop at the deadline.
+  Response surfaces `deferred_sources` + `budget.cutAt:"ingest"`. Per-request aborts already existed
+  (verified, unchanged). Tests: +6 injected-clock (16/16 in dispatch-materialize; tsc clean).)*
 
 - [ ] T201 [A] **lacotorra: description is a short teaser, source page has the FULL text** (user,
   2026-08-08: prod `/events/28153-vr` vs `https://lacotorra.io/events/vr-vystavka-o-zatmenii-v-valensii`).
