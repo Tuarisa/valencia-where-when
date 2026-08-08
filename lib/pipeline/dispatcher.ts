@@ -233,53 +233,56 @@ export async function materializeTick(
   return result;
 }
 
-export interface DispatchResult {
-  ok: boolean;
-  total: number;
-  okCount: number;
-  error: number;
-  items: number;
-  results: IngestOutcome[];
-  ingestOnly: boolean; // true ⇢ DISPATCH_INGEST_ONLY=1 restored the legacy behavior
-  materialize: MaterializeResult | null; // null when ingest-only
-  budget: { budgetMs: number; elapsedMs: number; exhausted: boolean; cutAt: string | null };
+// T200 — ingest pool deps, injectable like MaterializeDeps so the pool's deadline
+// behavior is unit-testable without a DB. The real `ingestFn` is ingestSource +
+// applyCadence (composed in runIngestPool's default).
+export interface IngestPoolDeps {
+  ingestFn?: (source: any, deadlineMs: number) => Promise<IngestOutcome>;
+  now?: () => number;
 }
 
-// Bounded pool: process due (or all-enabled when force) sources `concurrency` at a
-// time via Promise.allSettled, ingesting then persisting cadence per source. Fail-soft
-// — a thrown source never aborts the batch. After ingest, the tick materializes
-// (normalize → dedup → score + tag; T198) unless DISPATCH_INGEST_ONLY=1.
-export async function dispatch({
-  concurrency = 5,
-  force = false,
-  budgetMs = DEFAULT_BUDGET_MS,
-  deps,
-}: {
-  concurrency?: number;
-  force?: boolean;
-  budgetMs?: number;
-  deps?: MaterializeDeps;
-} = {}): Promise<DispatchResult> {
-  const startedMs = Date.now();
-  const deadlineMs = startedMs + budgetMs;
-  const now = nowIso();
-  const sources = force
-    ? ((await sql`SELECT * FROM sources WHERE enabled = 1`) as any[])
-    : await selectDueSources(now);
+export interface IngestPoolResult {
+  results: IngestOutcome[];
+  deferred: string[]; // due sources whose fetch never STARTED — budget spent (T200)
+}
+
+// Bounded pool: process sources `concurrency` at a time via Promise.allSettled,
+// ingesting then persisting cadence per source. Fail-soft — a thrown source never
+// aborts the batch.
+//
+// T200 — the pool is gated on the SHARED tick deadline (the 2026-08-07 prod 504:
+// the 45s budget only guarded materialize, so ingest alone could eat the 60s Hobby
+// limit before a single check fired). A batch never STARTS once the budget is spent
+// (same deadline-before-start contract as materializeTick's stage gate); un-started
+// sources come back as `deferred` with their cadence UNTOUCHED — still due, so the
+// next tick picks them up. Ingest is idempotent upserts, so deferral loses nothing.
+export async function runIngestPool(
+  sources: any[],
+  concurrency: number,
+  deadlineMs: number,
+  deps: IngestPoolDeps = {},
+): Promise<IngestPoolResult> {
+  const now = deps.now ?? Date.now;
+  const ingest =
+    deps.ingestFn ??
+    (async (source: any, dl: number) => {
+      // minIntervalHours=0 → bypass the legacy time guard; the cadence due-select
+      // already decided this source should run.
+      const outcome = await ingestSource(source, 0, dl);
+      await applyCadence(source, outcome);
+      return outcome;
+    });
 
   const results: IngestOutcome[] = [];
+  const deferred: string[] = [];
   const size = Math.max(1, concurrency);
   for (let i = 0; i < sources.length; i += size) {
+    if (now() >= deadlineMs) {
+      for (const s of sources.slice(i)) deferred.push(s.key);
+      break;
+    }
     const batch = sources.slice(i, i + size);
-    const settled = await Promise.allSettled(
-      batch.map(async (source) => {
-        // minIntervalHours=0 → bypass the legacy time guard; the cadence due-select
-        // already decided this source should run.
-        const outcome = await ingestSource(source, 0);
-        await applyCadence(source, outcome);
-        return outcome;
-      }),
-    );
+    const settled = await Promise.allSettled(batch.map((source) => ingest(source, deadlineMs)));
     for (let j = 0; j < settled.length; j++) {
       const s = settled[j];
       if (s.status === "fulfilled") {
@@ -289,6 +292,59 @@ export async function dispatch({
       }
     }
   }
+  return { results, deferred };
+}
+
+// Everything dispatch() delegates to is injectable (tests: no DB): the ingest pool,
+// the materialize stages, the clock, and (T200) the due-source selection itself.
+export interface DispatchDeps extends MaterializeDeps, IngestPoolDeps {
+  sourcesFn?: (force: boolean) => Promise<any[]>;
+}
+
+export interface DispatchResult {
+  ok: boolean;
+  total: number;
+  okCount: number;
+  error: number;
+  items: number;
+  results: IngestOutcome[];
+  deferred: string[]; // T200: due sources never started this tick (budget) — still due next tick
+  ingestOnly: boolean; // true ⇢ DISPATCH_INGEST_ONLY=1 restored the legacy behavior
+  materialize: MaterializeResult | null; // null when ingest-only
+  budget: { budgetMs: number; elapsedMs: number; exhausted: boolean; cutAt: string | null };
+}
+
+// One tick: ingest due (or all-enabled when force) sources through the bounded pool,
+// then materialize (normalize → dedup → score + tag; T198) unless DISPATCH_INGEST_ONLY=1.
+// T200: the WHOLE tick shares ONE deadline computed here — the pool defers un-started
+// sources past it, ingestSource clamps its fetch timeouts to it, and materializeTick
+// gates every stage on it.
+export async function dispatch({
+  concurrency = 5,
+  force = false,
+  budgetMs = DEFAULT_BUDGET_MS,
+  deps,
+}: {
+  concurrency?: number;
+  force?: boolean;
+  budgetMs?: number;
+  deps?: DispatchDeps;
+} = {}): Promise<DispatchResult> {
+  const clock = deps?.now ?? Date.now;
+  const startedMs = clock();
+  const deadlineMs = startedMs + budgetMs;
+  const now = nowIso();
+  const sources = deps?.sourcesFn
+    ? await deps.sourcesFn(force)
+    : force
+      ? ((await sql`SELECT * FROM sources WHERE enabled = 1`) as any[])
+      : await selectDueSources(now);
+
+  const pool = await runIngestPool(sources, concurrency, deadlineMs, {
+    ingestFn: deps?.ingestFn,
+    now: deps?.now,
+  });
+  const results = pool.results;
 
   // T198: materialize the tick's fresh raw into events. "Ingested this tick" =
   // every source polled with status "ok" — INCLUDING 304/no-new-items outcomes,
@@ -302,6 +358,9 @@ export async function dispatch({
     materialize = await materializeTick(ingestedKeys, deadlineMs, deps);
   }
 
+  // T200: an ingest-side cut means the budget ran out BEFORE materialize — report
+  // "ingest" as the first stage hit (materialize then defers everything anyway).
+  const ingestCut = pool.deferred.length > 0;
   return {
     ok: true,
     total: results.length,
@@ -309,13 +368,14 @@ export async function dispatch({
     error: results.filter((r) => r.status === "error").length,
     items: results.reduce((a, r) => a + (r.items || 0), 0),
     results,
+    deferred: pool.deferred,
     ingestOnly,
     materialize,
     budget: {
       budgetMs,
-      elapsedMs: Date.now() - startedMs,
-      exhausted: materialize?.budgetExhausted ?? false,
-      cutAt: materialize?.cutAt ?? null,
+      elapsedMs: clock() - startedMs,
+      exhausted: ingestCut || (materialize?.budgetExhausted ?? false),
+      cutAt: ingestCut ? "ingest" : materialize?.cutAt ?? null,
     },
   };
 }

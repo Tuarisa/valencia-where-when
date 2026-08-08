@@ -225,17 +225,32 @@ function parseGeneric(source: any, html: string): RawItem[] {
   return items;
 }
 
-async function parseHemisferic(source: any, days = 14): Promise<RawItem[]> {
+// T200: cap one request's timeout to the time left before the shared tick deadline, so
+// a slow host can never drag a single fetch past the whole tick's budget. No deadline
+// (legacy ingestAll, local rituals) keeps the plain 30s; the 1s floor avoids a
+// degenerate instant abort when a caller starts right at the deadline.
+export const FETCH_TIMEOUT_MS = 30_000;
+export function clampedFetchTimeout(deadlineMs?: number, nowMs = Date.now()): number {
+  if (deadlineMs == null) return FETCH_TIMEOUT_MS;
+  return Math.min(FETCH_TIMEOUT_MS, Math.max(1_000, deadlineMs - nowMs));
+}
+
+async function parseHemisferic(source: any, days = 14, deadlineMs?: number): Promise<RawItem[]> {
   const items: RawItem[] = [];
   const today = new Date();
   const referer = "https://cac.es/apifront-servicios-colossus/cartelerasemanal.html";
   for (let offset = 0; offset < days; offset++) {
+    // T200: honour the shared tick deadline — 14 SEQUENTIAL day-requests are the single
+    // biggest time sink in ingest (each has its own 30s abort, so the per-request
+    // timeout bounds nothing overall). Stop early instead of outliving the budget;
+    // the remaining days simply arrive on the next due run (idempotent upserts).
+    if (deadlineMs != null && Date.now() >= deadlineMs) break;
     const target = new Date(today.getTime() + offset * 86400_000);
     const day = target.toISOString().slice(0, 10);
     const url = `https://servicios.cac.es/apiback-servicios-colossus/cartelerasemanal.jsp?fechacartelera=${day}`;
     let data: any;
     try {
-      ({ data } = await fetchJson(url, { Referer: referer }));
+      ({ data } = await fetchJson(url, { Referer: referer }, undefined, clampedFetchTimeout(deadlineMs)));
     } catch {
       continue;
     }
@@ -276,15 +291,16 @@ async function parseHemisferic(source: any, days = 14): Promise<RawItem[]> {
 // the hardcoded if/else parser dispatch in ingestSource so adding a source is a
 // registry entry, not a core edit ("add a source" contract, A2). A parser turns a
 // fetched body into RawItem[]; `selfFetch` entries (bespoke APIs like Hemisfèric)
-// fetch their own data and ignore the body.
-export type Parser = (source: any, body: string) => RawItem[] | Promise<RawItem[]>;
+// fetch their own data and ignore the body. `deadlineMs` (T200, optional) is the shared
+// tick deadline — only self-fetching parsers need it (their network time is their own).
+export type Parser = (source: any, body: string, deadlineMs?: number) => RawItem[] | Promise<RawItem[]>;
 export interface ParserEntry {
   parse: Parser;
   selfFetch?: boolean;
 }
 
 export const PARSER_REGISTRY: Map<string, ParserEntry> = new Map<string, ParserEntry>([
-  ["api:hemisferic", { parse: (source) => parseHemisferic(source), selfFetch: true }],
+  ["api:hemisferic", { parse: (source, _body, deadlineMs) => parseHemisferic(source, 14, deadlineMs), selfFetch: true }],
   ["telegram", { parse: (source, body) => parseTelegram(source, body) }],
   ["web", { parse: (source, body) => parseGeneric(source, body) }],
   ["ticketing", { parse: (source, body) => parseGeneric(source, body) }],
@@ -349,7 +365,10 @@ export interface IngestOutcome {
   error?: string;
 }
 
-export async function ingestSource(source: any, minIntervalHours = 6): Promise<IngestOutcome> {
+// `deadlineMs` (T200, optional) — the dispatch tick's SHARED deadline: fetch timeouts
+// are clamped to the remaining budget and self-fetch parsers stop their request chains
+// at it. Absent (legacy ingestAll, local rituals) → plain 30s per-request timeout.
+export async function ingestSource(source: any, minIntervalHours = 6, deadlineMs?: number): Promise<IngestOutcome> {
   if (source.last_fetched && minIntervalHours > 0 && source.last_fetched >= isoAgo(minIntervalHours)) {
     return { source: source.key, status: "skipped", reason: "fresh_enough" };
   }
@@ -363,12 +382,12 @@ export async function ingestSource(source: any, minIntervalHours = 6): Promise<I
     if (parser.selfFetch) {
       // Bespoke self-fetch parsers (Hemisfèric) don't go through conditional GET.
       httpStatus = 200;
-      items = await parser.parse(source, "");
+      items = await parser.parse(source, "", deadlineMs);
     } else {
       const res = await fetchText(source.url, {
         etag: source.etag ?? null,
         lastModified: source.last_modified ?? null,
-      });
+      }, clampedFetchTimeout(deadlineMs));
       httpStatus = res.status;
       etag = res.etag;
       lastModified = res.lastModified;

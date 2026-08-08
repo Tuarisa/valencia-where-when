@@ -19,6 +19,11 @@ export const maxDuration = 60;
 // (Nominatim latency / AI-less prod, T162). DISPATCH_INGEST_ONLY=1 restores the
 // old ingest-only behavior.
 //
+// T200: the WHOLE tick shares that one deadline (a 2026-08-07 prod tick 504'd at
+// 60s because only materialize was budget-gated — ingest ran first, unbounded).
+// Sources the deadline cuts before their fetch starts come back as
+// `deferred_sources` and are simply picked up by a later tick (cadence untouched).
+//
 // GET is accepted too (same fail-closed auth): VERCEL CRON invokes cron paths with a
 // GET carrying "Authorization: Bearer <CRON_SECRET>" — without this the daily
 // vercel.json cron got a 405 and never ran (found at launch, 2026-07-05).
@@ -44,6 +49,9 @@ export async function POST(req: NextRequest) {
       ok_count: result.okCount,
       error: result.error,
       items: result.items,
+      // T200: due sources the shared tick deadline cut BEFORE their fetch started
+      // (cadence untouched — they stay due, the next tick picks them up).
+      deferred_sources: result.deferred,
       // T198 materialization summary (null when DISPATCH_INGEST_ONLY=1).
       ingest_only: result.ingestOnly,
       normalize: result.materialize?.normalize ?? null,
