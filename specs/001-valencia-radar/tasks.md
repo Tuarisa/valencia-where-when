@@ -1404,10 +1404,11 @@ additional issues the agent is NOT handling.)
   description 63→1392 chars, 0 teasers, 27/27 own images; user's example 27577 (prod 28153-vr)
   45→968 chars. Prod's first backfill tick self-heals across ticks under the budget. 21/21 tests.)*
 
-- [ ] T203 [A] **`extractEventLinks` off-by-one for visitvalencia snapshots** (T154 finding, verified
+- [x] T203 [A] **`extractEventLinks` off-by-one for visitvalencia snapshots** (T154 finding, verified
   on live row 1807): each title is paired with the NEXT card's URL. visitvalencia.ts works around it
   (never uses event_links); fix in ingest.ts properly + check other snapshot sources for the same skew.
 
+  *(DONE 2026-08-08 (night tail) — anchors in visitvalencia's markup WRAP the title (`card__link` last-in-card), while the extractor only scanned the window AFTER the anchor (lacotorra/cac image-anchor pattern) → title N glued to URL N±1. Fix: try the anchor's OWN inner content first (marked-up title element preferred, 8–220-char guard), fall back to the window scan. Live listing: 51/51 card pairs now match ground truth; no-regression matrix lacotorra 118/118, cac 5/5, ticketbest byte-identical + 1 chrome pair FIXED. Bonus: /privacy|/terms|/about-us chrome gap closed in isDetailHref. +2 real-markup tests (15/15).)*
 - [ ] T204 [A] **elcontacto source URL is dead** — `/valencia/events` 404s live; every tick collects
   3 chrome rows, 0 events possible. `/valencia/` (200) is a classifieds board, not an afisha. Decide:
   repoint or disable the source (sources seed change → needs user OK).
@@ -1425,24 +1426,36 @@ additional issues the agent is NOT handling.)
   `DATABASE_URL=<neon> node --import tsx -e "…DELETE FROM events WHERE source='web:russpain'…"`
   or just say «проверь прод russpain» to authorize the check+clean.)*
 
-- [ ] T206 [A] **visitvalencia emits GUIDE ARTICLES as events** (T202-repair finding): listicles like
+- [x] T206 [A] **visitvalencia emits GUIDE ARTICLES as events** (T202-repair finding): listicles like
   "Best places to enjoy flamenco" / comedy guides become event rows (2 of 3 residual false contain-
   merges bridged through them), and evergreen experiences carry the site's 01/01–31/12 placeholder
   year-ranges. Teach the normalizer to classify guide/listicle cards (URL pattern /what-to-do/,
   title shapes "Best…", "…guide", no venue+date pair) as NON-events (drop or route to places), and
   treat year-spanning ranges as "ongoing" rather than start=Jan-1.
 
-- [ ] T207 [A] **rutatuta year-inference twins** (T202-repair finding): the same excursion exists at
+  *(DONE 2026-08-08 (night tail) — `isVisitvalenciaGuideCard(title,url)` (conservative title+slug regexes on the range-stripped title; catches retitled roundups by slug) drops listicles/guides even when dated; `isFullYearPlaceholder` turns the CMS 01/01–31/12 range into NO date (documented: emit undated like the other 94 evergreen cards — feed keeps them, seed bake excludes, nothing lies; start=today would fabricate). Live: 101→90 drafts, 0 guides (was 11), 0 placeholder ranges (was 12), all borderline REAL events kept. 17 stale guide event rows cleaned from the local DB.)*
+- [x] T207 [A] **rutatuta year-inference twins** (T202-repair finding): the same excursion exists at
   2026-07-07 AND 2027-07-07 (both upcoming, same source — dedup correctly refuses same-source
   merges). The normalizer's year inference rolls past dates a year forward and re-emits under a new
   hash. Fix the inference (anchor to post date like T152) + clean the existing 2027 twins locally.
 
-- [ ] T208 [H] **Telegram place-crawler name dedup is accent/variant-blind** (logunespa night crawl,
+  *(DONE 2026-08-08 (night tail) — root: normalize-time `today` as the year anchor rolled past dates forward on re-normalize, and date-bearing dedup_hash inserted the roll as a NEW row. Fix in rutatuta.ts: `anchoredExcursionDate()` anchors to `postDateOf(item)` (T152 helper) + roll-forward guard (no explicit year && lands anchorYear+1 → keep only within 60 days of the post, else the post's own year). DB: 14 fabricated 2027 rows cleaned; full re-offer re-run at bug conditions → 0 re-emissions, 0 twins. NOTE the systemic tail → T209.)*
+- [x] T208 [H] **Telegram place-crawler name dedup is accent/variant-blind** (logunespa night crawl,
   2026-08-08): «El Molinón»≠«El Molinon», «Tránsito Bar»≠«Transito Bar» slip past `normName` (it
   keeps letters as-is → ó≠o), and venue variants («El Hachazo Ruzafa (Tiro de Hacha…)» / «El Hachazo
   Tiro de Hacha» ×3) coexist. Fix `normName` in scripts/crawl-telegram.mjs: NFD-strip diacritics;
   add a containment check for name variants. Then one-off dedup pass over places-logunespa.json
   (keep the record with maps_url/photo; crawl is append-only so clean BEFORE the next db:setup).
+
+  *(DONE 2026-08-08 (night tail) — crawler `normName`: NFD+strip marks → RU→Latin translit (inline map mirroring dedup.ts) → c→k fold (Биопарк↔BIOPARC, Океанографик↔Oceanogràfic meet); seen-guard indexes parenthetical aliases + bidirectional containment ≥6. One-off file cleanup: 154→139 places, 10 groups merged (Океанографик ×5→1, Биопарк ×2→1, Hachazo ×3→1, консульство caught by identical maps_url), keep-rank maps_url>photo>real-address>desc, 1 photo grafted; Norauto pair deliberately kept apart; siblings places*.json clean; ids/dedup_hash now unique (weren't!).)*
+
+- [ ] T209 [A] **Systemic tail of T207: any normalizer calling `parseEventDate` with normalize-time
+  "now" can roll past dates forward on re-normalize** (T207 agent finding). Audit sibling normalizers
+  (grep parseEventDate callers) and switch year-anchoring to `postDateOf(item)` where the source has
+  a post date; consider fixing `inferYear` semantics in shared.ts properly (with the byte-identical
+  test-mirror discipline). Also: visitvalencia.ts still carries its T203 workaround (event_links
+  deliberately unused) — now that extractEventLinks is fixed, let it consume event_links and drop
+  the workaround comment.
 
 - [x] T202 [C] **Containment dedup pass over-merges — venue tokens, null-date bridges, digest-post
   hubs** (T155 verification side finding, 2026-08-08). Live DB: survivor 26969 holds **76 losers
