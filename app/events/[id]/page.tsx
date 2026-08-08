@@ -1,6 +1,8 @@
+import { cache } from "react";
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getEventRow, getSeriesDetail } from "@/lib/queries";
+import { getEventRow, getSeriesDetail, eventPageUrl, seriesPageUrl } from "@/lib/queries";
 import {
   deriveTitle,
   formatDateLabel,
@@ -14,6 +16,98 @@ import { RichText, LinkButtons } from "../../detail-helpers";
 
 export const dynamic = "force-dynamic";
 
+// One DB query per request: generateMetadata and the page component share these via
+// React cache() instead of each hitting the DB.
+const cachedEventRow = cache(getEventRow);
+const cachedSeriesDetail = cache(getSeriesDetail);
+
+const BASE_URL = process.env.APP_BASE_URL || "https://valencia-where-when.vercel.app";
+
+// First ~160 chars of the (RU-preferred) description for <meta name="description"> /
+// og:description, cut at a word boundary. undefined when there's no real description —
+// we never fabricate one.
+const META_DESC_LIMIT = 160;
+function metaDescription(row: Record<string, any>): string | undefined {
+  const text = String(row.description_ru || row.description || "").replace(/\s+/g, " ").trim();
+  if (!text) return undefined;
+  if (text.length <= META_DESC_LIMIT) return text;
+  let cut = text.slice(0, META_DESC_LIMIT);
+  const space = cut.lastIndexOf(" ");
+  if (space > META_DESC_LIMIT * 0.5) cut = cut.slice(0, space);
+  return cut.replace(/[\s,;:—–-]+$/, "") + "…";
+}
+
+// Plain title (the root layout's title.template appends the site suffix) + canonical
+// /events/<id>-<slug> href built by the SAME helper the feed cards use. Relative URLs —
+// the layout's metadataBase resolves them.
+function buildEventMetadata(row: Record<string, any>, href: string): Metadata {
+  const title = row.title_ru || deriveTitle(row.title, 120);
+  const description = metaDescription(row);
+  const image = usableImageUrl(row.image_url);
+  return {
+    title,
+    description,
+    alternates: { canonical: href },
+    openGraph: {
+      title,
+      description,
+      url: href,
+      type: "article",
+      ...(image ? { images: [image] } : {}),
+    },
+  };
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: { id: string };
+}): Promise<Metadata> {
+  if (params.id.startsWith("series-")) {
+    const seriesId = Number(params.id.split("-")[1]);
+    const detail = Number.isFinite(seriesId) ? await cachedSeriesDetail(seriesId) : null;
+    if (!detail) return { title: "Событие не найдено" };
+    return buildEventMetadata(detail.series, seriesPageUrl(detail.series));
+  }
+  const id = Number(params.id.split("-")[0]);
+  const row = Number.isFinite(id) ? await cachedEventRow(id) : null;
+  if (!row) return { title: "Событие не найдено" };
+  return buildEventMetadata(row, eventPageUrl(row));
+}
+
+// schema.org Event JSON-LD. Emits ONLY real DB fields — anything null/unknown is
+// omitted, never fabricated. Dates stay the plain YYYY-MM-DD strings from the DB
+// (start_time appended when present); price is passed through as-is, with
+// priceCurrency EUR only when the string itself says euros.
+function eventJsonLd(row: Record<string, any>, href: string): string {
+  const data: Record<string, unknown> = {
+    "@context": "https://schema.org",
+    "@type": "Event",
+    name: row.title_ru || deriveTitle(row.title, 120),
+    url: `${BASE_URL}${href}`,
+  };
+  if (row.start_date)
+    data.startDate = row.start_time ? `${row.start_date}T${row.start_time}` : row.start_date;
+  if (row.end_date) data.endDate = row.end_date;
+  const description = metaDescription(row);
+  if (description) data.description = description;
+  const image = usableImageUrl(row.image_url);
+  if (image) data.image = image;
+  if (row.venue_name || row.address) {
+    const location: Record<string, unknown> = { "@type": "Place" };
+    if (row.venue_name) location.name = row.venue_name;
+    if (row.address) location.address = row.address;
+    data.location = location;
+  }
+  if (row.price) {
+    const offer: Record<string, unknown> = { "@type": "Offer", price: String(row.price) };
+    if (/€|eur/i.test(String(row.price))) offer.priceCurrency = "EUR";
+    data.offers = offer;
+  }
+  // Escape < so scraped text can't break out of the <script> tag.
+  return JSON.stringify(data).replace(/</g, "\\u003c");
+}
+
 export default async function EventPage({ params }: { params: { id: string } }) {
   // Recurring series detail (T043): /events/series-<id>-<slug> renders the series card
   // PLUS its full occurrence schedule (the dated sessions). Ordinary single-shot events
@@ -21,14 +115,14 @@ export default async function EventPage({ params }: { params: { id: string } }) 
   if (params.id.startsWith("series-")) {
     const seriesId = Number(params.id.split("-")[1]);
     if (!Number.isFinite(seriesId)) notFound();
-    const detail = await getSeriesDetail(seriesId);
+    const detail = await cachedSeriesDetail(seriesId);
     if (!detail) notFound();
     return <SeriesDetail detail={detail} />;
   }
 
   const id = Number(params.id.split("-")[0]);
   if (!Number.isFinite(id)) notFound();
-  const row = await getEventRow(id);
+  const row = await cachedEventRow(id);
   if (!row) notFound();
 
   const headline = row.title_ru || deriveTitle(row.title, 120);
@@ -44,6 +138,10 @@ export default async function EventPage({ params }: { params: { id: string } }) 
 
   return (
     <main className="detail-page detail-shell">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: eventJsonLd(row, eventPageUrl(row)) }}
+      />
       <Link className="back-link" href="/">← назад к ленте</Link>
       <article className="detail-card">
         <p className="eyebrow">Событие</p>
@@ -102,6 +200,10 @@ function SeriesDetail({
 
   return (
     <main className="detail-page detail-shell">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: eventJsonLd(series, seriesPageUrl(series)) }}
+      />
       <Link className="back-link" href="/">← назад к ленте</Link>
       <article className="detail-card">
         <p className="eyebrow">Серия · {occurrences.length} {pluralSeans(occurrences.length)}</p>

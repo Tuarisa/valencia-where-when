@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { getPlaces } from "@/lib/queries";
 import { humanizeTag, usableImageUrl } from "@/lib/format";
@@ -10,6 +11,13 @@ import { humanizeTag, usableImageUrl } from "@/lib/format";
 // renders deterministically from the DB").
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+
+export const metadata: Metadata = {
+  title: "Места", // plain — the layout title.template appends "— Valencia Radar"
+  description:
+    "Каталог мест Валенсии: кафе, музеи, парки и пляжи из афиши Valencia Radar — с фильтрами по категории, району и тегам.",
+  alternates: { canonical: "/places" },
+};
 
 type SP = Record<string, string | string[] | undefined>;
 const one = (v?: string | string[]): string => (Array.isArray(v) ? v[0] : v) || "";

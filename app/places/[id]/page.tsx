@@ -1,15 +1,60 @@
+import { cache } from "react";
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getPlaceRow } from "@/lib/queries";
-import { placeLocationLabel, loadTags, humanizeTag, usableImageUrl } from "@/lib/format";
+import { placeLocationLabel, loadTags, humanizeTag, usableImageUrl, pageSlug } from "@/lib/format";
 import { cleanTags } from "@/lib/tags";
 
 export const dynamic = "force-dynamic";
 
+// generateMetadata and the page body both need the row — React cache() dedupes
+// that to one DB read per request.
+const getPlace = cache(getPlaceRow);
+
+const parseId = (param: string): number => Number(param.split("-")[0]);
+
+// ~160-char meta description, cut on a word boundary (same cut rule as deriveTitle).
+function metaDescription(text: string, limit = 160): string {
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (clean.length <= limit) return clean;
+  let cut = clean.slice(0, limit).replace(/\s+$/, "");
+  const space = cut.lastIndexOf(" ");
+  if (space > limit * 0.5) cut = cut.slice(0, space);
+  return cut + "…";
+}
+
+export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
+  const id = parseId(params.id);
+  const row = Number.isFinite(id) ? await getPlace(id) : null;
+  if (!row) return { title: "Место не найдено" };
+
+  const description = metaDescription(
+    row.description ||
+      row.notes ||
+      `${row.category || "Место"} · ${placeLocationLabel(row)} — в каталоге мест Valencia Radar.`,
+  );
+  // Canonical = the slugged URL the site itself links to (toSitePlace.page_url),
+  // relative — layout's metadataBase resolves it.
+  const canonical = `/places/${row.id}-${pageSlug(row.name, `place-${row.id}`)}`;
+  const image = usableImageUrl(row.image_url);
+  return {
+    title: row.name, // plain — the layout title.template appends "— Valencia Radar"
+    description,
+    alternates: { canonical },
+    openGraph: {
+      title: row.name,
+      description,
+      url: canonical,
+      ...(image ? { images: [image] } : {}),
+    },
+  };
+}
+
 export default async function PlacePage({ params }: { params: { id: string } }) {
-  const id = Number(params.id.split("-")[0]);
+  const id = parseId(params.id);
   if (!Number.isFinite(id)) notFound();
-  const row = await getPlaceRow(id);
+  const row = await getPlace(id);
   if (!row) notFound();
 
   const tags = cleanTags(loadTags(row.tags_json));

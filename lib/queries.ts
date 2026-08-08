@@ -151,6 +151,17 @@ function displayTitle(row: EventRow): string {
   return row.title_ru || deriveTitle(row.title);
 }
 
+// Canonical detail-page hrefs. Shared by the feed cards (toSiteEvent /
+// seriesToSiteEvents) AND the detail pages' generateMetadata, so the canonical URL in
+// <head> is byte-identical to the href the feed links to.
+export function eventPageUrl(row: EventRow): string {
+  return `/events/${row.id}-${pageSlug(displayTitle(row), `event-${row.id}`)}`;
+}
+
+export function seriesPageUrl(series: EventRow): string {
+  return `/events/series-${series.id}-${pageSlug(displayTitle(series), `series-${series.id}`)}`;
+}
+
 // Day-span helper: whole-day count between two ISO dates (end − start), or null.
 function spanDays(startDate?: string | null, endDate?: string | null): number | null {
   if (!startDate || !endDate) return null;
@@ -200,7 +211,6 @@ export function featureKind(row: EventRow): string | null {
 
 export function toSiteEvent(row: EventRow): SiteEvent {
   const title = displayTitle(row);
-  const slug = pageSlug(title, `event-${row.id}`);
   const tags = cleanTags(loadTags(row.tags_json));
   return {
     id: row.id,
@@ -236,7 +246,7 @@ export function toSiteEvent(row: EventRow): SiteEvent {
     source: row.source ?? null,
     source_url: row.source_url ?? null,
     tags,
-    page_url: `/events/${row.id}-${slug}`,
+    page_url: eventPageUrl(row),
   };
 }
 
@@ -292,10 +302,9 @@ export function seriesToSiteEvents(
   series: EventRow,
   occurrences: EventRow[],
 ): SiteEvent[] {
-  const title = series.title_ru || deriveTitle(series.title);
-  const slug = pageSlug(title, `series-${series.id}`);
+  const title = displayTitle(series);
   const tags = cleanTags(loadTags(series.tags_json));
-  const pageUrl = `/events/series-${series.id}-${slug}`;
+  const pageUrl = seriesPageUrl(series);
   const sorted = [...occurrences].sort((a, b) => {
     const da = (a.occurrence_date || "") + (a.start_time || "99:99");
     const db = (b.occurrence_date || "") + (b.start_time || "99:99");

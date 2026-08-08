@@ -1319,7 +1319,7 @@ additional issues the agent is NOT handling.)
   normalizer/dedup fail-soft, deadline cuts before/mid/after normalize + between score and tag,
   `DISPATCH_INGEST_ONLY` gate. Gate: `npm run build` + `npm test` green.
 
-- [ ] T199 [F] **SEO/discoverability pack — the site is NOT indexed and has zero analytics**
+- [x] T199 [F] **SEO/discoverability pack — the site is NOT indexed and has zero analytics**
   (audit 2026-08-08, user asked "как индексируется? ходит ли кто?"). Findings: DuckDuckGo/Bing
   return explicit no-results for the exact domain; nothing BLOCKS indexing (no noindex/X-Robots-Tag)
   but nothing invites it either — `/robots.txt` 404, `/sitemap.xml` 404, and EVERY page (275+ event
@@ -1334,6 +1334,16 @@ additional issues the agent is NOT handling.)
   `usableImageUrl`) + JSON-LD Event + favicon + `@vercel/analytics` `<Analytics/>` in layout.
   USER ACTIONS needed separately: Google Search Console verification (+ submit sitemap); custom
   domain — her call (vercel.app subdomains rank poorly).
+  *(DONE 2026-08-08 (night shift) — shipped in one pass: `app/robots.ts` (allow all + sitemap ref),
+  `app/sitemap.ts` (DB-driven, force-dynamic + try/catch static fallback so a no-DB gate build can't
+  break; URLs REUSE `toSiteEvent/toSitePlace.page_url` so sitemap = on-site links byte-for-byte),
+  `generateMetadata` on events/[id] (incl. the series- branch) + places/[id] + places list,
+  schema.org **Event JSON-LD** (only real DB fields, no fabrication; offers/price only when present),
+  canonical href logic extracted to shared `eventPageUrl()/seriesPageUrl()` in `lib/queries.ts`,
+  root layout: `metadataBase` (APP_BASE_URL fallback prod), `title.template "%s — Valencia Radar"`,
+  og defaults ru_RU, `app/icon.svg` favicon from the site palette, `@vercel/analytics` `<Analytics/>`
+  — visitor counts now recorded (Hobby-free). Gate 502/502 green. REMAINING (user): Search Console
+  verify + submit sitemap; custom-domain decision.)*
 
 - [ ] T200 [A] **Dispatch tick hit the Hobby 60s wall despite the 45s soft budget** — runtime logs
   2026-08-07 23:59:45 UTC: `POST /api/cron/dispatch` → **504 "Task timed out after 60 seconds"**
@@ -1343,3 +1353,9 @@ additional issues the agent is NOT handling.)
   timeout vs budget interplay, `budget.cutAt` telemetry in recent responses; consider lowering
   DEFAULT_BUDGET_MS or adding an in-stage deadline for the ingest pool. Fail-soft means no data
   loss (next tick retries), but 504s waste ticks and mask real errors.
+
+- [ ] T201 [A] **lacotorra: description is a short teaser, source page has the FULL text** (user,
+  2026-08-08: prod `/events/28153-vr` vs `https://lacotorra.io/events/vr-vystavka-o-zatmenii-v-valensii`).
+  The normalizer takes the index-page snippet instead of the event detail page's full description.
+  Fix deterministically: ingest/parse the detail page (the per-event URL is already known post-T190)
+  and prefer its full description; verify on live `source_items`. Fold into the T154 lacotorra pass.

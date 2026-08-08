@@ -1,10 +1,17 @@
 import type { Metadata } from "next";
+import { Analytics } from "@vercel/analytics/react";
 import "./globals.css";
 
+// SEO base: absolute URL for canonical/OG resolution; pages set RELATIVE
+// alternates.canonical / openGraph.url against it and plain titles (template adds suffix).
+const baseUrl = process.env.APP_BASE_URL ?? "https://valencia-where-when.vercel.app";
+
 export const metadata: Metadata = {
-  title: "Valencia Radar",
+  metadataBase: new URL(baseUrl),
+  title: { default: "Valencia Radar", template: "%s — Valencia Radar" },
   description:
     "Афиша, места и нотификации по Валенсии: русскоязычные события, городские фестивали, шоу. Лента, теги, календарь и карта.",
+  openGraph: { siteName: "Valencia Radar", locale: "ru_RU", type: "website" },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -24,7 +31,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           crossOrigin=""
         />
       </head>
-      <body>{children}</body>
+      <body>
+        {children}
+        <Analytics />
+      </body>
     </html>
   );
 }
